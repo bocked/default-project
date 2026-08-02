@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CanvasItem {
+  id        String   @id @default(uuid())
+  type      String
+  content   String
+  x         Float
+  y         Float
+  color     String?
+  ipAddress String
+  reactions String   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([type])
+}
+
+model BannedIp {
+  id        String   @id @default(uuid())
+  ipAddress String   @unique
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

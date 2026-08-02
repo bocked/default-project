@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cheksiz real-vaqtli kustav daftar
 
-## Getting Started
+Hamkorlikdagi cheksiz kustav daftar: Next.js frontend + Express/Socket.io backend +
+PostgreSQL (Prisma) + Redis + Cloudflare R2 (rasmlar uchun, ixtiyoriy).
 
-First, run the development server:
+## Tuzilma
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+client/   Next.js 16 (static export, Tailwind v4) — kanvas UI
+server/   Express + Socket.io + Prisma + Redis — real-time API
+docker-compose.yml   Postgres + Redis (lokal ishlab chiqish uchun)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Ishga tushirish
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. **Ma'lumotlar bazasi** (Postgres + Redis) — ikkita variant:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   **A. Docker (tavsiya etilgan):**
 
-## Learn More
+   ```bash
+   docker compose up -d
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+   **B. Native Windows Postgres** (Docker/WSL ishlamasa):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   ```bash
+   winget install -e --id PostgreSQL.PostgreSQL.16 --silent
+   # keyin:
+   psql -U postgres -h 127.0.0.1 -c "CREATE ROLE canvas WITH LOGIN PASSWORD 'canvas' CREATEDB;"
+   psql -U postgres -h 127.0.0.1 -c "CREATE DATABASE canvas OWNER canvas;"
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   Redis o'rnatilmasa server avtomatik in-memory rejimga o'tadi (faqat bitta instansiya).
 
-## Deploy on Vercel
+2. **Server**:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   ```bash
+   cd server
+   cp .env.example .env      # birinchi marta
+   npm install
+   npx prisma migrate dev
+   npm run dev               # http://localhost:4000
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3. **Client**:
+
+   ```bash
+   cd client
+   npm install
+   npm run dev               # http://localhost:3000
+   ```
+
+   Brauzerdagi `http://localhost:3000` da ikkita oynada ochib, real-vaqtda yozuv
+   qo'shish / surish / reaksiya berish mumkin.
+
+## Muhim env (server)
+
+- `DATABASE_URL` — Postgres ulanishi (default: `canvas:canvas@localhost:5432/canvas`)
+- `REDIS_URL` — Redis (bo'sh bo'lsa, in-memory rejimga o'tadi, faqat bitta instansiya)
+- `ADMIN_PASSWORD` — admin panel paroli (`/api/admin/*` + socket `admin:auth`)
+- `CORS_ORIGINS` — ruxsat etilgan originlar (mas. `http://localhost:3000,https://*.pages.dev`)
+- `R2_*` — Cloudflare R2 (to'ldirilmasa rasmlar `server/uploads`'ga saqlanadi)
+
+## Admin panel
+
+Toolbardagi "Admin" tugmasi → parol. Imkoniyatlar: statistika, elementlar
+(o'chirish), IP bloklash/o'chirish, moderatsiya jurnali, kanvasni tozalash.
+
+## Deploy (Cloudflare Pages)
+
+```bash
+cd client
+npx wrangler pages deploy out --project-name default-project
+```
+
+`NEXT_PUBLIC_SERVER_URL` build paytida server manziliga ko'rsatilishi kerak:
+
+```bash
+$env:NEXT_PUBLIC_SERVER_URL="https://api.yerlikoglon.uz"; npm run build
+```
