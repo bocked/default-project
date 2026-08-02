@@ -78,3 +78,9 @@ npx wrangler pages deploy out --project-name default-project
 ```bash
 $env:NEXT_PUBLIC_SERVER_URL="https://api.yerlikoglon.uz"; npm run build
 ```
+
+## Backend'ni VPS'ga deploy (PM2 + Nginx + SSL)
+
+`deploy/` papkasida tayyor konfiguratsiyalar: `nginx.conf`,
+`ecosystem.config.cjs` (PM2), `setup-vps.sh` (avtomatik skript) va
+`DEPLOY.md` (bosqichma-bosqich yo'riqnoma). VPS: `95.46.96.12`.
