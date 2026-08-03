@@ -1,0 +1,5 @@
+# Cloudflare Pages config for the Next.js static-export app.
+# Lets you run `wrangler pages dev` / `wrangler pages deploy` from client/.
+name = "default-project"
+pages_build_output_dir = "out"
+compatibility_date = "2026-08-03"
