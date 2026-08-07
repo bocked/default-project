@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasApi } from "@/hooks/useCanvas";
-import type { CanvasItem } from "@/lib/types";
+import type { CanvasItem, ItemType } from "@/lib/types";
 import { exportPng, exportSvg, toExportItems, type ExportFormat } from "@/lib/export";
 import { captureException } from "@/lib/sentry";
 import Toolbar from "./Toolbar";
@@ -62,6 +62,13 @@ interface ResizeState {
   startH: number;
 }
 
+interface EditAction {
+  kind: "create" | "move" | "update" | "delete";
+  id: string | null;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+}
+
 const IMAGE_DEFAULT = 288;
 
 export default function Canvas({ api }: { api: CanvasApi }) {
@@ -72,7 +79,6 @@ export default function Canvas({ api }: { api: CanvasApi }) {
     items,
     cursors,
     online,
-    addItem,
     moveItem,
     updateItem,
     resizeItem,
@@ -115,6 +121,8 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   const [searchFilter, setSearchFilter] = useState<SearchFilter>("ALL");
   const [activeMatch, setActiveMatch] = useState(0);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const [undoStack, setUndoStack] = useState<EditAction[]>([]);
+  const [redoStack, setRedoStack] = useState<EditAction[]>([]);
   const { user } = useAuth();
 
   const worldToScreen = useCallback(
@@ -180,6 +188,63 @@ export default function Canvas({ api }: { api: CanvasApi }) {
     setOffset({ x: rect.width / 2, y: rect.height / 2 });
   }, []);
 
+  const pushAction = useCallback((action: EditAction) => {
+    setUndoStack((prev) => [...prev.slice(-49), action]);
+    setRedoStack([]);
+  }, []);
+
+  const createItem = useCallback(
+    (type: ItemType, content: string, x: number, y: number, color?: string) => {
+      api.addItem(type, content, x, y, color);
+      pushAction({ kind: "create", id: null, before: {}, after: { type, content, x, y, color: color ?? null } });
+    },
+    [api, pushAction]
+  );
+
+  const undoAction = useCallback(() => {
+    const action = undoStack[undoStack.length - 1];
+    if (!action) return;
+    setUndoStack((prev) => prev.slice(0, -1));
+    setRedoStack((prev) => [...prev, action]);
+    if (action.kind === "create") {
+      const a = action.after as { type: ItemType; content: string; x: number; y: number };
+      const id =
+        items.find((i) => i.type === a.type && i.content === a.content && i.x === a.x && i.y === a.y)?.id ??
+        action.id;
+      if (id) api.deleteItem(id);
+    } else if (action.kind === "move") {
+      const b = action.before as { x: number; y: number };
+      if (action.id) api.moveItem(action.id, b.x, b.y);
+    } else if (action.kind === "update") {
+      const b = action.before as { content?: string; color?: string; width?: number; height?: number };
+      if (action.id) api.updateItem(action.id, b);
+    } else if (action.kind === "delete") {
+      if (action.id) {
+        api.undoItem(action.id);
+        setLastDeletedId((prev) => (prev === action.id ? null : prev));
+      }
+    }
+  }, [undoStack, items, api]);
+
+  const redoAction = useCallback(() => {
+    const action = redoStack[redoStack.length - 1];
+    if (!action) return;
+    setRedoStack((prev) => prev.slice(0, -1));
+    setUndoStack((prev) => [...prev, action]);
+    if (action.kind === "create") {
+      const a = action.after as { type: ItemType; content: string; x: number; y: number; color?: string | null };
+      api.addItem(a.type, a.content, a.x, a.y, a.color ?? undefined);
+    } else if (action.kind === "move") {
+      const a = action.after as { x: number; y: number };
+      if (action.id) api.moveItem(action.id, a.x, a.y);
+    } else if (action.kind === "update") {
+      const a = action.after as { content?: string; color?: string; width?: number; height?: number };
+      if (action.id) api.updateItem(action.id, a);
+    } else if (action.kind === "delete") {
+      if (action.id) api.deleteItem(action.id);
+    }
+  }, [redoStack, api]);
+
 
   const handleExport = useCallback(
     async (format: ExportFormat) => {
@@ -232,6 +297,28 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   useEffect(() => {
     if (searchOpen) searchRef.current?.focus();
   }, [searchOpen]);
+
+  // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      if (e.key.toLowerCase() === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undoAction();
+      } else if (e.key.toLowerCase() === "z" && e.shiftKey) {
+        e.preventDefault();
+        redoAction();
+      } else if (e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redoAction();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undoAction, redoAction]);
 
   const flyTo = useCallback(
     (id: string) => {
@@ -335,7 +422,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       }
 
       if (template) {
-        addItem(template.type, template.content, Math.round(world.x), Math.round(world.y), template.color);
+        createItem(template.type, template.content, Math.round(world.x), Math.round(world.y), template.color);
         setTemplate(null);
         return;
       }
@@ -344,7 +431,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
         return;
       }
       if (tool === "STICKY") {
-        addItem("STICKY", "Yangi yozuv", Math.round(world.x), Math.round(world.y), color);
+        createItem("STICKY", "Yangi yozuv", Math.round(world.x), Math.round(world.y), color);
         return;
       }
       if (tool === "IMAGE") {
@@ -355,19 +442,42 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       // MOVE: start panning.
       setPanning({ startX: client.x, startY: client.y, originX: offset.x, originY: offset.y });
     },
-    [tool, template, screenToWorld, offset, color, addItem]
+    [tool, template, screenToWorld, offset, color, createItem]
   );
 
   const endPointer = useCallback(() => {
-    setDrag(null);
-    setPanning(null);
+    if (drag) {
+      const item = items.find((i) => i.id === drag.id);
+      if (item && (item.x !== drag.startWorldX || item.y !== drag.startWorldY)) {
+        pushAction({
+          kind: "move",
+          id: drag.id,
+          before: { x: drag.startWorldX, y: drag.startWorldY },
+          after: { x: item.x, y: item.y },
+        });
+      }
+    }
     if (resize) {
       const item = items.find((i) => i.id === resize.id);
-      if (item) resizeItem(resize.id, item.width ?? IMAGE_DEFAULT, item.height ?? IMAGE_DEFAULT);
+      if (item) {
+        const w = item.width ?? IMAGE_DEFAULT;
+        const h = item.height ?? IMAGE_DEFAULT;
+        if (w !== resize.startW || h !== resize.startH) {
+          pushAction({
+            kind: "update",
+            id: resize.id,
+            before: { width: resize.startW, height: resize.startH },
+            after: { width: w, height: h },
+          });
+        }
+        resizeItem(resize.id, w, h);
+      }
       setResize(null);
       resizeSendRef.current = null;
     }
-  }, [resize, items, resizeItem]);
+    setDrag(null);
+    setPanning(null);
+  }, [drag, resize, items, resizeItem, pushAction]);
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
@@ -401,20 +511,20 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const world = screenToWorld({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-      addItem("STICKY", "Yangi yozuv", Math.round(world.x), Math.round(world.y), color);
+      createItem("STICKY", "Yangi yozuv", Math.round(world.x), Math.round(world.y), color);
     },
-    [tool, screenToWorld, color, addItem]
+    [tool, screenToWorld, color, createItem]
   );
 
   const commitText = useCallback(
     (content: string, cancel: boolean) => {
       if (!pendingText) return;
       if (!cancel && content.trim()) {
-        addItem("TEXT", content.trim().slice(0, 4000), Math.round(pendingText.x), Math.round(pendingText.y), TEXT_COLORS[1]);
+        createItem("TEXT", content.trim().slice(0, 4000), Math.round(pendingText.x), Math.round(pendingText.y), TEXT_COLORS[1]);
       }
       setPendingText(null);
     },
-    [pendingText, addItem]
+    [pendingText, createItem]
   );
 
   const commitEdit = useCallback(
@@ -422,11 +532,18 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       if (!editing) return;
       const text = editing.text.trim();
       if (!cancel && text) {
+        const item = items.find((i) => i.id === editing.id);
+        pushAction({
+          kind: "update",
+          id: editing.id,
+          before: { content: item?.content, color: item?.color ?? null },
+          after: { content: text.slice(0, 4000), color: editing.color },
+        });
         updateItem(editing.id, { content: text.slice(0, 4000), color: editing.color });
       }
       setEditing(null);
     },
-    [editing, updateItem]
+    [editing, items, updateItem, pushAction]
   );
 
   const handleFile = useCallback(
@@ -436,7 +553,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       if (!file || !pendingImage) return;
       try {
         const url = await api.uploadImage(file);
-        addItem("IMAGE", url, Math.round(pendingImage.x), Math.round(pendingImage.y));
+        createItem("IMAGE", url, Math.round(pendingImage.x), Math.round(pendingImage.y));
         notify("Rasm joylandi");
       } catch (err) {
         notify(err instanceof Error ? err.message : "Rasm yuklashda xato");
@@ -444,7 +561,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
         setPendingImage(null);
       }
     },
-    [pendingImage, api, addItem, notify]
+    [pendingImage, api, createItem, notify]
   );
 
   const isOwner = useCallback(
@@ -457,9 +574,10 @@ export default function Canvas({ api }: { api: CanvasApi }) {
     (item: CanvasItem) => {
       api.deleteItem(item.id);
       setLastDeletedId(item.id);
+      pushAction({ kind: "delete", id: item.id, before: {}, after: {} });
       notify("Element o'chirildi");
     },
-    [api, notify]
+    [api, pushAction, notify]
   );
 
   const submitReport = useCallback(
@@ -809,6 +927,10 @@ export default function Canvas({ api }: { api: CanvasApi }) {
           onPickTemplate={(key) => setTemplate(key ? (TEMPLATES.find((t) => t.key === key) ?? null) : null)}
           onAdmin={() => setShowAdmin(true)}
           onExport={handleExport}
+          canUndo={undoStack.length > 0}
+          canRedo={redoStack.length > 0}
+          onUndo={undoAction}
+          onRedo={redoAction}
         />
       </div>
 

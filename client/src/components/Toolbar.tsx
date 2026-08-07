@@ -27,6 +27,10 @@ export interface ToolbarProps {
   onPickTemplate: (key: string | null) => void;
   onAdmin: () => void;
   onExport: (format: ExportFormat) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
 const TOOLS: { key: ToolbarProps["tool"]; label: string; icon: string }[] = [
@@ -50,6 +54,10 @@ export default function Toolbar({
   onPickTemplate,
   onAdmin,
   onExport,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
 }: ToolbarProps) {
   const [openTemplates, setOpenTemplates] = useState(false);
   const [openExport, setOpenExport] = useState(false);
@@ -75,6 +83,26 @@ export default function Toolbar({
             {t.icon}
           </button>
         ))}
+      </div>
+
+      {/* Undo / redo */}
+      <div className="flex items-center gap-0.5">
+        <button
+          title="Bekor qilish (Ctrl+Z)"
+          disabled={!canUndo}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-base text-slate-500 transition hover:bg-slate-100 active:scale-90 disabled:opacity-30 disabled:hover:bg-transparent"
+          onClick={onUndo}
+        >
+          ↩️
+        </button>
+        <button
+          title="Qaytarish (Ctrl+Shift+Z)"
+          disabled={!canRedo}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-base text-slate-500 transition hover:bg-slate-100 active:scale-90 disabled:opacity-30 disabled:hover:bg-transparent"
+          onClick={onRedo}
+        >
+          ↪️
+        </button>
       </div>
 
       {/* Templates */}
