@@ -29,6 +29,9 @@ export const config = {
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? `http://localhost:${num(process.env.PORT, 4000)}`,
   maxUploadBytes: num(process.env.MAX_UPLOAD_BYTES, 10 * 1024 * 1024),
   logToConsole: bool(process.env.LOG_TO_CONSOLE, true),
+  logLevel: process.env.LOG_LEVEL ?? "info",
+  // Number of trusted reverse-proxy hops (Render LB / Nginx).
+  trustProxy: num(process.env.TRUST_PROXY, 1),
   r2: {
     accountId: process.env.R2_ACCOUNT_ID ?? "",
     accessKeyId: process.env.R2_ACCESS_KEY_ID ?? "",

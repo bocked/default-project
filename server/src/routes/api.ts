@@ -8,8 +8,15 @@ import { clientIp } from "../lib/ip.js";
 import { requireNotBanned } from "../middleware/bannedIp.js";
 import { config } from "../config.js";
 import { bus } from "../lib/bus.js";
+import { strictLimiter } from "../lib/rateLimit.js";
+import { validateBody, itemCreateSchema } from "../schemas.js";
+import { z } from "zod";
 
 export const apiRouter = Router();
+
+// HTTP item creation only accepts text/sticky (images arrive via /upload).
+const httpItemCreateSchema = itemCreateSchema.extend({ type: z.enum(["TEXT", "STICKY"]) });
+type HttpItemCreate = z.infer<typeof httpItemCreateSchema>;
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -66,21 +73,17 @@ apiRouter.get("/items", async (_req, res) => {
 });
 
 // POST /api/items - create a text/sticky item over HTTP
-apiRouter.post("/items", requireNotBanned, async (req, res) => {
+apiRouter.post("/items", requireNotBanned, strictLimiter, validateBody(httpItemCreateSchema), async (req, res) => {
   try {
-    const { type, content, x, y, color } = req.body ?? {};
-    if (!["TEXT", "STICKY"].includes(type) || typeof content !== "string" || !Number.isFinite(x) || !Number.isFinite(y)) {
-      res.status(400).json({ error: "Invalid payload" });
-      return;
-    }
+    const { type, content, x, y, color } = res.locals.body as HttpItemCreate;
     const ip = clientIp(req.headers);
     const item = await prisma.canvasItem.create({
       data: {
         type,
-        content: censorText(content.slice(0, 4000)),
-        x: Number(x),
-        y: Number(y),
-        color: typeof color === "string" ? color.slice(0, 32) : null,
+        content: censorText(content),
+        x,
+        y,
+        color: color ?? null,
         ipAddress: ip,
       },
     });
@@ -92,7 +95,7 @@ apiRouter.post("/items", requireNotBanned, async (req, res) => {
 });
 
 // POST /api/upload - upload an image (stored in R2 or local fallback)
-apiRouter.post("/upload", requireNotBanned, upload.single("file"), async (req, res) => {
+apiRouter.post("/upload", requireNotBanned, strictLimiter, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       res.status(400).json({ error: "No file provided" });

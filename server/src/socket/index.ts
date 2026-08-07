@@ -8,14 +8,34 @@ import { addLog } from "../lib/logstore.js";
 import { setOnlineCount } from "../routes/api.js";
 import { presence, randomGuestName, randomCursorColor } from "./presence.js";
 import { publicItem } from "../routes/api.js";
+import {
+  parseZod,
+  cursorMoveSchema,
+  itemCreateSchema,
+  itemMoveSchema,
+  itemDeleteSchema,
+  itemReactionSchema,
+  adminAuthSchema,
+  adminBanSchema,
+  adminUnbanSchema,
+} from "../schemas.js";
+import { Cooldown } from "../lib/cooldown.js";
+import { SocketRateLimiter } from "../lib/socketRateLimit.js";
 
 const CURSOR_THROTTLE_MS = 30;
 const ITEM_ADD_COOLDOWN_MS = 1000;
 const REACTION_COOLDOWN_MS = 300;
+const MOVE_WRITE_DEBOUNCE_MS = 100;
 
-function isFiniteNum(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
+// Per-socket throttle for cursor events (bounded by CURSOR_THROTTLE_MS anyway).
+const cursorCooldown = new Cooldown(CURSOR_THROTTLE_MS);
+const addCooldown = new Cooldown(ITEM_ADD_COOLDOWN_MS);
+const reactionCooldown = new Cooldown(REACTION_COOLDOWN_MS);
+
+// Socket rate limiting: per-socket event budget + per-IP mutation budget.
+const socketEventLimiter = new SocketRateLimiter(10_000, 400);
+const socketIpLimiter = new SocketRateLimiter(60_000, 120);
+const MAX_CONNECTIONS_PER_IP = 30;
 
 async function broadcastPresence(): Promise<void> {
   await bus.publish("presence:update", {
@@ -82,6 +102,13 @@ function handleConnection(socket: Socket): void {
   const ip = clientIp(socket.handshake.headers);
   socket.data.ip = ip;
 
+  // Guard against one IP opening too many sockets.
+  if (presence.countByIp(ip) >= MAX_CONNECTIONS_PER_IP) {
+    socket.emit("error", "Too many connections from this address");
+    socket.disconnect(true);
+    return;
+  }
+
   // Reject banned clients immediately.
   prisma.bannedIp
     .findUnique({ where: { ipAddress: ip } })
@@ -124,6 +151,10 @@ function handleConnection(socket: Socket): void {
 
   socket.on("disconnect", () => {
     presence.leave(socket.id);
+    addCooldown.remove(socket.id);
+    reactionCooldown.remove(socket.id);
+    cursorCooldown.remove(socket.id);
+    socketIpLimiter.prune();
     setOnlineCount(presence.count());
     broadcastPresence();
   });
@@ -131,94 +162,85 @@ function handleConnection(socket: Socket): void {
 
 function registerHandlers(socket: Socket, name: string, color: string): void {
   // ----------------------------- cursor -----------------------------
-  socket.on("cursor:move", (data: { x?: unknown; y?: unknown }) => {
-    if (!isFiniteNum(data?.x) || !isFiniteNum(data?.y)) return;
-    const now = Date.now();
-    const last = socket.data.lastCursor as number | undefined;
-    if (last !== undefined && now - last < CURSOR_THROTTLE_MS) return;
-    socket.data.lastCursor = now;
+  socket.on("cursor:move", (data: unknown) => {
+    const parsed = parseZod(cursorMoveSchema, data);
+    if (!parsed) return;
+    if (!socketEventLimiter.allow(socket.id)) return;
+    if (!cursorCooldown.check(socket.id)) return;
 
-    const x = Number(data.x);
-    const y = Number(data.y);
-    presence.touch(socket.id, x, y);
-    bus.publish("cursor:move", { id: socket.id, name, color, x, y });
+    presence.touch(socket.id, parsed.x, parsed.y);
+    bus.publish("cursor:move", { id: socket.id, name, color, x: parsed.x, y: parsed.y });
   });
 
   // ----------------------------- items -----------------------------
-  socket.on(
-    "canvas:item-add",
-    async (data: { type?: string; content?: unknown; x?: unknown; y?: unknown; color?: unknown }) => {
-      const now = Date.now();
-      const last = socket.data.lastAdd as number | undefined;
-      if (last !== undefined && now - last < ITEM_ADD_COOLDOWN_MS) return;
-      socket.data.lastAdd = now;
+  socket.on("canvas:item-add", async (data: unknown) => {
+    const parsed = parseZod(itemCreateSchema, data);
+    if (!parsed) return;
+    if (!addCooldown.check(socket.id)) return;
+    if (!socketIpLimiter.allow(socket.data.ip)) return;
 
-      const type = data?.type;
-      if (!["TEXT", "STICKY", "IMAGE"].includes(type ?? "")) return;
-      if (typeof data?.content !== "string" || data.content.length === 0) return;
-      if (!isFiniteNum(data?.x) || !isFiniteNum(data?.y)) return;
-
-      try {
-        const item = await prisma.canvasItem.create({
-          data: {
-            type: type as string,
-            content: censorText(data.content.slice(0, 4000)),
-            x: Number(data.x),
-            y: Number(data.y),
-            color: typeof data.color === "string" ? data.color.slice(0, 32) : null,
-            ipAddress: socket.data.ip,
-          },
-        });
-        await bus.publish("canvas:item-add", { item: publicItem(item) });
-      } catch {
-        socket.emit("error", "Failed to save item");
-      }
-    }
-  );
-
-  socket.on("canvas:item-move", async (data: { id?: unknown; x?: unknown; y?: unknown }) => {
-    if (typeof data?.id !== "string" || !isFiniteNum(data?.x) || !isFiniteNum(data?.y)) return;
-
-    // Debounce persistence: track last write per item id.
     try {
-      const now = Date.now();
-      const key = `move:${data.id}`;
-      const lastWrite = socket.data[key] as number | undefined;
-      if (lastWrite !== undefined && now - lastWrite < 100) return;
-      socket.data[key] = now;
+      const item = await prisma.canvasItem.create({
+        data: {
+          type: parsed.type,
+          content: censorText(parsed.content),
+          x: parsed.x,
+          y: parsed.y,
+          color: parsed.color ?? null,
+          ipAddress: socket.data.ip,
+        },
+      });
+      await bus.publish("canvas:item-add", { item: publicItem(item) });
+    } catch {
+      socket.emit("error", "Failed to save item");
+    }
+  });
 
-      const x = Number(data.x);
-      const y = Number(data.y);
-      await prisma.canvasItem.update({ where: { id: data.id }, data: { x, y } });
-      await bus.publish("canvas:item-move", { id: data.id, x, y });
+  socket.on("canvas:item-move", async (data: unknown) => {
+    const parsed = parseZod(itemMoveSchema, data);
+    if (!parsed) return;
+    if (!socketIpLimiter.allow(socket.data.ip)) return;
+
+    // Debounce persistence: track last write per item id on this socket.
+    const now = Date.now();
+    const key = `move:${parsed.id}`;
+    const lastWrite = socket.data[key] as number | undefined;
+    if (lastWrite !== undefined && now - lastWrite < MOVE_WRITE_DEBOUNCE_MS) return;
+    socket.data[key] = now;
+
+    try {
+      await prisma.canvasItem.update({ where: { id: parsed.id }, data: { x: parsed.x, y: parsed.y } });
+      await bus.publish("canvas:item-move", { id: parsed.id, x: parsed.x, y: parsed.y });
     } catch {
       // Item may have been deleted concurrently - ignore.
     }
   });
 
-  socket.on("canvas:item-delete", async (data: { id?: unknown }) => {
-    if (typeof data?.id !== "string") return;
+  socket.on("canvas:item-delete", async (data: unknown) => {
+    const parsed = parseZod(itemDeleteSchema, data);
+    if (!parsed) return;
+    if (!socketIpLimiter.allow(socket.data.ip)) return;
+
     try {
-      const existing = await prisma.canvasItem.findUnique({ where: { id: data.id } });
+      const existing = await prisma.canvasItem.findUnique({ where: { id: parsed.id } });
       if (!existing) return;
       // Users may delete their own items; admins may delete anything.
       if (!socket.data.isAdmin && existing.ipAddress !== socket.data.ip) return;
-      await prisma.canvasItem.delete({ where: { id: data.id } });
-      await bus.publish("canvas:item-delete", { id: data.id });
+      await prisma.canvasItem.delete({ where: { id: parsed.id } });
+      await bus.publish("canvas:item-delete", { id: parsed.id });
     } catch {
       /* ignore */
     }
   });
 
-  socket.on("canvas:reaction", async (data: { id?: unknown; emoji?: unknown }) => {
-    if (typeof data?.id !== "string" || typeof data?.emoji !== "string" || !data.emoji) return;
-    const now = Date.now();
-    const last = socket.data.lastReaction as number | undefined;
-    if (last !== undefined && now - last < REACTION_COOLDOWN_MS) return;
-    socket.data.lastReaction = now;
+  socket.on("canvas:reaction", async (data: unknown) => {
+    const parsed = parseZod(itemReactionSchema, data);
+    if (!parsed) return;
+    if (!reactionCooldown.check(socket.id)) return;
+    if (!socketIpLimiter.allow(socket.data.ip)) return;
 
     try {
-      const item = await prisma.canvasItem.findUnique({ where: { id: data.id } });
+      const item = await prisma.canvasItem.findUnique({ where: { id: parsed.id } });
       if (!item) return;
       let reactions: Record<string, number> = {};
       try {
@@ -226,18 +248,19 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
       } catch {
         reactions = {};
       }
-      reactions[data.emoji.slice(0, 8)] = (reactions[data.emoji.slice(0, 8)] ?? 0) + 1;
-      await prisma.canvasItem.update({ where: { id: data.id }, data: { reactions: JSON.stringify(reactions) } });
-      await bus.publish("canvas:item-reaction", { id: data.id, reactions });
+      reactions[parsed.emoji] = (reactions[parsed.emoji] ?? 0) + 1;
+      await prisma.canvasItem.update({ where: { id: parsed.id }, data: { reactions: JSON.stringify(reactions) } });
+      await bus.publish("canvas:item-reaction", { id: parsed.id, reactions });
     } catch {
       /* ignore */
     }
   });
 
   // ----------------------------- admin -----------------------------
-  socket.on("admin:auth", (data: { password?: unknown }) => {
-    if (typeof data?.password !== "string") return;
-    if (data.password === config.adminPassword) {
+  socket.on("admin:auth", (data: unknown) => {
+    const parsed = parseZod(adminAuthSchema, data);
+    if (!parsed) return;
+    if (parsed.password === config.adminPassword) {
       socket.data.isAdmin = true;
       socket.emit("admin:authed", { ok: true });
       addLog("info", `Admin logged in (socket ${socket.id.slice(0, 8)})`);
@@ -246,42 +269,44 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
     }
   });
 
-  socket.on("admin:ban", async (data: { ipAddress?: unknown; reason?: unknown }) => {
+  socket.on("admin:ban", async (data: unknown) => {
     if (!socket.data.isAdmin) return;
-    if (typeof data?.ipAddress !== "string" || !data.ipAddress.trim()) return;
-    const ipAddress = data.ipAddress.trim();
+    const parsed = parseZod(adminBanSchema, data);
+    if (!parsed) return;
     try {
       await prisma.bannedIp.upsert({
-        where: { ipAddress },
-        update: { reason: typeof data.reason === "string" ? data.reason.slice(0, 500) : null },
-        create: { ipAddress, reason: typeof data.reason === "string" ? data.reason.slice(0, 500) : null },
+        where: { ipAddress: parsed.ipAddress },
+        update: { reason: parsed.reason ?? null },
+        create: { ipAddress: parsed.ipAddress, reason: parsed.reason ?? null },
       });
-      await bus.publish("admin:ban", { ipAddress, reason: typeof data.reason === "string" ? data.reason.slice(0, 500) : null });
-      addLog("ban", `IP ${ipAddress} banned (socket)`);
+      await bus.publish("admin:ban", { ipAddress: parsed.ipAddress, reason: parsed.reason ?? null });
+      addLog("ban", `IP ${parsed.ipAddress} banned (socket)`);
     } catch {
       /* ignore */
     }
   });
 
-  socket.on("admin:unban", async (data: { ipAddress?: unknown }) => {
+  socket.on("admin:unban", async (data: unknown) => {
     if (!socket.data.isAdmin) return;
-    if (typeof data?.ipAddress !== "string") return;
+    const parsed = parseZod(adminUnbanSchema, data);
+    if (!parsed) return;
     try {
-      await prisma.bannedIp.delete({ where: { ipAddress: data.ipAddress } });
-      await bus.publish("admin:unban", { ipAddress: data.ipAddress });
-      addLog("info", `IP ${data.ipAddress} unbanned (socket)`);
+      await prisma.bannedIp.delete({ where: { ipAddress: parsed.ipAddress } });
+      await bus.publish("admin:unban", { ipAddress: parsed.ipAddress });
+      addLog("info", `IP ${parsed.ipAddress} unbanned (socket)`);
     } catch {
       /* ignore */
     }
   });
 
-  socket.on("admin:delete", async (data: { id?: unknown }) => {
+  socket.on("admin:delete", async (data: unknown) => {
     if (!socket.data.isAdmin) return;
-    if (typeof data?.id !== "string") return;
+    const parsed = parseZod(itemDeleteSchema, data);
+    if (!parsed) return;
     try {
-      await prisma.canvasItem.delete({ where: { id: data.id } });
-      await bus.publish("canvas:item-delete", { id: data.id });
-      addLog("delete", `Item ${data.id.slice(0, 8)} deleted by admin (socket)`);
+      await prisma.canvasItem.delete({ where: { id: parsed.id } });
+      await bus.publish("canvas:item-delete", { id: parsed.id });
+      addLog("delete", `Item ${parsed.id.slice(0, 8)} deleted by admin (socket)`);
     } catch {
       /* ignore */
     }

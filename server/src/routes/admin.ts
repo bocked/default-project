@@ -4,10 +4,13 @@ import { requireAdmin } from "../middleware/adminAuth.js";
 import { recentLogs, addLog } from "../lib/logstore.js";
 import { onlineCount } from "./api.js";
 import { bus } from "../lib/bus.js";
+import { adminLimiter } from "../lib/rateLimit.js";
+import { validateBody, banCreateSchema } from "../schemas.js";
 
 export const adminRouter = Router();
 
-adminRouter.use(requireAdmin);
+// Rate-limit before auth so unauthenticated attempts cannot hammer the API.
+adminRouter.use(adminLimiter, requireAdmin);
 
 // GET /api/admin/stats - dashboard numbers
 adminRouter.get("/stats", async (_req, res) => {
@@ -68,17 +71,13 @@ adminRouter.get("/bans", async (_req, res) => {
 });
 
 // POST /api/admin/bans - ban an IP
-adminRouter.post("/bans", async (req, res) => {
+adminRouter.post("/bans", validateBody(banCreateSchema), async (_req, res) => {
   try {
-    const { ipAddress, reason } = req.body ?? {};
-    if (typeof ipAddress !== "string" || !ipAddress.trim()) {
-      res.status(400).json({ error: "ipAddress is required" });
-      return;
-    }
+    const { ipAddress, reason } = res.locals.body as { ipAddress: string; reason?: string };
     const ban = await prisma.bannedIp.upsert({
-      where: { ipAddress: ipAddress.trim() },
-      update: { reason: typeof reason === "string" ? reason.slice(0, 500) : null },
-      create: { ipAddress: ipAddress.trim(), reason: typeof reason === "string" ? reason.slice(0, 500) : null },
+      where: { ipAddress },
+      update: { reason: reason ?? null },
+      create: { ipAddress, reason: reason ?? null },
     });
     await bus.publish("admin:ban", { ipAddress: ban.ipAddress, reason: ban.reason });
     addLog("ban", `IP ${ban.ipAddress} banned`);

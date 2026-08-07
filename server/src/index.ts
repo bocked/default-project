@@ -2,7 +2,7 @@ import http from "node:http";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import morgan from "morgan";
+import { pinoHttp } from "pino-http";
 import { Server } from "socket.io";
 import { config } from "./config.js";
 import { apiRouter } from "./routes/api.js";
@@ -10,6 +10,8 @@ import { adminRouter } from "./routes/admin.js";
 import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
+import { logger } from "./lib/logger.js";
+import { apiLimiter } from "./lib/rateLimit.js";
 import { LOCAL_UPLOADS_DIR } from "./lib/storage.js";
 
 function originAllowed(origin: string): boolean {
@@ -34,9 +36,9 @@ async function main(): Promise<void> {
   // even when Postgres is unreachable, e.g. during local development.
   try {
     await prisma.$connect();
-    console.info("[db] postgres connected");
+    logger.info("postgres connected");
   } catch (err) {
-    console.warn("[db] postgres unreachable, starting anyway:", err);
+    logger.warn({ err }, "postgres unreachable, starting anyway");
   }
   await redis.connect();
 
@@ -51,10 +53,14 @@ async function main(): Promise<void> {
     maxHttpBufferSize: 1_000_000,
   });
 
+  // Behind a single reverse proxy (Render LB / Nginx). Enables correct req.ip
+  // for rate limiting and logging.
+  app.set("trust proxy", config.trustProxy);
+
   app.use(helmet());
   app.use(cors({ origin: corsOrigin }));
   app.use(express.json({ limit: "1mb" }));
-  if (config.logToConsole) app.use(morgan(config.isDev ? "dev" : "combined"));
+  app.use(pinoHttp({ logger, autoLogging: config.logToConsole }));
 
   // Local upload fallback (R2 is used when configured)
   app.use("/uploads", express.static(LOCAL_UPLOADS_DIR));
@@ -63,17 +69,27 @@ async function main(): Promise<void> {
     res.json({ ok: true });
   });
 
-  app.use("/api", apiRouter);
+  app.use("/api", apiLimiter, apiRouter);
   app.use("/api/admin", adminRouter);
+
+  // JSON error responses (multer file-size limits, JSON parse errors, ...)
+  app.use(
+    (err: Error & { statusCode?: number; status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      const status = err.statusCode ?? err.status ?? 500;
+      const message = status >= 500 ? "Internal server error" : err.message;
+      if (status >= 500) logger.error({ err }, "request failed");
+      res.status(status).json({ error: message });
+    }
+  );
 
   initSocket(io);
 
   server.listen(config.port, () => {
-    console.info(`[server] listening on http://localhost:${config.port}`);
+    logger.info(`listening on http://localhost:${config.port}`);
   });
 
   const shutdown = async (): Promise<void> => {
-    console.info("[server] shutting down");
+    logger.info("shutting down");
     io.close();
     server.close();
     await prisma.$disconnect();
@@ -84,6 +100,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("[server] fatal startup error", err);
+  logger.error({ err }, "fatal startup error");
   process.exit(1);
 });

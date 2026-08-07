@@ -1,5 +1,6 @@
 import { Redis } from "ioredis";
 import { config } from "../config.js";
+import { logger } from "./logger.js";
 
 /**
  * Thin wrapper around ioredis. When REDIS_URL is not configured (or the
@@ -25,7 +26,7 @@ class RedisClient {
 
   async connect(): Promise<void> {
     if (!this.url) {
-      console.warn("[redis] REDIS_URL not set - running in memory mode");
+      logger.warn("REDIS_URL not set - running in memory mode");
       return;
     }
     try {
@@ -40,9 +41,9 @@ class RedisClient {
       await client.connect();
       this._client = client;
       this._ready = true;
-      console.info("[redis] connected");
+      logger.info("redis connected");
     } catch (err) {
-      console.warn("[redis] connection failed, falling back to memory mode:", err);
+      logger.warn({ err }, "redis connection failed, falling back to memory mode");
       this._client = null;
       this._ready = false;
     }
