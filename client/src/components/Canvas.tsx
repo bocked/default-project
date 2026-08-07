@@ -6,6 +6,8 @@ import type { CanvasItem } from "@/lib/types";
 import Toolbar from "./Toolbar";
 import AdminPanel from "./AdminPanel";
 import AuthBar from "./AuthBar";
+import RoomSwitcher from "./RoomSwitcher";
+import { useAuth } from "./AuthProvider";
 
 type Tool = "MOVE" | "TEXT" | "STICKY" | "IMAGE";
 
@@ -52,6 +54,10 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
   const [showAdmin, setShowAdmin] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [reportFor, setReportFor] = useState<CanvasItem | null>(null);
+  const [reportReason, setReportReason] = useState("");
+  const [lastDeletedId, setLastDeletedId] = useState<string | null>(null);
+  const { user } = useAuth();
 
   const worldToScreen = useCallback(
     (p: { x: number; y: number }) => ({ x: p.x * zoom + offset.x, y: p.y * zoom + offset.y }),
@@ -209,6 +215,37 @@ export default function Canvas({ api }: { api: CanvasApi }) {
     [pendingImage, api, addItem, notify]
   );
 
+  const isOwner = useCallback(
+    (item: CanvasItem) => (item.userId ? user?.id === item.userId : false),
+    [user]
+  );
+  const isStaff = useCallback((u: typeof user) => u?.role === "ADMIN" || u?.role === "MODERATOR", []);
+
+  const handleDelete = useCallback(
+    (item: CanvasItem) => {
+      api.deleteItem(item.id);
+      setLastDeletedId(item.id);
+      notify("Element o'chirildi");
+    },
+    [api, notify]
+  );
+
+  const submitReport = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!reportFor) return;
+      try {
+        await api.reportItem(reportFor.id, reportReason.trim());
+        setReportFor(null);
+        setReportReason("");
+        notify("Hisobot yuborildi");
+      } catch (err) {
+        notify(err instanceof Error ? err.message : "Hisobot yuborilmadi");
+      }
+    },
+    [reportFor, reportReason, api, notify]
+  );
+
   if (banned) {
     return (
       <div className="flex h-full items-center justify-center bg-slate-100">
@@ -305,6 +342,35 @@ export default function Canvas({ api }: { api: CanvasApi }) {
                     ))}
                   </div>
                 )}
+
+                {/* Hover actions: report + (delete when owned / staff) */}
+                {isHovered && (user || isOwner(item)) && (
+                  <div className="absolute top-2 right-2 flex gap-1">
+                    <button
+                      className="rounded-md bg-white/90 px-1.5 py-0.5 text-xs text-slate-600 shadow transition hover:bg-white"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        setReportFor(item);
+                        setReportReason("");
+                      }}
+                      title="Hisobot berish"
+                    >
+                      ⚑
+                    </button>
+                    {(isOwner(item) || isStaff(user)) && (
+                      <button
+                        className="rounded-md bg-white/90 px-1.5 py-0.5 text-xs text-red-600 shadow transition hover:bg-white"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          handleDelete(item);
+                        }}
+                        title="O'chirish"
+                      >
+                        🗑
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -381,6 +447,26 @@ export default function Canvas({ api }: { api: CanvasApi }) {
         <AuthBar />
       </div>
 
+      {/* Rooms */}
+      <RoomSwitcher api={api} />
+
+      {/* Undo chip after own delete */}
+      {lastDeletedId && (
+        <div className="absolute bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 shadow-lg">
+          <span className="text-sm text-white">{"Element o'chirildi"}</span>
+          <button
+            className="rounded-full bg-white/15 px-2.5 py-0.5 text-sm font-medium text-white transition hover:bg-white/25"
+            onClick={() => {
+              api.undoItem(lastDeletedId);
+              setLastDeletedId(null);
+              notify("Element tiklandi");
+            }}
+          >
+            Bekor qilish
+          </button>
+        </div>
+      )}
+
       {/* Zoom controls */}
       <div className="pointer-events-none absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/90 px-2 py-1 shadow">
         <button
@@ -405,6 +491,50 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       )}
 
       {showAdmin && <AdminPanel api={api} onClose={() => setShowAdmin(false)} />}
+
+      {reportFor && (
+        <div
+          className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-900/40"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            setReportFor(null);
+          }}
+        >
+          <form
+            className="w-80 rounded-xl bg-white p-4 shadow-xl"
+            onSubmit={submitReport}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-1 text-sm font-semibold text-slate-800">Hisobot berish</h3>
+            <p className="mb-3 text-xs text-slate-400">{"Ushbu element moderatorlar ko'rib chiqishi uchun belgilanadi."}</p>
+            <textarea
+              autoFocus
+              className="mb-2 h-24 w-full resize-none rounded-md border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400"
+              placeholder="Sabab (kamida 3 belgi)"
+              value={reportReason}
+              onChange={(e) => setReportReason(e.target.value)}
+              minLength={3}
+              maxLength={500}
+              required
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="flex-1 rounded-md bg-slate-100 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-200"
+                onClick={() => setReportFor(null)}
+              >
+                Bekor qilish
+              </button>
+              <button
+                type="submit"
+                className="flex-1 rounded-md bg-red-600 py-1.5 text-sm font-medium text-white transition hover:bg-red-500"
+              >
+                Yuborish
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

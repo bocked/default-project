@@ -56,6 +56,17 @@ export interface CanvasItem {
   reactions: Record<string, number>;
   userId: string | null;
   authorName: string | null;
+  roomId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PublicRoom {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  isPublic: boolean;
+  itemCount: number;
+  createdAt: string;
 }

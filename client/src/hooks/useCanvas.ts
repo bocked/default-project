@@ -11,6 +11,7 @@ import type {
   Identity,
   ItemType,
   PresenceUser,
+  PublicRoom,
 } from "@/lib/types";
 
 const CURSOR_TTL_MS = 6000;
@@ -27,6 +28,39 @@ export function useCanvas() {
   const [online, setOnline] = useState(0);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminLogs, setAdminLogs] = useState<AdminLogEntry[]>([]);
+  const [currentRoom, setCurrentRoom] = useState<PublicRoom | null>(null);
+  const [rooms, setRooms] = useState<PublicRoom[]>([]);
+  const [roomError, setRoomError] = useState<string | null>(null);
+
+  // Mirrors the current room id for use inside socket listeners.
+  const roomIdRef = useRef<string | null>(null);
+  const roomPasswordRef = useRef<string | null>(null);
+
+  const fetchMainItems = useCallback(async () => {
+    try {
+      const res = await fetch(`${config.url}/api/items`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { items: CanvasItem[] };
+      setItems(data.items);
+    } catch {
+      /* server unreachable - socket will keep retrying */
+    }
+  }, []);
+
+  const fetchRoomItems = useCallback(async (slug: string, password?: string) => {
+    try {
+      const res = await fetch(`${config.url}/api/rooms/${slug}/items`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { items: CanvasItem[] };
+      setItems(data.items);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     const socket = io(config.url, {
@@ -36,7 +70,12 @@ export function useCanvas() {
     });
     socketRef.current = socket;
 
-    socket.on("connect", () => setConnected(true));
+    socket.on("connect", () => {
+      setConnected(true);
+      // Fresh connection always starts on the public canvas.
+      setCurrentRoom(null);
+      roomIdRef.current = null;
+    });
     socket.on("disconnect", () => setConnected(false));
 
     socket.on("connect_error", () => {
@@ -84,7 +123,9 @@ export function useCanvas() {
       });
     });
 
-    socket.on("presence:update", (payload: { users: PresenceUser[]; online: number }) => {
+    socket.on("presence:update", (payload: { roomId?: string | null; users: PresenceUser[]; online: number }) => {
+      // Only apply presence matching the room we are currently in.
+      if ((payload.roomId ?? null) !== roomIdRef.current) return;
       setPresence(payload.users);
       setOnline(payload.online);
     });
@@ -97,11 +138,33 @@ export function useCanvas() {
       setAdminLogs((prev) => [...prev.slice(-199), entry]);
     });
 
+    socket.on("room:joined", (payload: { room: PublicRoom }) => {
+      setCurrentRoom(payload.room);
+      roomIdRef.current = payload.room.id;
+      setRoomError(null);
+      setItems([]);
+      void fetchRoomItems(payload.room.slug, roomPasswordRef.current ?? undefined).then(() => {
+        roomPasswordRef.current = null;
+      });
+    });
+
+    socket.on("room:left", () => {
+      setCurrentRoom(null);
+      roomIdRef.current = null;
+      setItems([]);
+      void fetchMainItems();
+    });
+
+    socket.on("room:error", (payload: { error: string }) => {
+      roomPasswordRef.current = null;
+      setRoomError(payload.error);
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [token]);
+  }, [token, fetchMainItems, fetchRoomItems]);
 
   // Prune stale cursors periodically.
   useEffect(() => {
@@ -143,6 +206,13 @@ export function useCanvas() {
     (id: string) => {
       setItems((prev) => prev.filter((i) => i.id !== id));
       send("canvas:item-delete", { id });
+    },
+    [send]
+  );
+
+  const undoItem = useCallback(
+    (id: string) => {
+      send("canvas:item-undo", { id });
     },
     [send]
   );
@@ -205,16 +275,67 @@ export function useCanvas() {
     return data.url;
   }, [token]);
 
-  const fetchInitialItems = useCallback(async () => {
+  const fetchInitialItems = useCallback(() => {
+    void fetchMainItems();
+  }, [fetchMainItems]);
+
+  const fetchRooms = useCallback(async () => {
     try {
-      const res = await fetch(`${config.url}/api/items`);
+      const res = await fetch(`${config.url}/api/rooms`);
       if (!res.ok) return;
-      const data = (await res.json()) as { items: CanvasItem[] };
-      setItems(data.items);
+      const data = (await res.json()) as { rooms: PublicRoom[] };
+      setRooms(data.rooms);
     } catch {
-      /* server unreachable - socket will keep retrying */
+      /* server unreachable */
     }
   }, []);
+
+  const joinRoom = useCallback(
+    (slug: string, password?: string) => {
+      roomPasswordRef.current = password ?? null;
+      setRoomError(null);
+      send("room:join", { slug, password });
+    },
+    [send]
+  );
+
+  const leaveRoom = useCallback(() => {
+    send("room:leave");
+  }, [send]);
+
+  const createRoom = useCallback(
+    async (input: { name: string; description?: string; isPublic?: boolean; password?: string }) => {
+      if (!token) throw new Error("Xona yaratish uchun hisobga kiring");
+      const res = await fetch(`${config.url}/api/rooms`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(input),
+      });
+      const data = (await res.json().catch(() => ({}))) as { room?: PublicRoom; error?: string };
+      if (!res.ok || !data.room) throw new Error(data.error ?? "Xona yaratilmadi");
+      return data.room;
+    },
+    [token]
+  );
+
+  const reportItem = useCallback(
+    async (itemId: string, reason: string) => {
+      const res = await fetch(`${config.url}/api/report`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ itemId, reason }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Hisobot yuborilmadi");
+    },
+    [token]
+  );
 
   return {
     connected,
@@ -226,9 +347,13 @@ export function useCanvas() {
     online,
     isAdmin,
     adminLogs,
+    currentRoom,
+    rooms,
+    roomError,
     addItem,
     moveItem,
     deleteItem,
+    undoItem,
     react,
     updateCursor,
     adminAuth,
@@ -237,6 +362,11 @@ export function useCanvas() {
     adminDeleteItem,
     uploadImage,
     fetchInitialItems,
+    fetchRooms,
+    joinRoom,
+    leaveRoom,
+    createRoom,
+    reportItem,
   };
 }
 
