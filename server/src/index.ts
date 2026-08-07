@@ -4,6 +4,7 @@ import cors from "cors";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import { Server } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
 import { config } from "./config.js";
 import { apiRouter } from "./routes/api.js";
 import { adminRouter } from "./routes/admin.js";
@@ -61,6 +62,20 @@ async function main(): Promise<void> {
     },
     maxHttpBufferSize: 1_000_000,
   });
+
+  // Redis adapter enables cross-instance broadcasts + presence. When Redis is
+  // unavailable we fall back to a single-instance in-memory adapter so the
+  // server still works locally.
+  if (redis.available) {
+    try {
+      const pub = redis.client!.duplicate();
+      const sub = redis.client!.duplicate();
+      io.adapter(createAdapter(pub, sub));
+      logger.info("socket.io using redis adapter");
+    } catch (err) {
+      logger.warn({ err }, "redis adapter init failed, using in-memory adapter");
+    }
+  }
 
   // Behind a single reverse proxy (Render LB / Nginx). Enables correct req.ip
   // for rate limiting and logging.
