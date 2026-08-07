@@ -27,6 +27,8 @@ services:
         value: "https://default-project-bza.pages.dev,https://*.pages.dev,https://yerlikoglon.uz,https://www.yerlikoglon.uz,http://localhost:3000"
       - key: PUBLIC_BASE_URL
         value: "https://yerlikoglon-backend.onrender.com"
+      - key: SENTRY_DSN
+        sync: false
       - key: R2_ACCOUNT_ID
         sync: false
       - key: R2_ACCESS_KEY_ID

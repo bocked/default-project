@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import { config } from "@/lib/config";
+import { captureException } from "@/lib/sentry";
 import { useAuth } from "@/components/AuthProvider";
 import type {
   AdminLogEntry,
@@ -48,8 +49,9 @@ export function useCanvas() {
       setItems(data.items);
       nextCursorRef.current = data.next ?? null;
       setHasMore(Boolean(data.next));
-    } catch {
+    } catch (err) {
       /* server unreachable - socket will keep retrying */
+      captureException(err, { context: "fetchMainItems" });
     }
   }, []);
 
@@ -68,8 +70,9 @@ export function useCanvas() {
       });
       nextCursorRef.current = data.next ?? null;
       setHasMore(Boolean(data.next));
-    } catch {
+    } catch (err) {
       /* ignore */
+      captureException(err, { context: "loadOlderItems" });
     } finally {
       loadingOlderRef.current = false;
       setLoadingOlder(false);
@@ -86,8 +89,9 @@ export function useCanvas() {
       if (!res.ok) return;
       const data = (await res.json()) as { items: CanvasItem[] };
       setItems(data.items);
-    } catch {
+    } catch (err) {
       /* ignore */
+      captureException(err, { context: "fetchRoomItems" });
     }
   }, []);
 
@@ -316,8 +320,9 @@ export function useCanvas() {
       if (!res.ok) return;
       const data = (await res.json()) as { rooms: PublicRoom[] };
       setRooms(data.rooms);
-    } catch {
+    } catch (err) {
       /* server unreachable */
+      captureException(err, { context: "fetchRooms" });
     }
   }, []);
 

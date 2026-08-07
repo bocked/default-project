@@ -16,6 +16,7 @@ import { prisma } from "./lib/prisma.js";
 import { logger } from "./lib/logger.js";
 import { apiLimiter } from "./lib/rateLimit.js";
 import { LOCAL_UPLOADS_DIR } from "./lib/storage.js";
+import { initSentry, setupSentryErrorHandler, captureException } from "./lib/sentry.js";
 
 function originAllowed(origin: string): boolean {
   const origins = config.corsOrigins;
@@ -35,6 +36,10 @@ function corsOrigin(origin: string | undefined, callback: (err: Error | null, al
 }
 
 async function main(): Promise<void> {
+  // Sentry must be initialised before anything else so errors are captured
+  // from the very first request. It is a no-op without SENTRY_DSN.
+  initSentry();
+
   // DB connect is best-effort: the HTTP + socket layers stay up (read-only)
   // even when Postgres is unreachable, e.g. during local development.
   try {
@@ -98,12 +103,18 @@ async function main(): Promise<void> {
   app.use("/api/rooms", roomsRouter);
   app.use("/api/admin", adminRouter);
 
+  // Sentry error handler first (captures), then the JSON responder below.
+  setupSentryErrorHandler(app);
+
   // JSON error responses (multer file-size limits, JSON parse errors, ...)
   app.use(
     (err: Error & { statusCode?: number; status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const status = err.statusCode ?? err.status ?? 500;
       const message = status >= 500 ? "Internal server error" : err.message;
-      if (status >= 500) logger.error({ err }, "request failed");
+      if (status >= 500) {
+        logger.error({ err }, "request failed");
+        captureException(err, { status });
+      }
       res.status(status).json({ error: message });
     }
   );
@@ -127,5 +138,6 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   logger.error({ err }, "fatal startup error");
+  captureException(err, { stage: "startup" });
   process.exit(1);
 });

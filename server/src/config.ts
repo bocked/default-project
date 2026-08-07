@@ -32,6 +32,8 @@ export const config = {
   maxUploadBytes: num(process.env.MAX_UPLOAD_BYTES, 10 * 1024 * 1024),
   logToConsole: bool(process.env.LOG_TO_CONSOLE, true),
   logLevel: process.env.LOG_LEVEL ?? "info",
+  sentryDsn: process.env.SENTRY_DSN ?? "",
+  sentryTracesSampleRate: num(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.1),
   // Number of trusted reverse-proxy hops (Render LB / Nginx).
   trustProxy: num(process.env.TRUST_PROXY, 1),
   r2: {
