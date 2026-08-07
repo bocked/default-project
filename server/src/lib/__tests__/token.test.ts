@@ -12,7 +12,7 @@ describe("token", () => {
   it("rejects a tampered token", async () => {
     const token = await signToken({ sub: "u1", username: "ali", role: "USER" });
     const [h, p, s] = token.split(".");
-    const tampered = `${h}.${p}.${s.slice(0, -1)}x`;
+    const tampered = `${h}.${p}.${s.slice(0, -1)}`;
     expect(await verifyToken(tampered)).toBeNull();
   });
 
