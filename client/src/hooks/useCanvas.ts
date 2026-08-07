@@ -6,6 +6,7 @@ import { config } from "@/lib/config";
 import { captureException } from "@/lib/sentry";
 import { useAuth } from "@/components/AuthProvider";
 import type {
+  ActivityEntry,
   AdminLogEntry,
   CanvasItem,
   CursorPayload,
@@ -35,6 +36,7 @@ export function useCanvas() {
   const [roomError, setRoomError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
 
   // Mirrors the current room id for use inside socket listeners.
   const roomIdRef = useRef<string | null>(null);
@@ -166,6 +168,13 @@ export function useCanvas() {
     });
 
     socket.on("canvas:clear", () => setItems([]));
+
+    socket.on("canvas:activity", (entry: ActivityEntry) => {
+      setActivity((prev) => {
+        if (prev.some((a) => a.id === entry.id)) return prev;
+        return [entry, ...prev].slice(0, 50);
+      });
+    });
 
     socket.on("cursor:move", (payload: CursorPayload) => {
       const now = Date.now();
@@ -379,6 +388,18 @@ export function useCanvas() {
     }
   }, []);
 
+  const fetchActivity = useCallback(async () => {
+    try {
+      const res = await fetch(`${config.url}/api/activity?limit=50`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { activity: ActivityEntry[] };
+      setActivity(data.activity);
+    } catch (err) {
+      /* server unreachable */
+      captureException(err, { context: "fetchActivity" });
+    }
+  }, []);
+
   const joinRoom = useCallback(
     (slug: string, password?: string) => {
       roomPasswordRef.current = password ?? null;
@@ -464,6 +485,8 @@ export function useCanvas() {
     hasMore,
     loadingOlder,
     loadOlderItems,
+    activity,
+    fetchActivity,
   };
 }
 

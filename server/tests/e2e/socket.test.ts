@@ -197,4 +197,54 @@ describe("E2E: Socket.IO flows (init, presence, items, reactions, rooms)", () =>
     expect(found?.width).toBe(400);
     expect(found?.height).toBe(300);
   });
+
+  it("broadcasts canvas:activity on item changes and exposes GET /api/activity", async () => {
+    const item = await prisma.canvasItem.create({
+      data: {
+        type: "STICKY",
+        content: "faoliyat logi",
+        x: 12,
+        y: 13,
+        color: "#fef08a",
+        ipAddress: "127.0.0.1",
+        userId,
+      },
+    });
+
+    const updated = waitEvent(
+      "canvas:activity",
+      (p: any) => p.itemId === item.id && p.action === "update"
+    );
+    socket.emit("canvas:item-update", { id: item.id, content: "faoliyat yangilandi" });
+    const payload = await updated;
+    expect(payload.itemType).toBe("STICKY");
+    expect(payload.preview).toBe("faoliyat yangilandi");
+    expect(payload.actorName).toBeTruthy();
+    expect(payload.roomId).toBeNull();
+
+    const res = await request(base, "GET", "/api/activity?limit=50");
+    const matches = res.json.activity.filter((a: any) => a.itemId === item.id);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+    expect(matches[0].action).toBe("update");
+  });
+
+  it("does not broadcast canvas:activity for item moves", async () => {
+    const item = await prisma.canvasItem.create({
+      data: {
+        type: "TEXT",
+        content: "siljuvchi",
+        x: 20,
+        y: 20,
+        ipAddress: "127.0.0.1",
+        userId,
+      },
+    });
+    const moved = onceMatch(
+      (cb) => socket.on("canvas:activity", cb),
+      (p: any) => p.itemId === item.id,
+      700
+    ).catch(() => null);
+    socket.emit("canvas:item-move", { id: item.id, x: 30, y: 30 });
+    expect(await moved).toBeNull();
+  });
 });

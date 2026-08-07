@@ -72,3 +72,14 @@ export interface PublicRoom {
   itemCount: number;
   createdAt: string;
 }
+
+export interface ActivityEntry {
+  id: string;
+  action: "create" | "move" | "update" | "delete" | "undo";
+  itemId: string;
+  itemType: ItemType;
+  preview: string;
+  actorName: string | null;
+  at: string;
+  roomId: string | null;
+}

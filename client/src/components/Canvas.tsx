@@ -8,6 +8,7 @@ import AdminPanel from "./AdminPanel";
 import AuthBar from "./AuthBar";
 import RoomSwitcher from "./RoomSwitcher";
 import CollaborationPanel from "./CollaborationPanel";
+import ActivityPanel from "./ActivityPanel";
 import { useAuth } from "./AuthProvider";
 
 type Tool = "MOVE" | "TEXT" | "STICKY" | "IMAGE";
@@ -793,6 +794,9 @@ export default function Canvas({ api }: { api: CanvasApi }) {
 
       {/* Online users + guest identity */}
       <CollaborationPanel api={api} />
+
+      {/* Activity feed */}
+      <ActivityPanel api={api} />
 
       {/* Undo chip after own delete */}
       {lastDeletedId && (

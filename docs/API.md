@@ -18,6 +18,7 @@ Format: JSON. Errors: `{ "error": "<message>" }` with a 4xx/5xx status.
 |---|---|---|---|
 | GET | `/api/health` | — | `{ ok: true }` |
 | GET | `/api/online` | — | `{ online: number }` — onlayn foydalanuvchilar |
+| GET | `/api/activity` | — | `{ activity }` — so'nggi 50 ta element faoliyati (create/update/delete/undo) |
 | GET | `/api/items` | — | Bosh kanvas elementlari. Query: `limit` (1–2000, default 500), `before` (cursor, eski sahifalar), `minX/maxX/minY/maxY` (bbox). Javob: `{ items, next }`. Birinchi sahifa 1.5s cache'lanadi. |
 | POST | `/api/items` | opsional user | `{ type: "TEXT"\|"STICKY", content, x, y, color? }` → `{ item }`. Matn profanity filterdan o'tadi. |
 | POST | `/api/upload` | bloklanmagan IP | `multipart/form-data`, maydon `file` (image/*) → `{ url }`. R2'ga (yoki lokal) yuklanadi; MIME magic-bytes tekshiriladi. |
@@ -93,6 +94,7 @@ Ulanish: `io(BASE_URL, { auth: { token } })` — `token` ixtiyoriy (mehmon sifat
 | `canvas:item-delete` | `{ id, roomId? }` |
 | `identity:updated` | `{ name, color }` — o'z identity'ingiz yangilanganda |
 | `canvas:item-reaction` | `{ id, reactions }` |
+| `canvas:activity` | `{ id, action, itemId, itemType, preview, actorName, at, roomId }` — yangi faoliyat |
 | `canvas:clear` | — |
 | `cursor:move` | `{ id, x, y, color, name }` |
 | `presence:update` | `{ roomId?, users, online }` |

@@ -14,6 +14,7 @@ import { attachUser } from "../middleware/auth.js";
 import { z } from "zod";
 import { sniffImageMime } from "../lib/storage.js";
 import { cache, CACHE_TTL } from "../lib/cache.js";
+import { recordItemEdit } from "../lib/activity.js";
 
 export const apiRouter = Router();
 
@@ -155,6 +156,13 @@ apiRouter.post("/items", requireNotBanned, attachUser, strictLimiter, validateBo
       },
     });
     await bus.publish("canvas:item-add", { item: publicItem(item) });
+    void recordItemEdit({
+      itemId: item.id,
+      action: "create",
+      snapshot: { type, content: item.content, x, y },
+      actorId: req.user?.sub ?? null,
+      actorName: req.user?.displayName ?? req.user?.username ?? null,
+    });
     const responseItem = {
       ...publicItem(item),
       authorName: req.user?.displayName ?? null,
@@ -162,6 +170,32 @@ apiRouter.post("/items", requireNotBanned, attachUser, strictLimiter, validateBo
     res.json({ item: responseItem });
   } catch {
     res.status(500).json({ error: "Failed to create item" });
+  }
+});
+
+// GET /api/activity - recent item activity feed (from the ItemEdit history)
+apiRouter.get("/activity", async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+    const edits = await prisma.itemEdit.findMany({
+      orderBy: { at: "desc" },
+      take: limit,
+      include: { item: { select: { type: true, content: true, roomId: true } } },
+    });
+    res.json({
+      activity: edits.map((e) => ({
+        id: e.id,
+        action: e.action,
+        itemId: e.itemId,
+        itemType: e.item.type,
+        preview: e.item.content.slice(0, 120),
+        actorName: e.actorName ?? null,
+        at: e.at.toISOString(),
+        roomId: e.item.roomId,
+      })),
+    });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
   }
 });
 

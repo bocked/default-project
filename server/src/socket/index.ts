@@ -7,6 +7,7 @@ import { clientIp } from "../lib/ip.js";
 import { addLog } from "../lib/logstore.js";
 import { setOnlineCount } from "../routes/api.js";
 import { password } from "../lib/password.js";
+import { recordItemEdit } from "../lib/activity.js";
 import { presence, randomGuestName, randomCursorColor } from "./presence.js";
 import {
   syncRoom as syncPresenceRoom,
@@ -83,19 +84,13 @@ async function recordEdit(
   snapshot: unknown,
   socket: Socket
 ): Promise<void> {
-  try {
-    await prisma.itemEdit.create({
-      data: {
-        itemId,
-        action,
-        snapshot: JSON.stringify(snapshot),
-        actorId: socket.data.userId ?? null,
-        actorName: (socket.data.user?.displayName ?? socket.data.user?.username) ?? null,
-      },
-    });
-  } catch {
-    /* history is best-effort */
-  }
+  await recordItemEdit({
+    itemId,
+    action,
+    snapshot,
+    actorId: socket.data.userId ?? null,
+    actorName: socket.data.user?.displayName ?? socket.data.user?.username ?? null,
+  });
 }
 
 function scheduleMoveHistory(socket: Socket, itemId: string, x: number, y: number): void {
@@ -160,6 +155,7 @@ export function initSocket(io: Server): void {
     emitToRoom(io, p.roomId ?? null, "canvas:item-reaction", payload);
   });
   bus.subscribe("canvas:clear", () => io.emit("canvas:clear"));
+  bus.subscribe("canvas:activity", (payload) => io.emit("canvas:activity", payload));
   bus.subscribe("presence:update", (payload) => {
     const p = payload as { roomId?: string | null };
     emitToRoom(io, p.roomId ?? null, "presence:update", payload);
