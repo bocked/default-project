@@ -60,7 +60,7 @@ export default function Toolbar({
   };
 
   return (
-    <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 shadow-lg backdrop-blur">
+    <div className="pointer-events-auto flex min-w-0 max-w-[calc(100vw-1rem)] items-center gap-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 shadow-lg backdrop-blur [&>*]:shrink-0">
       <div className="flex items-center gap-1">
         {TOOLS.map((t) => (
           <button

@@ -100,6 +100,8 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   const [editing, setEditing] = useState<EditState | null>(null);
   const [resize, setResize] = useState<ResizeState | null>(null);
   const resizeSendRef = useRef<{ last: number } | null>(null);
+  const touchPointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ prevDist: number } | null>(null);
   const [pendingText, setPendingText] = useState<{ x: number; y: number } | null>(null);
   const [pendingImage, setPendingImage] = useState<{ x: number; y: number } | null>(null);
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
@@ -156,6 +158,28 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   }, [offset]);
 
   const notify = useCallback((msg: string) => setToast(msg), []);
+
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const cx = rect.width / 2;
+      const cy = rect.height / 2;
+      const world = screenToWorld({ x: cx, y: cy });
+      const next = Math.min(4, Math.max(0.2, zoom * factor));
+      setOffset({ x: cx - world.x * next, y: cy - world.y * next });
+      setZoom(next);
+    },
+    [zoom, screenToWorld]
+  );
+
+  const zoomReset = useCallback(() => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setZoom(1);
+    setOffset({ x: rect.width / 2, y: rect.height / 2 });
+  }, []);
+
 
   const handleExport = useCallback(
     async (format: ExportFormat) => {
@@ -237,6 +261,25 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const client = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+      // Pinch zoom (two-finger touch).
+      if (touchPointers.current.size >= 2 && e.pointerType === "touch") {
+        touchPointers.current.set(e.pointerId, client);
+        const pts = [...touchPointers.current.values()];
+        if (pts.length >= 2) {
+          const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+          if (pinchRef.current && pinchRef.current.prevDist > 0) {
+            const next = Math.min(4, Math.max(0.2, zoom * (dist / pinchRef.current.prevDist)));
+            const world = screenToWorld(mid);
+            setOffset({ x: mid.x - world.x * next, y: mid.y - world.y * next });
+            setZoom(next);
+          }
+          pinchRef.current = { prevDist: dist };
+        }
+        return;
+      }
+
       setMouse(client);
       const world = screenToWorld(client);
       updateCursor(world.x, world.y);
@@ -280,6 +323,17 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       const client = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       const world = screenToWorld(client);
 
+      // Track touch pointers; the second finger switches to pinch zoom.
+      if (e.pointerType === "touch") {
+        touchPointers.current.set(e.pointerId, client);
+        if (touchPointers.current.size >= 2) {
+          const pts = [...touchPointers.current.values()];
+          pinchRef.current = { prevDist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) };
+          setPanning(null);
+          return;
+        }
+      }
+
       if (template) {
         addItem(template.type, template.content, Math.round(world.x), Math.round(world.y), template.color);
         setTemplate(null);
@@ -314,6 +368,15 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       resizeSendRef.current = null;
     }
   }, [resize, items, resizeItem]);
+
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      touchPointers.current.delete(e.pointerId);
+      if (touchPointers.current.size < 2) pinchRef.current = null;
+      endPointer();
+    },
+    [endPointer]
+  );
 
   const handleItemPointerDown = useCallback(
     (e: React.PointerEvent, item: CanvasItem) => {
@@ -438,8 +501,8 @@ export default function Canvas({ api }: { api: CanvasApi }) {
         backgroundPosition: `${offset.x}px ${offset.y}px`,
       }}
       onPointerMove={handlePointerMove}
-      onPointerUp={endPointer}
-      onPointerCancel={endPointer}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
       onPointerLeave={endPointer}
       onPointerDown={handleBackgroundPointerDown}
       onDoubleClick={handleDoubleClick}
@@ -466,6 +529,12 @@ export default function Canvas({ api }: { api: CanvasApi }) {
                 onPointerDown={(e) => handleItemPointerDown(e, item)}
                 onPointerEnter={() => setHoveredId(item.id)}
                 onPointerLeave={() => setHoveredId(null)}
+                onClick={(e) => {
+                  if (!window.matchMedia("(pointer: coarse)").matches) return;
+                  if ((e.target as HTMLElement).closest("button")) return;
+                  e.stopPropagation();
+                  setHoveredId((prev) => (prev === item.id ? null : item.id));
+                }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   if ((item.type === "TEXT" || item.type === "STICKY") && (isOwner(item) || isStaff(user))) {
@@ -838,19 +907,28 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       )}
 
       {/* Zoom controls */}
-      <div className="pointer-events-none absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/90 px-2 py-1 shadow">
+      <div className="pointer-events-auto absolute right-3 bottom-4 z-40 flex items-center gap-1 rounded-full bg-white/90 px-2 py-1 shadow">
         <button
-          className="pointer-events-auto rounded-full px-2 text-lg text-slate-600 hover:bg-slate-100"
-          onClick={() => setZoom((z) => Math.max(0.2, z * 0.85))}
+          className="rounded-full px-2 text-lg text-slate-600 hover:bg-slate-100"
+          onClick={() => zoomBy(0.8)}
+          title="Kichraytirish"
         >
           −
         </button>
         <span className="w-12 text-center text-xs font-medium text-slate-600">{Math.round(zoom * 100)}%</span>
         <button
-          className="pointer-events-auto rounded-full px-2 text-lg text-slate-600 hover:bg-slate-100"
-          onClick={() => setZoom((z) => Math.min(4, z * 1.18))}
+          className="rounded-full px-2 text-lg text-slate-600 hover:bg-slate-100"
+          onClick={() => zoomBy(1.25)}
+          title="Kattalashtirish"
         >
           +
+        </button>
+        <button
+          className="rounded-full px-2 text-sm text-slate-600 hover:bg-slate-100"
+          onClick={zoomReset}
+          title="100% ga qaytarish"
+        >
+          ⤢
         </button>
       </div>
 
