@@ -1,6 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import type { Identity } from "@/lib/types";
+
+export interface ToolTemplate {
+  key: string;
+  type: "STICKY" | "TEXT";
+  label: string;
+  icon: string;
+  content: string;
+  color: string;
+}
 
 export interface ToolbarProps {
   tool: "MOVE" | "TEXT" | "STICKY" | "IMAGE";
@@ -11,6 +21,9 @@ export interface ToolbarProps {
   online: number;
   connected: boolean;
   identity: Identity | null;
+  templates: ToolTemplate[];
+  activeTemplateKey: string | null;
+  onPickTemplate: (key: string | null) => void;
   onAdmin: () => void;
 }
 
@@ -21,7 +34,22 @@ const TOOLS: { key: ToolbarProps["tool"]; label: string; icon: string }[] = [
   { key: "IMAGE", label: "Rasm", icon: "🖼️" },
 ];
 
-export default function Toolbar({ tool, setTool, color, setColor, colors, online, connected, identity, onAdmin }: ToolbarProps) {
+export default function Toolbar({
+  tool,
+  setTool,
+  color,
+  setColor,
+  colors,
+  online,
+  connected,
+  identity,
+  templates,
+  activeTemplateKey,
+  onPickTemplate,
+  onAdmin,
+}: ToolbarProps) {
+  const [openTemplates, setOpenTemplates] = useState(false);
+
   return (
     <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 shadow-lg backdrop-blur">
       <div className="flex items-center gap-1">
@@ -38,6 +66,57 @@ export default function Toolbar({ tool, setTool, color, setColor, colors, online
             {t.icon}
           </button>
         ))}
+      </div>
+
+      {/* Templates */}
+      <div className="relative">
+        <button
+          title="Shablonlar"
+          aria-pressed={activeTemplateKey !== null}
+          className={`flex h-9 w-9 items-center justify-center rounded-lg text-lg transition-transform active:scale-90 ${
+            activeTemplateKey !== null
+              ? "animate-pop-in bg-amber-100 text-amber-600"
+              : "text-slate-500 hover:scale-105 hover:bg-slate-100"
+          }`}
+          onClick={() => {
+            if (activeTemplateKey) {
+              onPickTemplate(null);
+              return;
+            }
+            setOpenTemplates((o) => !o);
+          }}
+        >
+          📋
+        </button>
+        {openTemplates && (
+          <div className="animate-slide-up absolute top-11 left-0 z-50 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+            <p className="px-2 py-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+              Shablonni tanlang
+            </p>
+            <div className="grid grid-cols-2 gap-1">
+              {templates.map((t) => (
+                <button
+                  key={t.key}
+                  className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-xs font-medium transition active:scale-95 ${
+                    activeTemplateKey === t.key
+                      ? "bg-amber-100 text-amber-700"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                  onClick={() => {
+                    onPickTemplate(activeTemplateKey === t.key ? null : t.key);
+                    setOpenTemplates(false);
+                  }}
+                >
+                  <span className="text-base">{t.icon}</span>
+                  <span className="truncate">{t.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="px-2 pt-1 pb-0.5 text-[10px] text-slate-400">
+              Tanlangan shablonni joylashtirish uchun daftarga bosing.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-1.5">

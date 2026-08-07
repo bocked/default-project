@@ -18,6 +18,25 @@ const EMOJIS = ["👍", "❤️", "😂", "🎉", "🔥", "💯"];
 const STICKY_COLORS = ["#fef08a", "#bbf7d0", "#bfdbfe", "#fbcfe8", "#fed7aa", "#e2e8f0"];
 const TEXT_COLORS = ["#1e293b", "#334155", "#64748b", "#b91c1c", "#0f766e", "#7c3aed"];
 
+interface Template {
+  key: string;
+  type: "STICKY" | "TEXT";
+  label: string;
+  icon: string;
+  content: string;
+  color: string;
+}
+
+const TEMPLATES: Template[] = [
+  { key: "todo", type: "STICKY", label: "TODO", icon: "☑️", content: "TODO:\n- [ ] vazifa", color: "#fef08a" },
+  { key: "eslatma", type: "STICKY", label: "Eslatma", icon: "📌", content: "Eslatma:", color: "#bbf7d0" },
+  { key: "muhim", type: "STICKY", label: "Muhim", icon: "⭐", content: "Muhim!", color: "#fbcfe8" },
+  { key: "savol", type: "STICKY", label: "Savol", icon: "❓", content: "Savol:", color: "#bfdbfe" },
+  { key: "tayyor", type: "STICKY", label: "Tayyor", icon: "✅", content: "✅ Tayyor", color: "#bbf7d0" },
+  { key: "sarlavha", type: "TEXT", label: "Sarlavha", icon: "🅷", content: "Sarlavha", color: "#1e293b" },
+  { key: "xulosa", type: "TEXT", label: "Xulosa", icon: "🏁", content: "Xulosa:", color: "#334155" },
+];
+
 interface DragState {
   id: string;
   startClientX: number;
@@ -71,6 +90,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [tool, setTool] = useState<Tool>("MOVE");
   const [color, setColor] = useState(STICKY_COLORS[0]);
+  const [template, setTemplate] = useState<Template | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [panning, setPanning] = useState<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -238,6 +258,11 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       const client = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       const world = screenToWorld(client);
 
+      if (template) {
+        addItem(template.type, template.content, Math.round(world.x), Math.round(world.y), template.color);
+        setTemplate(null);
+        return;
+      }
       if (tool === "TEXT") {
         setPendingText(world);
         return;
@@ -254,7 +279,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       // MOVE: start panning.
       setPanning({ startX: client.x, startY: client.y, originX: offset.x, originY: offset.y });
     },
-    [tool, screenToWorld, offset, color, addItem]
+    [tool, template, screenToWorld, offset, color, addItem]
   );
 
   const endPointer = useCallback(() => {
@@ -384,7 +409,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
     <div
       ref={containerRef}
       className={`canvas-dot-grid relative h-full w-full touch-none overflow-hidden bg-slate-100 select-none ${
-        tool === "MOVE" ? "cursor-grab" : "cursor-crosshair"
+        tool === "MOVE" && !template ? "cursor-grab" : "cursor-crosshair"
       } ${panning ? "cursor-grabbing" : ""} ${drag ? "cursor-grabbing" : ""}`}
       style={{
         backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
@@ -688,6 +713,9 @@ export default function Canvas({ api }: { api: CanvasApi }) {
           online={online}
           connected={connected}
           identity={identity}
+          templates={TEMPLATES}
+          activeTemplateKey={template?.key ?? null}
+          onPickTemplate={(key) => setTemplate(key ? (TEMPLATES.find((t) => t.key === key) ?? null) : null)}
           onAdmin={() => setShowAdmin(true)}
         />
       </div>
