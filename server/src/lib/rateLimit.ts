@@ -25,3 +25,15 @@ export const adminLimiter = rateLimit({
   ...standard,
   message: { error: "Too many requests" },
 });
+
+/**
+ * Guard on /api/auth/register + /api/auth/login. Credential endpoints are
+ * cheap to hammer, so keep a tight per-IP window. The route mounts the
+ * general apiLimiter too; this one is intentionally stricter.
+ */
+export const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  ...standard,
+  message: { error: "Too many requests" },
+});

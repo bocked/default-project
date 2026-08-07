@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type { Room } from "@prisma/client";
+import { Prisma, type Room } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { password } from "../lib/password.js";
 import { requireAuth, attachUser } from "../middleware/auth.js";
@@ -52,9 +52,21 @@ roomsRouter.get("/", async (_req, res) => {
       where: { isPublic: true },
       orderBy: { updatedAt: "desc" },
       take: 200,
-      include: { _count: { select: { items: { where: { deletedAt: null } } } } },
     });
-    res.json({ rooms: rooms.map((r) => publicRoom(r)) });
+    // One GROUP BY over the whole list instead of a per-room correlated
+    // _count subquery (avoids N+1 under load).
+    const roomIds = rooms.map((r) => r.id);
+    const counts = new Map<string, number>();
+    if (roomIds.length > 0) {
+      const rows: { roomId: string; count: number }[] = await prisma.$queryRaw`
+        SELECT "roomId" AS "roomId", COUNT(*)::int AS "count"
+        FROM "CanvasItem"
+        WHERE "roomId" IN (${Prisma.join(roomIds)}) AND "deletedAt" IS NULL
+        GROUP BY "roomId"
+      `;
+      for (const row of rows) counts.set(row.roomId, row.count);
+    }
+    res.json({ rooms: rooms.map((r) => publicRoom(r, counts.get(r.id) ?? 0)) });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }

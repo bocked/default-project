@@ -10,14 +10,42 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const LOCAL_UPLOADS_DIR = path.resolve(__dirname, "../../uploads");
 // Long-lived immutable cache: uploaded files never change once written.
 const R2_CACHE_CONTROL = "public, max-age=31536000, immutable";
+// SVG is intentionally excluded: it can embed <script> and would enable
+// stored XSS when served to other users.
 const ALLOWED_MIME: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/webp": "webp",
   "image/gif": "gif",
   "image/avif": "avif",
-  "image/svg+xml": "svg",
 };
+
+/**
+ * Sniffs the real image type from the file header (magic bytes) and returns
+ * the MIME type, or null when the buffer is not a supported image. The
+ * Content-Type header is user-controlled and must never be trusted.
+ */
+export function sniffImageMime(buffer: Buffer): string | null {
+  if (!buffer || buffer.length < 12) return null;
+  // PNG
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) return "image/png";
+  // JPEG
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  // GIF87a / GIF89a
+  if (buffer.subarray(0, 6).toString("latin1") === "GIF87a" || buffer.subarray(0, 6).toString("latin1") === "GIF89a") {
+    return "image/gif";
+  }
+  // WebP: RIFF....WEBP
+  if (buffer.subarray(0, 4).toString("latin1") === "RIFF" && buffer.subarray(8, 12).toString("latin1") === "WEBP") {
+    return "image/webp";
+  }
+  // AVIF / HEIF family: ISO BMFF with ftyp box
+  if (buffer.subarray(4, 8).toString("latin1") === "ftyp") {
+    const brand = buffer.subarray(8, 12).toString("latin1");
+    if (brand === "avif" || brand === "avis") return "image/avif";
+  }
+  return null;
+}
 
 function r2Configured(): boolean {
   return Boolean(config.r2.accountId && config.r2.accessKeyId && config.r2.secretAccessKey);

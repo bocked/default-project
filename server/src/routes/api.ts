@@ -12,6 +12,7 @@ import { strictLimiter } from "../lib/rateLimit.js";
 import { validateBody, itemCreateSchema, reportCreateSchema } from "../schemas.js";
 import { attachUser } from "../middleware/auth.js";
 import { z } from "zod";
+import { sniffImageMime } from "../lib/storage.js";
 
 export const apiRouter = Router();
 
@@ -139,7 +140,14 @@ apiRouter.post("/upload", requireNotBanned, strictLimiter, upload.single("file")
       res.status(400).json({ error: "No file provided" });
       return;
     }
-    const url = await storage.upload(req.file.buffer, req.file.mimetype);
+    // Never trust the client Content-Type: verify the file's magic bytes so a
+    // crafted HTML/SVG polyglot cannot be stored and served to other users.
+    const realMime = sniffImageMime(req.file.buffer);
+    if (!realMime) {
+      res.status(400).json({ error: "Unsupported or invalid image file" });
+      return;
+    }
+    const url = await storage.upload(req.file.buffer, realMime);
     res.json({ url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";

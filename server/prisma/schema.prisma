@@ -77,6 +77,7 @@ model CanvasItem {
   @@index([userId])
   @@index([roomId])
   @@index([roomId, deletedAt])
+  @@index([roomId, deletedAt, createdAt])
 }
 
 model ItemEdit {
