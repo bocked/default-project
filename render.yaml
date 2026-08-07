@@ -7,13 +7,14 @@ services:
     runtime: node
     plan: free
     rootDir: server
-    buildCommand: npm ci && npm run build
-    preDeployCommand: npm run prisma:deploy
+    # NODE_ENV=production is inherited from Render; install devDeps explicitly
+    # so tsc (which compiles tests) resolves @types + vitest, then run migrations.
+    buildCommand: npm install --include=dev && npx prisma migrate deploy && npm run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
-        value: 24.18.1
+        value: 22.23.2
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
@@ -23,7 +24,9 @@ services:
       - key: ADMIN_PASSWORD
         sync: false
       - key: CORS_ORIGINS
-        value: "*"
+        value: "https://default-project-bza.pages.dev,https://*.pages.dev,https://yerlikoglon.uz,https://www.yerlikoglon.uz,http://localhost:3000"
+      - key: PUBLIC_BASE_URL
+        value: "https://yerlikoglon-backend.onrender.com"
       - key: R2_ACCOUNT_ID
         sync: false
       - key: R2_ACCESS_KEY_ID
