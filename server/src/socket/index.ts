@@ -179,7 +179,7 @@ export function initSocket(io: Server): void {
 
   // Presence sweeper - drop users that stopped sending heartbeats and sync the
   // local presence table into Redis for cross-instance online counts.
-  setInterval(() => {
+  sweeper = setInterval(() => {
     const rooms = presence.rooms();
     for (const room of rooms) {
       void syncPresenceRoom(room, presence.snapshotForRoom(room));
@@ -222,13 +222,14 @@ function handleConnection(socket: Socket): void {
   socket.data.ip = ip;
 
   // Authenticated users keep their account identity; guests get a random name.
+  // The verified JWT payload carries the user id as `sub`.
   const user = socket.data.user as
-    | { id: string; username: string; role: string; displayName?: string; color?: string }
+    | { sub: string; username: string; role: string; displayName?: string; color?: string }
     | undefined;
   const name = user?.displayName ?? user?.username ?? randomGuestName();
   const color = user?.color ?? randomCursorColor();
   socket.data.name = name;
-  socket.data.userId = user?.id;
+  socket.data.userId = user?.sub ?? undefined;
 
   // Guard against one IP opening too many sockets.
   if (presence.countByIp(ip) >= MAX_CONNECTIONS_PER_IP) {
@@ -238,7 +239,7 @@ function handleConnection(socket: Socket): void {
   }
 
   const join = (): void => {
-    presence.join(socket.id, ip, name, color, user?.id, null);
+    presence.join(socket.id, ip, name, color, user?.sub ?? undefined, null);
     setOnlineCount(presence.count());
     void syncPresenceRoom(null, presence.snapshotForRoom(null));
     void broadcastPresence(null);
@@ -247,7 +248,7 @@ function handleConnection(socket: Socket): void {
       ip,
       name,
       color,
-      userId: user?.id ?? null,
+      userId: user?.sub ?? null,
     });
     // Role-based admins are authenticated on connect; no password needed.
     if (user && ADMIN_ROLES.includes(user.role)) {
@@ -550,5 +551,18 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
       /* ignore */
     }
   });
+}
+
+let sweeper: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Stops background loops started by initSocket. Called by the E2E test helper
+ * (and could be wired into graceful shutdown) so the process can exit cleanly.
+ */
+export function disposeSocket(): void {
+  if (sweeper) {
+    clearInterval(sweeper);
+    sweeper = null;
+  }
 }
 
