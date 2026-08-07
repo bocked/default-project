@@ -97,4 +97,27 @@ describe("E2E: Socket.IO flows (init, presence, items, reactions, rooms)", () =>
     expect(err.message).toBeTruthy();
     bad.disconnect();
   });
+
+  it("lets a guest set a custom name and color via identity:update", async () => {
+    const guest = ioClient(base, { transports: ["websocket"], reconnection: false });
+    const guestInit = onceMatch((cb) => guest.on("canvas:init", cb), () => true);
+    await new Promise<void>((resolve) => guest.on("connect", resolve));
+    await guestInit;
+    const updated = onceMatch(
+      (cb) => guest.on("identity:updated", cb),
+      (p: any) => p.name === "Mehmon 007" && p.color === "#22c55e"
+    );
+    guest.emit("identity:update", { name: "  Mehmon 007  ", color: "#22c55e" });
+    const payload = await updated;
+    expect(payload).toEqual({ name: "Mehmon 007", color: "#22c55e" });
+    guest.disconnect();
+  });
+
+  it("keeps an authenticated user's account name on identity:update", async () => {
+    const upd = waitEvent("identity:updated", (p: any) => p.color === "#8b5cf6");
+    socket.emit("identity:update", { name: "Qalbaki Ism", color: "#8b5cf6" });
+    const payload = await upd;
+    expect(payload.color).toBe("#8b5cf6");
+    expect(payload.name).not.toBe("Qalbaki Ism");
+  });
 });

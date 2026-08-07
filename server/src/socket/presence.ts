@@ -67,6 +67,14 @@ class PresenceStore {
     if (user) user.roomId = roomId;
   }
 
+  /** Updates a connected user's display identity (guest name / cursor color). */
+  setIdentity(socketId: string, name: string, color: string): void {
+    const user = this.users.get(socketId);
+    if (!user) return;
+    user.name = name;
+    user.color = color;
+  }
+
   roomOf(socketId: string): string | null | undefined {
     return this.users.get(socketId)?.roomId;
   }

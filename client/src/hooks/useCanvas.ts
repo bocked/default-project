@@ -22,6 +22,7 @@ export function useCanvas() {
   const { token } = useAuth();
   const [connected, setConnected] = useState(false);
   const [banned, setBanned] = useState(false);
+  const [myId, setMyId] = useState<string | null>(null);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [items, setItems] = useState<CanvasItem[]>([]);
   const [cursors, setCursors] = useState<Record<string, CursorPayload>>({});
@@ -105,6 +106,7 @@ export function useCanvas() {
 
     socket.on("connect", () => {
       setConnected(true);
+      setMyId(socket.id ?? null);
       // Fresh connection always starts on the public canvas.
       setCurrentRoom(null);
       roomIdRef.current = null;
@@ -124,6 +126,10 @@ export function useCanvas() {
     socket.on("canvas:init", (data: { online: number; ip: string; name: string; color: string; userId?: string | null }) => {
       setIdentity({ ip: data.ip, name: data.name, color: data.color });
       setOnline(data.online);
+    });
+
+    socket.on("identity:updated", (data: { name: string; color: string }) => {
+      setIdentity((prev) => (prev ? { ...prev, name: data.name, color: data.color } : prev));
     });
 
     socket.on("canvas:item-add", (payload: { item: CanvasItem }) => {
@@ -266,6 +272,13 @@ export function useCanvas() {
     [send]
   );
 
+  const updateIdentity = useCallback(
+    (name: string, color: string) => {
+      send("identity:update", { name, color });
+    },
+    [send]
+  );
+
   const adminAuth = useCallback(
     (password: string) => {
       send("admin:auth", { password });
@@ -376,6 +389,7 @@ export function useCanvas() {
   return {
     connected,
     banned,
+    myId,
     identity,
     items,
     cursors,
@@ -392,6 +406,7 @@ export function useCanvas() {
     undoItem,
     react,
     updateCursor,
+    updateIdentity,
     adminAuth,
     adminBan,
     adminUnban,

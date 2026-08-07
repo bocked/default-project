@@ -21,6 +21,7 @@ import {
   itemMoveSchema,
   itemDeleteSchema,
   itemReactionSchema,
+  identityUpdateSchema,
   roomJoinSchema,
   adminAuthSchema,
   adminBanSchema,
@@ -33,6 +34,7 @@ import { verifyToken } from "../lib/token.js";
 const CURSOR_THROTTLE_MS = 30;
 const ITEM_ADD_COOLDOWN_MS = 1000;
 const REACTION_COOLDOWN_MS = 300;
+const IDENTITY_COOLDOWN_MS = 2000;
 const MOVE_WRITE_DEBOUNCE_MS = 100;
 const MOVE_HISTORY_DELAY_MS = 1500;
 
@@ -40,6 +42,7 @@ const MOVE_HISTORY_DELAY_MS = 1500;
 const cursorCooldown = new Cooldown(CURSOR_THROTTLE_MS);
 const addCooldown = new Cooldown(ITEM_ADD_COOLDOWN_MS);
 const reactionCooldown = new Cooldown(REACTION_COOLDOWN_MS);
+const identityCooldown = new Cooldown(IDENTITY_COOLDOWN_MS);
 
 // Socket rate limiting: per-socket event budget + per-IP mutation budget.
 const socketEventLimiter = new SocketRateLimiter(10_000, 400);
@@ -226,9 +229,12 @@ function handleConnection(socket: Socket): void {
   const user = socket.data.user as
     | { sub: string; username: string; role: string; displayName?: string; color?: string }
     | undefined;
-  const name = user?.displayName ?? user?.username ?? randomGuestName();
-  const color = user?.color ?? randomCursorColor();
-  socket.data.name = name;
+  // Mutable identity: guests can rename themselves later via `identity:update`.
+  const identity = {
+    name: user?.displayName ?? user?.username ?? randomGuestName(),
+    color: user?.color ?? randomCursorColor(),
+  };
+  socket.data.name = identity.name;
   socket.data.userId = user?.sub ?? undefined;
 
   // Guard against one IP opening too many sockets.
@@ -239,15 +245,15 @@ function handleConnection(socket: Socket): void {
   }
 
   const join = (): void => {
-    presence.join(socket.id, ip, name, color, user?.sub ?? undefined, null);
+    presence.join(socket.id, ip, identity.name, identity.color, user?.sub ?? undefined, null);
     setOnlineCount(presence.count());
     void syncPresenceRoom(null, presence.snapshotForRoom(null));
     void broadcastPresence(null);
     socket.emit("canvas:init", {
       online: presence.count(),
       ip,
-      name,
-      color,
+      name: identity.name,
+      color: identity.color,
       userId: user?.sub ?? null,
     });
     // Role-based admins are authenticated on connect; no password needed.
@@ -256,7 +262,7 @@ function handleConnection(socket: Socket): void {
       socket.emit("admin:authed", { ok: true });
       addLog("info", `Admin ${user.username} connected`);
     }
-    registerHandlers(socket, name, color);
+    registerHandlers(socket, identity);
   };
 
   // Reject banned clients immediately.
@@ -282,6 +288,7 @@ function handleConnection(socket: Socket): void {
     clearMoveTimers(socket);
     addCooldown.remove(socket.id);
     reactionCooldown.remove(socket.id);
+    identityCooldown.remove(socket.id);
     cursorCooldown.remove(socket.id);
     socketIpLimiter.prune();
     setOnlineCount(presence.count());
@@ -289,7 +296,7 @@ function handleConnection(socket: Socket): void {
   });
 }
 
-function registerHandlers(socket: Socket, name: string, color: string): void {
+function registerHandlers(socket: Socket, identity: { name: string; color: string }): void {
   // ----------------------------- cursor -----------------------------
   socket.on("cursor:move", (data: unknown) => {
     const parsed = parseZod(cursorMoveSchema, data);
@@ -300,12 +307,39 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
     presence.touch(socket.id, parsed.x, parsed.y);
     bus.publish("cursor:move", {
       id: socket.id,
-      name,
-      color,
+      name: identity.name,
+      color: identity.color,
       x: parsed.x,
       y: parsed.y,
       roomId: roomIdOf(socket),
     });
+  });
+
+  // --------------------------- identity ----------------------------
+  // Guests may set a custom display name and anyone may tweak their cursor
+  // color. Authenticated users always keep their account display name.
+  socket.on("identity:update", (data: unknown) => {
+    if (!identityCooldown.check(socket.id)) return;
+    const parsed = parseZod(identityUpdateSchema, data);
+    if (!parsed) return;
+    if (!parsed.name && !parsed.color) return;
+
+    const isGuest = !socket.data.userId;
+    let name = identity.name;
+    if (parsed.name && isGuest) {
+      const clean = censorText(parsed.name).trim();
+      name = clean.length > 0 ? clean.slice(0, 32) : identity.name;
+    }
+    const color = parsed.color ?? identity.color;
+    identity.name = name;
+    identity.color = color;
+    socket.data.name = name;
+
+    presence.setIdentity(socket.id, name, color);
+    const room = presence.roomOf(socket.id) ?? null;
+    void syncPresenceRoom(room, presence.snapshotForRoom(room));
+    void broadcastPresence(room);
+    socket.emit("identity:updated", { name, color });
   });
 
   // ----------------------------- rooms -----------------------------

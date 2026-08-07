@@ -42,6 +42,16 @@ export const itemReactionSchema = z.object({
 });
 export type ItemReaction = z.infer<typeof itemReactionSchema>;
 
+export const identityUpdateSchema = z.object({
+  name: z
+    .string()
+    .max(32)
+    .optional()
+    .transform((s) => (s === undefined ? undefined : s.trim())),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "color hex formatda bo'lishi kerak").optional(),
+});
+export type IdentityUpdate = z.infer<typeof identityUpdateSchema>;
+
 // ---------------------------------------------------------------------------
 // Admin socket payloads
 // ---------------------------------------------------------------------------

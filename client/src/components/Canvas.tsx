@@ -7,6 +7,7 @@ import Toolbar from "./Toolbar";
 import AdminPanel from "./AdminPanel";
 import AuthBar from "./AuthBar";
 import RoomSwitcher from "./RoomSwitcher";
+import CollaborationPanel from "./CollaborationPanel";
 import { useAuth } from "./AuthProvider";
 
 type Tool = "MOVE" | "TEXT" | "STICKY" | "IMAGE";
@@ -602,6 +603,9 @@ export default function Canvas({ api }: { api: CanvasApi }) {
 
       {/* Rooms */}
       <RoomSwitcher api={api} />
+
+      {/* Online users + guest identity */}
+      <CollaborationPanel api={api} />
 
       {/* Undo chip after own delete */}
       {lastDeletedId && (

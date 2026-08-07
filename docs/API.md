@@ -68,6 +68,7 @@ Ulanish: `io(BASE_URL, { auth: { token } })` — `token` ixtiyoriy (mehmon sifat
 | Event | Payload |
 |---|---|
 | `cursor:move` | `{ x, y }` |
+| `identity:update` | `{ name?, color? }` — mehmon ism/`#rrggbb` rang; authed userlar faqat rang o'zgartiradi |
 | `canvas:item-add` | `{ type, content, x, y, color? }` |
 | `canvas:item-move` | `{ id, x, y }` |
 | `canvas:item-delete` | `{ id }` |
@@ -88,6 +89,7 @@ Ulanish: `io(BASE_URL, { auth: { token } })` — `token` ixtiyoriy (mehmon sifat
 | `canvas:item-add` | `{ item }` |
 | `canvas:item-move` | `{ id, x, y }` |
 | `canvas:item-delete` | `{ id, roomId? }` |
+| `identity:updated` | `{ name, color }` — o'z identity'ingiz yangilanganda |
 | `canvas:item-reaction` | `{ id, reactions }` |
 | `canvas:clear` | — |
 | `cursor:move` | `{ id, x, y, color, name }` |
