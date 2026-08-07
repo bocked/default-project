@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Identity } from "@/lib/types";
+import type { ExportFormat } from "@/lib/export";
 
 export interface ToolTemplate {
   key: string;
@@ -25,6 +26,7 @@ export interface ToolbarProps {
   activeTemplateKey: string | null;
   onPickTemplate: (key: string | null) => void;
   onAdmin: () => void;
+  onExport: (format: ExportFormat) => void;
 }
 
 const TOOLS: { key: ToolbarProps["tool"]; label: string; icon: string }[] = [
@@ -47,8 +49,15 @@ export default function Toolbar({
   activeTemplateKey,
   onPickTemplate,
   onAdmin,
+  onExport,
 }: ToolbarProps) {
   const [openTemplates, setOpenTemplates] = useState(false);
+  const [openExport, setOpenExport] = useState(false);
+
+  const pickExport = (format: ExportFormat) => {
+    setOpenExport(false);
+    onExport(format);
+  };
 
   return (
     <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 shadow-lg backdrop-blur">
@@ -134,6 +143,39 @@ export default function Toolbar({
       </div>
 
       <div className="h-6 w-px bg-slate-200" />
+
+      {/* Export (PNG / SVG) */}
+      <div className="relative">
+        <button
+          title="Eksport"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-lg text-slate-500 transition-transform hover:scale-105 hover:bg-slate-100 active:scale-90"
+          onClick={() => {
+            setOpenTemplates(false);
+            setOpenExport((o) => !o);
+          }}
+        >
+          ⬇️
+        </button>
+        {openExport && (
+          <div className="animate-slide-up absolute top-11 left-0 z-50 w-40 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+            <p className="px-2 py-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+              Rasm sifatida yuklab olish
+            </p>
+            <button
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-slate-600 transition hover:bg-slate-100 active:scale-[0.98]"
+              onClick={() => pickExport("png")}
+            >
+              <span className="text-base">🖼️</span> PNG (yuqori sifat)
+            </button>
+            <button
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-slate-600 transition hover:bg-slate-100 active:scale-[0.98]"
+              onClick={() => pickExport("svg")}
+            >
+              <span className="text-base">📐</span> SVG (vektor)
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center gap-1.5 text-sm text-slate-600">
         <span className={`h-2 w-2 rounded-full ${connected ? "animate-pulse bg-green-500" : "bg-red-400"}`} />

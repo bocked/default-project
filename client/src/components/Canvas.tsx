@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasApi } from "@/hooks/useCanvas";
 import type { CanvasItem } from "@/lib/types";
+import { exportPng, exportSvg, toExportItems, type ExportFormat } from "@/lib/export";
+import { captureException } from "@/lib/sentry";
 import Toolbar from "./Toolbar";
 import AdminPanel from "./AdminPanel";
 import AuthBar from "./AuthBar";
@@ -154,6 +156,25 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   }, [offset]);
 
   const notify = useCallback((msg: string) => setToast(msg), []);
+
+  const handleExport = useCallback(
+    async (format: ExportFormat) => {
+      const name = currentRoom?.slug ?? "canvas";
+      try {
+        if (format === "png") {
+          await exportPng(toExportItems(items), name);
+          notify("PNG saqlandi ✓");
+        } else {
+          await exportSvg(toExportItems(items), name);
+          notify("SVG saqlandi ✓");
+        }
+      } catch (err) {
+        captureException(err, { context: "export" });
+        notify("Eksport amalga oshmadi");
+      }
+    },
+    [items, currentRoom, notify]
+  );
 
   // Search: match loaded items by content (and optional type filter).
   const matches = useMemo(() => {
@@ -718,6 +739,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
           activeTemplateKey={template?.key ?? null}
           onPickTemplate={(key) => setTemplate(key ? (TEMPLATES.find((t) => t.key === key) ?? null) : null)}
           onAdmin={() => setShowAdmin(true)}
+          onExport={handleExport}
         />
       </div>
 
