@@ -5,8 +5,12 @@ import { password } from "../lib/password.js";
 import { requireAuth, attachUser } from "../middleware/auth.js";
 import { validateBody, roomCreateSchema, roomAccessSchema } from "../schemas.js";
 import { publicItem, type ItemWithAuthor } from "./api.js";
+import { cache, CACHE_TTL } from "../lib/cache.js";
 
 export const roomsRouter = Router();
+
+const LIST_KEY = "rooms:list";
+const roomKey = (slug: string): string => `room:${slug}`;
 
 export interface PublicRoom {
   id: string;
@@ -48,6 +52,12 @@ async function slugify(name: string): Promise<string> {
 // GET /api/rooms - list public rooms with item counts
 roomsRouter.get("/", async (_req, res) => {
   try {
+    // Cached: the public room list changes rarely. Invalidated on create.
+    const cached = cache.get<string>(LIST_KEY);
+    if (cached) {
+      res.json(JSON.parse(cached));
+      return;
+    }
     const rooms = await prisma.room.findMany({
       where: { isPublic: true },
       orderBy: { updatedAt: "desc" },
@@ -66,7 +76,9 @@ roomsRouter.get("/", async (_req, res) => {
       `;
       for (const row of rows) counts.set(row.roomId, row.count);
     }
-    res.json({ rooms: rooms.map((r) => publicRoom(r, counts.get(r.id) ?? 0)) });
+    const body = { rooms: rooms.map((r) => publicRoom(r, counts.get(r.id) ?? 0)) };
+    cache.set(LIST_KEY, JSON.stringify(body), CACHE_TTL.rooms);
+    res.json(body);
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }
@@ -87,6 +99,7 @@ roomsRouter.post("/", requireAuth, validateBody(roomCreateSchema), async (req, r
         ownerId: req.user!.sub,
       },
     });
+    cache.delete(LIST_KEY);
     res.status(201).json({ room: publicRoom(room, 0) });
   } catch {
     res.status(500).json({ error: "Failed to create room" });
@@ -96,12 +109,20 @@ roomsRouter.post("/", requireAuth, validateBody(roomCreateSchema), async (req, r
 // GET /api/rooms/:slug - room metadata
 roomsRouter.get("/:slug", async (req, res) => {
   try {
+    const k = roomKey(req.params.slug);
+    const cached = cache.get<string>(k);
+    if (cached) {
+      res.json(JSON.parse(cached));
+      return;
+    }
     const room = await prisma.room.findUnique({ where: { slug: req.params.slug } });
     if (!room) {
       res.status(404).json({ error: "Xona topilmadi" });
       return;
     }
-    res.json({ room: publicRoom(room) });
+    const body = { room: publicRoom(room) };
+    cache.set(k, JSON.stringify(body), CACHE_TTL.rooms);
+    res.json(body);
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }
@@ -122,13 +143,26 @@ roomsRouter.post("/:slug/items", attachUser, validateBody(roomAccessSchema), asy
         return;
       }
     }
+    // Public room snapshots are cacheable for a couple of seconds; the socket
+    // stream keeps clients in sync afterwards anyway. Private rooms always hit
+    // the DB so a password change never serves stale data.
+    const snapshotKey = `roomItems:${room.id}`;
+    if (room.isPublic) {
+      const cached = cache.get<string>(snapshotKey);
+      if (cached) {
+        res.json(JSON.parse(cached));
+        return;
+      }
+    }
     const items = await prisma.canvasItem.findMany({
       where: { roomId: room.id, deletedAt: null },
       orderBy: { createdAt: "asc" },
       take: 2000,
       include: { user: { select: { displayName: true } } },
     });
-    res.json({ room: publicRoom(room, items.length), items: items.map((i: ItemWithAuthor) => publicItem(i)) });
+    const body = { room: publicRoom(room, items.length), items: items.map((i: ItemWithAuthor) => publicItem(i)) };
+    if (room.isPublic) cache.set(snapshotKey, JSON.stringify(body), CACHE_TTL.roomItems);
+    res.json(body);
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }

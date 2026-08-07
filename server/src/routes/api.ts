@@ -13,8 +13,21 @@ import { validateBody, itemCreateSchema, reportCreateSchema } from "../schemas.j
 import { attachUser } from "../middleware/auth.js";
 import { z } from "zod";
 import { sniffImageMime } from "../lib/storage.js";
+import { cache, CACHE_TTL } from "../lib/cache.js";
 
 export const apiRouter = Router();
+
+// Invalidate cached list responses whenever the canvas changes through any
+// path (HTTP create, admin clear/delete, or any socket write — all of them go
+// through the bus). Moves are included so a reload never shows stale coords.
+const INVALIDATE_PREFIXES = ["items:first:", "roomItems:"];
+function invalidateCanvasCaches(): void {
+  for (const prefix of INVALIDATE_PREFIXES) cache.deletePrefix(prefix);
+}
+bus.subscribe("canvas:item-add", invalidateCanvasCaches);
+bus.subscribe("canvas:item-move", invalidateCanvasCaches);
+bus.subscribe("canvas:item-delete", invalidateCanvasCaches);
+bus.subscribe("canvas:clear", invalidateCanvasCaches);
 
 // HTTP item creation only accepts text/sticky (images arrive via /upload).
 const httpItemCreateSchema = itemCreateSchema.extend({ type: z.enum(["TEXT", "STICKY"]) });
@@ -85,6 +98,18 @@ apiRouter.get("/items", async (req, res) => {
     const minY = Number(q.minY);
     const maxY = Number(q.maxY);
 
+    // Only the plain first page is cacheable: paginated (before) and spatial
+    // (bbox) reads are cold paths that vary per query.
+    const cacheable = !before && !Number.isFinite(minX) && !Number.isFinite(maxX) && !Number.isFinite(minY) && !Number.isFinite(maxY);
+    const cacheKey = `items:first:${limit}`;
+    if (cacheable) {
+      const cached = cache.get<string>(cacheKey);
+      if (cached) {
+        res.json(JSON.parse(cached));
+        return;
+      }
+    }
+
     const where: Prisma.CanvasItemWhereInput = { roomId: null, deletedAt: null };
     if (Number.isFinite(minX) && Number.isFinite(maxX)) where.x = { gte: minX, lte: maxX };
     if (Number.isFinite(minY) && Number.isFinite(maxY)) where.y = { gte: minY, lte: maxY };
@@ -97,10 +122,12 @@ apiRouter.get("/items", async (req, res) => {
       include: { user: { select: { displayName: true } } },
     });
     const ordered = [...items].reverse();
-    res.json({
+    const body = {
       items: ordered.map(publicItem),
       next: ordered.length === limit ? ordered[0]?.createdAt.toISOString() ?? null : null,
-    });
+    };
+    if (cacheable) cache.set(cacheKey, JSON.stringify(body), CACHE_TTL.itemsFirstPage);
+    res.json(body);
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }
