@@ -8,8 +8,39 @@ PostgreSQL (Prisma) + Redis + Cloudflare R2 (rasmlar uchun, ixtiyoriy).
 ```
 client/   Next.js 16 (static export, Tailwind v4) — kanvas UI
 server/   Express + Socket.io + Prisma + Redis — real-time API
+docs/     API va arxitektura hujjatlari
 docker-compose.yml   Postgres + Redis (lokal ishlab chiqish uchun)
 ```
+
+## Arxitektura
+
+```
+┌─────────────┐   HTTPS (REST) + WebSocket (Socket.IO)   ┌──────────────────────┐
+│   Client    │ ──────────────────────────────────────▶  │        Server        │
+│  Next.js 16 │                                          │  Express + Socket.io │
+│ (Cloudflare │                                          │  ┌────────────────┐  │
+│   Pages)    │                                          │  │  TTLCache (in- │  │
+└─────────────┘                                          │  │  memory)       │  │
+                                                         │  │  Redis adapter │  │
+                                                         │  └────────────────┘  │
+                                                         │     Prisma           │
+                                                         │        │             │
+                                                         │  ┌─────▼──────┐      │
+                                                         │  │ PostgreSQL │      │
+                                                         │  └────────────┘      │
+                                                         └──────────────────────┘
+```
+
+- **REST** — dastlabki holatni yuklash, auth, upload, admin (to'liq ro'yxat: `docs/API.md`).
+- **Socket.IO** — real-vaqt: elementlar, kursorlar, presence, xonalar, admin buyruqlari. Redis adapter bir nechta server instansiyasini qo'llaydi (Redis bo'lmasa — faqat bitta instansiya uchun in-memory bus).
+- **Cache** — in-memory TTL keshlash (`server/src/lib/cache.ts`): asosiy sahifalar va xona ro'yxatlari; kanvasdagi har qanday o'zgarish bus orqali cache'ni invalidatsiya qiladi.
+- **Xavfsizlik** — Argon2id parollar, JWT, per-IP rate limit, IP ban, profanity filter, image MIME magic-bytes tekshiruvi, Helmet + CORS.
+
+## Testlar
+
+- **Unit/integration** (`server`): `npm test` — cache, rate limit, schemas, token, cooldown, IP, presence va h.k.
+- **E2E** (`server`): `npm run test:e2e` — HTTP + Socket.IO hayot davri (register → login → element yaratish → xonalar → admin panel → ban). Talab: `TEST_DATABASE_URL` (mas. lokal Postgres/Docker). CI'da GitHub Actions `postgres:16` service bilan bajariladi.
+- Client: `npm run lint` + `npm run build` (static export).
 
 ## Ishga tushirish
 
@@ -78,6 +109,14 @@ npx wrangler pages deploy out --project-name default-project
 ```bash
 $env:NEXT_PUBLIC_SERVER_URL="https://api.yerlikoglon.uz"; npm run build
 ```
+
+Main branch'ga push qilinsa GitHub Actions avtomatik: server'ni tekshiradi
+(lint, typecheck, unit testlar, E2E, build) va client'ni Cloudflare Pages'ga
+deploy qiladi; `server/` o'zgarishlari Render'da avtomatik deploy'lanadi.
+
+## API hujjati
+
+Barcha REST endpointlar va Socket.IO eventlar: [`docs/API.md`](docs/API.md).
 
 ## Backend'ni VPS'ga deploy (PM2 + Nginx + SSL)
 
