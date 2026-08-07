@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasApi } from "@/hooks/useCanvas";
 import type { CanvasItem } from "@/lib/types";
 import Toolbar from "./Toolbar";
@@ -10,6 +10,7 @@ import RoomSwitcher from "./RoomSwitcher";
 import { useAuth } from "./AuthProvider";
 
 type Tool = "MOVE" | "TEXT" | "STICKY" | "IMAGE";
+type SearchFilter = "ALL" | "STICKY" | "TEXT" | "IMAGE";
 
 const EMOJIS = ["👍", "❤️", "😂", "🎉", "🔥", "💯"];
 
@@ -61,6 +62,11 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   const [reportFor, setReportFor] = useState<CanvasItem | null>(null);
   const [reportReason, setReportReason] = useState("");
   const [lastDeletedId, setLastDeletedId] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFilter, setSearchFilter] = useState<SearchFilter>("ALL");
+  const [activeMatch, setActiveMatch] = useState(0);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const { user } = useAuth();
 
   const worldToScreen = useCallback(
@@ -104,6 +110,61 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   }, [offset]);
 
   const notify = useCallback((msg: string) => setToast(msg), []);
+
+  // Search: match loaded items by content (and optional type filter).
+  const matches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return items
+      .filter((i) => {
+        if (searchFilter !== "ALL" && i.type !== searchFilter) return false;
+        if (!q) return true;
+        if (i.type === "IMAGE") return false;
+        return i.content.toLowerCase().includes(q);
+      })
+      .map((i) => i.id);
+  }, [items, searchQuery, searchFilter]);
+
+  // "/" opens search; Escape closes it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "/" && e.target === document.body) {
+        e.preventDefault();
+        setSearchOpen(true);
+      } else if (e.key === "Escape" && searchOpen) {
+        setSearchOpen(false);
+        setSearchQuery("");
+        setSearchFilter("ALL");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (searchOpen) searchRef.current?.focus();
+  }, [searchOpen]);
+
+  const flyTo = useCallback(
+    (id: string) => {
+      const item = items.find((i) => i.id === id);
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!item || !rect) return;
+      const z = Math.max(zoom, 1);
+      setZoom(z);
+      setOffset({ x: rect.width / 2 - item.x * z, y: rect.height / 2 - item.y * z });
+    },
+    [items, zoom]
+  );
+
+  const stepMatch = useCallback(
+    (dir: 1 | -1) => {
+      if (matches.length === 0) return;
+      const next = (activeMatch + dir + matches.length) % matches.length;
+      setActiveMatch(next);
+      flyTo(matches[next]);
+    },
+    [matches, activeMatch, flyTo]
+  );
 
   // Own cursor position + broadcast.
   const handlePointerMove = useCallback(
@@ -287,14 +348,25 @@ export default function Canvas({ api }: { api: CanvasApi }) {
         {items.map((item, index) => {
           const pos = { x: item.x, y: item.y };
           const isHovered = hoveredId === item.id;
+          const isMatch = matches.length > 0 && matches.includes(item.id);
+          const isActiveMatch = isMatch && matches[activeMatch] === item.id;
+          const matchStyle = isActiveMatch
+            ? { outline: "3px solid #2563eb", outlineOffset: "3px", borderRadius: "6px" }
+            : isMatch
+              ? { outline: "2px solid #f59e0b", outlineOffset: "2px", borderRadius: "6px" }
+              : undefined;
           return (
             <div key={item.id} className="absolute" style={{ left: pos.x, top: pos.y, transform: "translate(-50%, -50%)" }}>
               <div
                 onPointerDown={(e) => handleItemPointerDown(e, item)}
                 onPointerEnter={() => setHoveredId(item.id)}
                 onPointerLeave={() => setHoveredId(null)}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  flyTo(item.id);
+                }}
                 className="animate-pop-in group relative cursor-grab active:cursor-grabbing"
-                style={{ animationDelay: `${Math.min(index, 24) * 10}ms` }}
+                style={{ animationDelay: `${Math.min(index, 24) * 10}ms`, ...matchStyle }}
               >
                 {item.type === "IMAGE" ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -458,6 +530,69 @@ export default function Canvas({ api }: { api: CanvasApi }) {
           identity={identity}
           onAdmin={() => setShowAdmin(true)}
         />
+      </div>
+
+      {/* Search */}
+      <div className="pointer-events-none absolute inset-x-0 top-16 z-40 flex flex-col items-center gap-1.5 p-3">
+        <button
+          onClick={() => setSearchOpen((o) => !o)}
+          className={`pointer-events-auto flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-sm font-medium text-slate-600 shadow transition hover:bg-white active:scale-95 ${
+            searchOpen ? "opacity-0" : ""
+          }`}
+          title="Qidirish (/)"
+        >
+          🔍 Qidirish
+        </button>
+        {searchOpen && (
+          <div className="animate-slide-up pointer-events-auto flex w-full max-w-md flex-col gap-1.5 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur">
+            <div className="flex items-center gap-2">
+              <input
+                ref={searchRef}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    stepMatch(e.shiftKey ? -1 : 1);
+                  }
+                }}
+                placeholder="Elementlardan qidirish..."
+                className="flex-1 rounded-lg bg-slate-50 px-3 py-1.5 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-400"
+              />
+              <button
+                onClick={() => {
+                  setSearchOpen(false);
+                  setSearchQuery("");
+                  setSearchFilter("ALL");
+                }}
+                className="rounded-lg px-2 py-1 text-sm text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                title="Yopish (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1 px-0.5">
+              {(["ALL", "STICKY", "TEXT", "IMAGE"] as SearchFilter[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setSearchFilter(f)}
+                  className={`rounded-md px-2 py-0.5 text-xs font-medium transition active:scale-95 ${
+                    searchFilter === f ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-100"
+                  }`}
+                >
+                  {f === "ALL" ? "Hammasi" : f === "STICKY" ? "Yozuv" : f === "TEXT" ? "Matn" : "Rasm"}
+                </button>
+              ))}
+            </div>
+            <div className="px-1 text-xs text-slate-400">
+              {matches.length > 0
+                ? `${matches.length} ta — Enter keyingi, Shift+Enter oldingi`
+                : searchQuery.trim() || searchFilter !== "ALL"
+                  ? "Hech narsa topilmadi"
+                  : 'Qidirish uchun yozing (yoki "/")'}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Auth */}
