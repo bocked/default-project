@@ -106,24 +106,22 @@ adminRouter.get("/logs", (_req, res) => {
   res.json({ logs: recentLogs(200) });
 });
 
-// GET /api/admin/uploads - inspect a stored upload (R2 or local fallback)
-adminRouter.get(
-  "/uploads",
-  validateBody(z.object({ url: z.string().min(1).max(2048) })),
-  async (_req, res) => {
-    try {
-      const { url } = res.locals.body as { url: string };
-      const meta = await storage.metadata(url);
-      if (!meta) {
-        res.status(404).json({ error: "Upload not found" });
-        return;
-      }
-      res.json({ meta });
-    } catch {
+// GET /api/admin/uploads?url=... - inspect a stored upload (R2 or local fallback)
+adminRouter.get("/uploads", async (req, res) => {
+  try {
+    const { url } = z
+      .object({ url: z.string().min(1).max(2048) })
+      .parse({ url: typeof req.query.url === "string" ? req.query.url : "" });
+    const meta = await storage.metadata(url);
+    if (!meta) {
       res.status(404).json({ error: "Upload not found" });
+      return;
     }
+    res.json({ meta });
+  } catch {
+    res.status(404).json({ error: "Upload not found" });
   }
-);
+});
 
 // DELETE /api/admin/uploads - permanently remove a stored upload
 adminRouter.delete(

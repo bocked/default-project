@@ -37,6 +37,10 @@ export default function Canvas({ api }: { api: CanvasApi }) {
     react,
     updateCursor,
     fetchInitialItems,
+    currentRoom,
+    hasMore,
+    loadingOlder,
+    loadOlderItems,
   } = api;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -533,6 +537,19 @@ export default function Canvas({ api }: { api: CanvasApi }) {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {!currentRoom && hasMore && (
+        <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2" onPointerDown={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            disabled={loadingOlder}
+            onClick={() => void loadOlderItems()}
+            className="rounded-full bg-slate-800/90 px-5 py-2 text-sm font-medium text-white shadow-lg transition hover:bg-slate-700 disabled:opacity-50"
+          >
+            {loadingOlder ? "Yuklanmoqda..." : "Eski elementlarni ko'rish"}
+          </button>
         </div>
       )}
     </div>

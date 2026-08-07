@@ -31,19 +31,48 @@ export function useCanvas() {
   const [currentRoom, setCurrentRoom] = useState<PublicRoom | null>(null);
   const [rooms, setRooms] = useState<PublicRoom[]>([]);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   // Mirrors the current room id for use inside socket listeners.
   const roomIdRef = useRef<string | null>(null);
   const roomPasswordRef = useRef<string | null>(null);
+  const nextCursorRef = useRef<string | null>(null);
+  const loadingOlderRef = useRef(false);
 
   const fetchMainItems = useCallback(async () => {
     try {
-      const res = await fetch(`${config.url}/api/items?limit=2000`);
+      const res = await fetch(`${config.url}/api/items?limit=200`);
       if (!res.ok) return;
-      const data = (await res.json()) as { items: CanvasItem[] };
+      const data = (await res.json()) as { items: CanvasItem[]; next?: string | null };
       setItems(data.items);
+      nextCursorRef.current = data.next ?? null;
+      setHasMore(Boolean(data.next));
     } catch {
       /* server unreachable - socket will keep retrying */
+    }
+  }, []);
+
+  const loadOlderItems = useCallback(async () => {
+    const cursor = nextCursorRef.current;
+    if (!cursor || loadingOlderRef.current) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const res = await fetch(`${config.url}/api/items?limit=200&before=${encodeURIComponent(cursor)}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { items: CanvasItem[]; next?: string | null };
+      setItems((prev) => {
+        const known = new Set(prev.map((i) => i.id));
+        return [...data.items.filter((i) => !known.has(i.id)), ...prev];
+      });
+      nextCursorRef.current = data.next ?? null;
+      setHasMore(Boolean(data.next));
+    } catch {
+      /* ignore */
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
     }
   }, []);
 
@@ -143,6 +172,7 @@ export function useCanvas() {
       roomIdRef.current = payload.room.id;
       setRoomError(null);
       setItems([]);
+      setHasMore(false);
       void fetchRoomItems(payload.room.slug, roomPasswordRef.current ?? undefined).then(() => {
         roomPasswordRef.current = null;
       });
@@ -152,6 +182,7 @@ export function useCanvas() {
       setCurrentRoom(null);
       roomIdRef.current = null;
       setItems([]);
+      nextCursorRef.current = null;
       void fetchMainItems();
     });
 
@@ -367,6 +398,9 @@ export function useCanvas() {
     leaveRoom,
     createRoom,
     reportItem,
+    hasMore,
+    loadingOlder,
+    loadOlderItems,
   };
 }
 
