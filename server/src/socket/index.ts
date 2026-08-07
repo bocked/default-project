@@ -6,6 +6,7 @@ import { censorText } from "../lib/profanity.js";
 import { clientIp } from "../lib/ip.js";
 import { addLog } from "../lib/logstore.js";
 import { setOnlineCount } from "../routes/api.js";
+import { password } from "../lib/password.js";
 import { presence, randomGuestName, randomCursorColor } from "./presence.js";
 import { publicItem } from "../routes/api.js";
 import {
@@ -15,6 +16,7 @@ import {
   itemMoveSchema,
   itemDeleteSchema,
   itemReactionSchema,
+  roomJoinSchema,
   adminAuthSchema,
   adminBanSchema,
   adminUnbanSchema,
@@ -27,6 +29,7 @@ const CURSOR_THROTTLE_MS = 30;
 const ITEM_ADD_COOLDOWN_MS = 1000;
 const REACTION_COOLDOWN_MS = 300;
 const MOVE_WRITE_DEBOUNCE_MS = 100;
+const MOVE_HISTORY_DELAY_MS = 1500;
 
 // Per-socket throttle for cursor events (bounded by CURSOR_THROTTLE_MS anyway).
 const cursorCooldown = new Cooldown(CURSOR_THROTTLE_MS);
@@ -40,6 +43,17 @@ const MAX_CONNECTIONS_PER_IP = 30;
 
 const ADMIN_ROLES = ["ADMIN", "MODERATOR"];
 
+/** Room the socket is currently in (`null` = public main canvas). */
+function roomIdOf(socket: Socket): string | null {
+  return (socket.data.roomId as string | undefined) ?? null;
+}
+
+/** Broadcasts to a room (or globally for the main canvas). */
+function emitToRoom(io: Server, roomId: string | null, event: string, payload: unknown): void {
+  if (roomId) io.to(roomId).emit(event, payload);
+  else io.emit(event, payload);
+}
+
 /** Ownership check: admins always pass, otherwise the item must belong to the
  * connected user (or be an old guest item created from this same IP). */
 function canEditItem(item: { userId: string | null; ipAddress: string }, socket: Socket): boolean {
@@ -49,10 +63,56 @@ function canEditItem(item: { userId: string | null; ipAddress: string }, socket:
   return false;
 }
 
-async function broadcastPresence(): Promise<void> {
+/** Whether the item lives in the room the socket is currently in. */
+function sameRoom(item: { roomId: string | null }, socket: Socket): boolean {
+  return (item.roomId ?? null) === roomIdOf(socket);
+}
+
+async function recordEdit(
+  itemId: string,
+  action: string,
+  snapshot: unknown,
+  socket: Socket
+): Promise<void> {
+  try {
+    await prisma.itemEdit.create({
+      data: {
+        itemId,
+        action,
+        snapshot: JSON.stringify(snapshot),
+        actorId: socket.data.userId ?? null,
+        actorName: (socket.data.user?.displayName ?? socket.data.user?.username) ?? null,
+      },
+    });
+  } catch {
+    /* history is best-effort */
+  }
+}
+
+function scheduleMoveHistory(socket: Socket, itemId: string, x: number, y: number): void {
+  const timerKey = `histTimer:${itemId}`;
+  const prev = socket.data[timerKey] as NodeJS.Timeout | undefined;
+  clearTimeout(prev);
+  socket.data[timerKey] = setTimeout(() => {
+    delete socket.data[timerKey];
+    void recordEdit(itemId, "move", { x, y }, socket);
+  }, MOVE_HISTORY_DELAY_MS);
+}
+
+function clearMoveTimers(socket: Socket): void {
+  for (const key of Object.keys(socket.data)) {
+    if (key.startsWith("histTimer:")) {
+      clearTimeout(socket.data[key] as NodeJS.Timeout);
+      delete socket.data[key];
+    }
+  }
+}
+
+async function broadcastPresence(roomId: string | null): Promise<void> {
   await bus.publish("presence:update", {
-    users: presence.snapshot(),
-    online: presence.count(),
+    roomId,
+    users: presence.snapshotForRoom(roomId),
+    online: presence.countByRoom(roomId),
   });
 }
 
@@ -69,17 +129,33 @@ export function initSocket(io: Server): void {
   // ---------------------------------------------------------------------
   // Cross-instance subscriptions -> broadcast to connected clients
   // ---------------------------------------------------------------------
-  bus.subscribe("canvas:item-add", (payload) => io.emit("canvas:item-add", payload));
-  bus.subscribe("canvas:item-move", (payload) => io.emit("canvas:item-move", payload));
-  bus.subscribe("canvas:item-delete", (payload) => io.emit("canvas:item-delete", payload));
-  bus.subscribe("canvas:item-reaction", (payload) => io.emit("canvas:item-reaction", payload));
+  bus.subscribe("canvas:item-add", (payload) => {
+    const p = payload as { roomId?: string | null };
+    emitToRoom(io, p.roomId ?? null, "canvas:item-add", payload);
+  });
+  bus.subscribe("canvas:item-move", (payload) => {
+    const p = payload as { roomId?: string | null };
+    emitToRoom(io, p.roomId ?? null, "canvas:item-move", payload);
+  });
+  bus.subscribe("canvas:item-delete", (payload) => {
+    const p = payload as { roomId?: string | null };
+    emitToRoom(io, p.roomId ?? null, "canvas:item-delete", payload);
+  });
+  bus.subscribe("canvas:item-reaction", (payload) => {
+    const p = payload as { roomId?: string | null };
+    emitToRoom(io, p.roomId ?? null, "canvas:item-reaction", payload);
+  });
   bus.subscribe("canvas:clear", () => io.emit("canvas:clear"));
-  bus.subscribe("presence:update", (payload) => io.emit("presence:update", payload));
+  bus.subscribe("presence:update", (payload) => {
+    const p = payload as { roomId?: string | null };
+    emitToRoom(io, p.roomId ?? null, "presence:update", payload);
+  });
 
   bus.subscribe("cursor:move", (payload) => {
-    const p = payload as { id: string };
+    const p = payload as { id: string; roomId?: string | null };
+    const room = p.roomId ?? null;
     for (const socket of io.sockets.sockets.values()) {
-      if (socket.id !== p.id) socket.emit("cursor:move", payload);
+      if (socket.id !== p.id && roomIdOf(socket) === room) socket.emit("cursor:move", payload);
     }
   });
 
@@ -101,7 +177,7 @@ export function initSocket(io: Server): void {
     presence.sweep(30_000);
     if (presence.count() !== before) {
       setOnlineCount(presence.count());
-      broadcastPresence();
+      for (const room of presence.rooms()) void broadcastPresence(room);
     }
   }, 10_000);
 
@@ -151,9 +227,9 @@ function handleConnection(socket: Socket): void {
   }
 
   const join = (): void => {
-    presence.join(socket.id, ip, name, color, user?.id);
+    presence.join(socket.id, ip, name, color, user?.id, null);
     setOnlineCount(presence.count());
-    broadcastPresence();
+    void broadcastPresence(null);
     socket.emit("canvas:init", {
       online: presence.count(),
       ip,
@@ -187,13 +263,15 @@ function handleConnection(socket: Socket): void {
     });
 
   socket.on("disconnect", () => {
+    const room = presence.roomOf(socket.id) ?? null;
     presence.leave(socket.id);
+    clearMoveTimers(socket);
     addCooldown.remove(socket.id);
     reactionCooldown.remove(socket.id);
     cursorCooldown.remove(socket.id);
     socketIpLimiter.prune();
     setOnlineCount(presence.count());
-    broadcastPresence();
+    void broadcastPresence(room);
   });
 }
 
@@ -206,7 +284,55 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
     if (!cursorCooldown.check(socket.id)) return;
 
     presence.touch(socket.id, parsed.x, parsed.y);
-    bus.publish("cursor:move", { id: socket.id, name, color, x: parsed.x, y: parsed.y });
+    bus.publish("cursor:move", {
+      id: socket.id,
+      name,
+      color,
+      x: parsed.x,
+      y: parsed.y,
+      roomId: roomIdOf(socket),
+    });
+  });
+
+  // ----------------------------- rooms -----------------------------
+  socket.on("room:join", async (data: unknown) => {
+    const parsed = parseZod(roomJoinSchema, data);
+    if (!parsed) return;
+    try {
+      const room = await prisma.room.findUnique({ where: { slug: parsed.slug } });
+      if (!room) {
+        socket.emit("room:error", { error: "Xona topilmadi" });
+        return;
+      }
+      if (!room.isPublic) {
+        if (!room.passwordHash || !(await password.verify(room.passwordHash, parsed.password ?? ""))) {
+          socket.emit("room:error", { error: "Parol noto'g'ri" });
+          return;
+        }
+      }
+      const oldRoom = presence.roomOf(socket.id) ?? null;
+      socket.data.roomId = room.id;
+      socket.join(room.id);
+      presence.setRoom(socket.id, room.id);
+      socket.emit("room:joined", {
+        room: { id: room.id, slug: room.slug, name: room.name, isPublic: room.isPublic },
+      });
+      void broadcastPresence(oldRoom);
+      void broadcastPresence(room.id);
+    } catch {
+      socket.emit("room:error", { error: "Xonaga kirib bo'lmadi" });
+    }
+  });
+
+  socket.on("room:leave", () => {
+    const current = roomIdOf(socket);
+    if (!current) return;
+    socket.leave(current);
+    socket.data.roomId = null;
+    presence.setRoom(socket.id, null);
+    socket.emit("room:left", {});
+    void broadcastPresence(current);
+    void broadcastPresence(null);
   });
 
   // ----------------------------- items -----------------------------
@@ -217,6 +343,7 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
     if (!socketIpLimiter.allow(socket.data.ip)) return;
 
     try {
+      const roomId = roomIdOf(socket);
       const item = await prisma.canvasItem.create({
         data: {
           type: parsed.type,
@@ -226,10 +353,17 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
           color: parsed.color ?? null,
           ipAddress: socket.data.ip,
           userId: socket.data.userId ?? null,
+          roomId,
         },
       });
-      const authorName = socket.data.userId ? (socket.data.user?.displayName ?? socket.data.user?.username ?? null) : null;
-      await bus.publish("canvas:item-add", { item: { ...publicItem(item), authorName } });
+      const authorName = socket.data.userId
+        ? (socket.data.user?.displayName ?? socket.data.user?.username ?? null)
+        : null;
+      await bus.publish("canvas:item-add", {
+        item: { ...publicItem(item), authorName },
+        roomId,
+      });
+      void recordEdit(item.id, "create", { type: item.type, content: item.content, x: item.x, y: item.y }, socket);
     } catch {
       socket.emit("error", "Failed to save item");
     }
@@ -240,14 +374,11 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
     if (!parsed) return;
     if (!socketIpLimiter.allow(socket.data.ip)) return;
 
-    // Only the author (or an admin) may move an item.
-    try {
-      const existing = await prisma.canvasItem.findUnique({ where: { id: parsed.id } });
-      if (!existing) return;
-      if (!socket.data.isAdmin && !canEditItem(existing, socket)) return;
-    } catch {
-      return;
-    }
+    // Only the author (or an admin) may move an item, and only within its room.
+    const existing = await prisma.canvasItem.findUnique({ where: { id: parsed.id } }).catch(() => null);
+    if (!existing || existing.deletedAt) return;
+    if (!sameRoom(existing, socket)) return;
+    if (!socket.data.isAdmin && !canEditItem(existing, socket)) return;
 
     // Debounce persistence: track last write per item id on this socket.
     const now = Date.now();
@@ -258,7 +389,13 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
 
     try {
       await prisma.canvasItem.update({ where: { id: parsed.id }, data: { x: parsed.x, y: parsed.y } });
-      await bus.publish("canvas:item-move", { id: parsed.id, x: parsed.x, y: parsed.y });
+      await bus.publish("canvas:item-move", {
+        id: parsed.id,
+        x: parsed.x,
+        y: parsed.y,
+        roomId: existing.roomId,
+      });
+      scheduleMoveHistory(socket, parsed.id, parsed.x, parsed.y);
     } catch {
       // Item may have been deleted concurrently - ignore.
     }
@@ -271,11 +408,33 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
 
     try {
       const existing = await prisma.canvasItem.findUnique({ where: { id: parsed.id } });
-      if (!existing) return;
+      if (!existing || existing.deletedAt) return;
+      if (!sameRoom(existing, socket)) return;
       // Users may delete their own items; admins may delete anything.
       if (!socket.data.isAdmin && !canEditItem(existing, socket)) return;
-      await prisma.canvasItem.delete({ where: { id: parsed.id } });
-      await bus.publish("canvas:item-delete", { id: parsed.id });
+      await prisma.canvasItem.update({ where: { id: parsed.id }, data: { deletedAt: new Date() } });
+      await bus.publish("canvas:item-delete", { id: parsed.id, roomId: existing.roomId });
+      void recordEdit(parsed.id, "delete", {}, socket);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  socket.on("canvas:item-undo", async (data: unknown) => {
+    const parsed = parseZod(itemDeleteSchema, data);
+    if (!parsed) return;
+    try {
+      const item = await prisma.canvasItem.findUnique({ where: { id: parsed.id } });
+      if (!item || item.deletedAt === null) return;
+      if (!socket.data.isAdmin && !canEditItem(item, socket)) return;
+      await prisma.canvasItem.update({ where: { id: parsed.id }, data: { deletedAt: null } });
+      const restored = await prisma.canvasItem.findUnique({
+        where: { id: parsed.id },
+        include: { user: { select: { displayName: true } } },
+      });
+      if (!restored) return;
+      await bus.publish("canvas:item-add", { item: publicItem(restored), roomId: restored.roomId });
+      void recordEdit(parsed.id, "undo", {}, socket);
     } catch {
       /* ignore */
     }
@@ -289,7 +448,8 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
 
     try {
       const item = await prisma.canvasItem.findUnique({ where: { id: parsed.id } });
-      if (!item) return;
+      if (!item || item.deletedAt) return;
+      if (!sameRoom(item, socket)) return;
       let reactions: Record<string, number> = {};
       try {
         reactions = JSON.parse(item.reactions ?? "{}");
@@ -298,7 +458,11 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
       }
       reactions[parsed.emoji] = (reactions[parsed.emoji] ?? 0) + 1;
       await prisma.canvasItem.update({ where: { id: parsed.id }, data: { reactions: JSON.stringify(reactions) } });
-      await bus.publish("canvas:item-reaction", { id: parsed.id, reactions });
+      await bus.publish("canvas:item-reaction", {
+        id: parsed.id,
+        reactions,
+        roomId: item.roomId,
+      });
     } catch {
       /* ignore */
     }
@@ -360,8 +524,10 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
     const parsed = parseZod(itemDeleteSchema, data);
     if (!parsed) return;
     try {
+      const existing = await prisma.canvasItem.findUnique({ where: { id: parsed.id } });
+      if (!existing) return;
       await prisma.canvasItem.delete({ where: { id: parsed.id } });
-      await bus.publish("canvas:item-delete", { id: parsed.id });
+      await bus.publish("canvas:item-delete", { id: parsed.id, roomId: existing.roomId });
       addLog("delete", `Item ${parsed.id.slice(0, 8)} deleted by admin (socket)`);
     } catch {
       /* ignore */

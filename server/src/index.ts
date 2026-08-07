@@ -8,6 +8,7 @@ import { config } from "./config.js";
 import { apiRouter } from "./routes/api.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
+import { roomsRouter } from "./routes/rooms.js";
 import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
@@ -79,6 +80,7 @@ async function main(): Promise<void> {
 
   app.use("/api", apiLimiter, apiRouter);
   app.use("/api/auth", authRouter);
+  app.use("/api/rooms", roomsRouter);
   app.use("/api/admin", adminRouter);
 
   // JSON error responses (multer file-size limits, JSON parse errors, ...)

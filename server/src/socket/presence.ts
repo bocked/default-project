@@ -28,16 +28,26 @@ export function randomCursorColor(): string {
 interface InternalUser extends PresenceUser {
   ip: string;
   userId?: string;
+  roomId: string | null;
 }
 
 /**
- * Per-instance presence store. Tracks connected users, their cursor position
- * and the client IP (used to disconnect banned users).
+ * Per-instance presence store. Tracks connected users, their cursor position,
+ * the room they are in and the client IP (used to disconnect banned users).
+ * A `roomId` of `null` means the public "main" canvas.
  */
 class PresenceStore {
   private users = new Map<string, InternalUser>();
 
-  join(socketId: string, ip: string, name: string, color: string, userId?: string, now = Date.now()): void {
+  join(
+    socketId: string,
+    ip: string,
+    name: string,
+    color: string,
+    userId?: string,
+    roomId: string | null = null,
+    now = Date.now()
+  ): void {
     this.users.set(socketId, {
       id: socketId,
       ip,
@@ -47,7 +57,18 @@ class PresenceStore {
       y: 0,
       updatedAt: now,
       userId,
+      roomId,
     });
+  }
+
+  /** Moves a connected user into another room (or back to main with `null`). */
+  setRoom(socketId: string, roomId: string | null): void {
+    const user = this.users.get(socketId);
+    if (user) user.roomId = roomId;
+  }
+
+  roomOf(socketId: string): string | null | undefined {
+    return this.users.get(socketId)?.roomId;
   }
 
   leave(socketId: string): void {
@@ -83,8 +104,36 @@ class PresenceStore {
     return n;
   }
 
+  private toPublic(user: InternalUser): PresenceUser {
+    const { ip: _ip, roomId: _roomId, ...pub } = user;
+    return pub;
+  }
+
   snapshot(): PresenceUser[] {
-    return [...this.users.values()].map(({ ip: _ip, ...user }) => user);
+    return [...this.users.values()].map((u) => this.toPublic(u));
+  }
+
+  /** Users currently inside a single room (`null` = main canvas). */
+  snapshotForRoom(roomId: string | null): PresenceUser[] {
+    return [...this.users.values()]
+      .filter((u) => (u.roomId ?? null) === roomId)
+      .map((u) => this.toPublic(u));
+  }
+
+  /** Number of users inside a single room (`null` = main canvas). */
+  countByRoom(roomId: string | null): number {
+    let n = 0;
+    for (const user of this.users.values()) {
+      if ((user.roomId ?? null) === roomId) n += 1;
+    }
+    return n;
+  }
+
+  /** Distinct room ids currently occupied (including main as `null`). */
+  rooms(): (string | null)[] {
+    const set = new Set<string | null>();
+    for (const user of this.users.values()) set.add(user.roomId ?? null);
+    return [...set];
   }
 
   /** Removes users that have not sent a heartbeat for `staleMs`. */

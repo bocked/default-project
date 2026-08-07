@@ -100,6 +100,39 @@ export const loginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
+// ---------------------------------------------------------------------------
+// Rooms
+// ---------------------------------------------------------------------------
+
+export const roomCreateSchema = z.object({
+  name: z.string().min(1).max(64),
+  slug: z
+    .string()
+    .regex(/^[a-z0-9-]{3,32}$/, "slug faqat kichik harflar, raqamlar va tire bo'lishi mumkin")
+    .optional(),
+  description: z.string().max(500).optional(),
+  isPublic: z.boolean().optional(),
+  password: z.string().min(4).max(128).optional(),
+});
+export type RoomCreate = z.infer<typeof roomCreateSchema>;
+
+export const roomAccessSchema = z.object({
+  password: z.string().min(1).max(128).optional(),
+});
+export type RoomAccess = z.infer<typeof roomAccessSchema>;
+
+export const reportCreateSchema = z.object({
+  itemId: z.string().min(1).max(64),
+  reason: z.string().min(3).max(500),
+});
+export type ReportCreate = z.infer<typeof reportCreateSchema>;
+
+export const roomJoinSchema = z.object({
+  slug: z.string().min(1).max(64),
+  password: z.string().min(1).max(128).optional(),
+});
+export type RoomJoin = z.infer<typeof roomJoinSchema>;
+
 /**
  * Parses unknown socket/request data against a schema. Returns `null` when the
  * input does not match so callers can drop the event/request silently.

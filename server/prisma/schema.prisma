@@ -23,9 +23,31 @@ model User {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  items CanvasItem[]
+  items    CanvasItem[]
+  edits    ItemEdit[]
+  reports  Report[]
+  rooms    Room[]
+  handledReports Report[] @relation("HandledReports")
 
   @@index([role])
+}
+
+model Room {
+  id           String   @id @default(uuid())
+  slug         String   @unique
+  name         String
+  description  String?
+  isPublic     Boolean  @default(true)
+  passwordHash String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownerId String?
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  items CanvasItem[]
+
+  @@index([isPublic])
 }
 
 model CanvasItem {
@@ -39,13 +61,57 @@ model CanvasItem {
   reactions String   @default("{}")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  deletedAt DateTime?
 
   userId String?
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  roomId String?
+  room   Room?   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  edits   ItemEdit[]
+  reports Report[]
+
   @@index([createdAt])
   @@index([type])
   @@index([userId])
+  @@index([roomId])
+  @@index([roomId, deletedAt])
+}
+
+model ItemEdit {
+  id        String   @id @default(uuid())
+  itemId    String
+  action    String
+  snapshot  String
+  actorId   String?
+  actorName String?
+  at        DateTime @default(now())
+
+  item  CanvasItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  actor User?      @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([itemId, at])
+  @@index([actorId, at])
+}
+
+model Report {
+  id        String   @id @default(uuid())
+  reason    String
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+  resolvedAt DateTime?
+
+  itemId String
+  item   CanvasItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  handledById String?
+  handledBy   User?   @relation("HandledReports", fields: [handledById], references: [id], onDelete: SetNull)
+
+  reporterId String?
+  reporter   User?   @relation(fields: [reporterId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
 }
 
 model BannedIp {

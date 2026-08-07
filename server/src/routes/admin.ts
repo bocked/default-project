@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin } from "../middleware/adminAuth.js";
 import { recentLogs, addLog } from "../lib/logstore.js";
@@ -103,3 +104,65 @@ adminRouter.delete("/bans/:ip", async (req, res) => {
 adminRouter.get("/logs", (_req, res) => {
   res.json({ logs: recentLogs(200) });
 });
+
+// GET /api/admin/reports - moderation queue
+adminRouter.get("/reports", async (req, res) => {
+  try {
+    const status = typeof req.query.status === "string" ? req.query.status : "OPEN";
+    const reports = await prisma.report.findMany({
+      where: { status },
+      orderBy: { createdAt: "asc" },
+      take: 200,
+      include: {
+        item: { select: { id: true, type: true, content: true, x: true, y: true, deletedAt: true, roomId: true } },
+        reporter: { select: { username: true, displayName: true } },
+        handledBy: { select: { username: true, displayName: true } },
+      },
+    });
+    res.json({ reports });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// POST /api/admin/reports/:id/resolve - action on a report
+// body: { action: "DISMISS" | "REMOVE" }
+adminRouter.post(
+  "/reports/:id/resolve",
+  validateBody(z.object({ action: z.enum(["DISMISS", "REMOVE"]) })),
+  async (req, res) => {
+    try {
+      const { action } = res.locals.body as { action: "DISMISS" | "REMOVE" };
+      const report = await prisma.report.findUnique({
+        where: { id: req.params.id },
+        include: { item: true },
+      });
+      if (!report || report.status !== "OPEN") {
+        res.status(404).json({ error: "Report not found" });
+        return;
+      }
+      if (action === "REMOVE") {
+        await prisma.canvasItem.update({
+          where: { id: report.itemId },
+          data: { deletedAt: new Date() },
+        });
+        await bus.publish("canvas:item-delete", { id: report.itemId, roomId: report.item.roomId });
+      }
+      await prisma.report.update({
+        where: { id: report.id },
+        data: {
+          status: "RESOLVED",
+          resolvedAt: new Date(),
+          handledById: req.user?.sub ?? null,
+        },
+      });
+      addLog(
+        "info",
+        `Report ${report.id.slice(0, 8)} ${action === "REMOVE" ? "removed item" : "dismissed"} (${report.reason.slice(0, 80)})`
+      );
+      res.json({ ok: true, action });
+    } catch {
+      res.status(500).json({ error: "Failed to resolve report" });
+    }
+  }
+);

@@ -24,12 +24,27 @@ describe("presence", () => {
 
   it("sweeps stale users", () => {
     presence.clear();
-    presence.join("s1", "1.1.1.1", "Alice", "#fff", undefined, 0);
-    presence.join("s2", "1.1.1.1", "Bob", "#000", undefined, 0);
+    presence.join("s1", "1.1.1.1", "Alice", "#fff", undefined, null, 0);
+    presence.join("s2", "1.1.1.1", "Bob", "#000", undefined, null, 0);
     presence.touch("s1", 1, 1, 39_500); // fresh relative to now=40_000
     presence.sweep(30_000, 40_000);
     expect(presence.get("s1")).toBeDefined();
     expect(presence.get("s2")).toBeUndefined();
+  });
+
+  it("tracks users per room", () => {
+    presence.clear();
+    presence.join("s1", "1.1.1.1", "Alice", "#fff", undefined, "room-a");
+    presence.join("s2", "1.1.1.1", "Bob", "#000", undefined, null);
+    presence.join("s3", "2.2.2.2", "Carol", "#111", undefined, "room-a");
+    expect(presence.countByRoom("room-a")).toBe(2);
+    expect(presence.countByRoom(null)).toBe(1);
+    expect(presence.snapshotForRoom("room-a").map((u) => u.id)).toEqual(["s1", "s3"]);
+    expect(presence.rooms().sort()).toEqual(["room-a", null].sort());
+
+    presence.setRoom("s3", "room-b");
+    expect(presence.roomOf("s3")).toBe("room-b");
+    expect(presence.countByRoom("room-a")).toBe(1);
   });
 
   it("snapshot excludes the ip field", () => {
