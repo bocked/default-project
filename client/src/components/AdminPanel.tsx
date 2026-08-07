@@ -123,9 +123,9 @@ export default function AdminPanel({ api, onClose }: { api: CanvasApi; onClose: 
   };
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onClose}>
+    <div className="animate-fade-in absolute inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onClose}>
       <div
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="animate-slide-up flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -145,8 +145,8 @@ export default function AdminPanel({ api, onClose }: { api: CanvasApi; onClose: 
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
               autoFocus
             />
-            {authError && <p className="text-xs text-red-500">Parol noto&apos;g&apos;ri</p>}
-            <button className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">
+            {authError && <p className="animate-shake text-xs text-red-500">Parol noto&apos;g&apos;ri</p>}
+            <button className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 active:scale-[0.98]">
               Kirish
             </button>
           </form>
@@ -294,7 +294,7 @@ export default function AdminPanel({ api, onClose }: { api: CanvasApi; onClose: 
 
 function StatCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-slate-200 p-4 text-center">
+    <div className="animate-pop-in rounded-xl border border-slate-200 p-4 text-center transition-shadow duration-200 hover:shadow-md">
       <div className="text-2xl font-semibold text-slate-800">{value}</div>
       <div className="mt-1 text-xs text-slate-400">{label}</div>
     </div>

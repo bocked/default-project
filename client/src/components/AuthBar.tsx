@@ -35,7 +35,7 @@ export default function AuthBar() {
 
   if (user) {
     return (
-      <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-white/95 px-3 py-1.5 shadow">
+      <div className="animate-fade-in pointer-events-auto flex items-center gap-2 rounded-full bg-white/95 px-3 py-1.5 shadow">
         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: user.color }} />
         <span className="max-w-32 truncate text-sm font-medium text-slate-700">{user.displayName}</span>
         {user.role !== "USER" && (
@@ -44,7 +44,7 @@ export default function AuthBar() {
           </span>
         )}
         <button
-          className="ml-1 rounded-full px-2 py-0.5 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+          className="ml-1 rounded-full px-2 py-0.5 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 active:scale-95"
           onClick={logout}
         >
           Chiqish
@@ -56,17 +56,17 @@ export default function AuthBar() {
   return (
     <div className="pointer-events-auto">
       <button
-        className="rounded-full bg-white/95 px-3 py-1.5 text-sm font-medium text-slate-700 shadow transition hover:bg-white"
+        className="rounded-full bg-white/95 px-3 py-1.5 text-sm font-medium text-slate-700 shadow transition hover:bg-white active:scale-95"
         onClick={() => setOpen((o) => !o)}
       >
         Kirish
       </button>
 
       {open && (
-        <div className="absolute right-3 top-12 z-50 w-72 rounded-xl bg-white p-4 shadow-xl">
+        <div className="animate-slide-up absolute right-3 top-12 z-50 w-72 rounded-xl bg-white p-4 shadow-xl">
           <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-1">
             <button
-              className={`flex-1 rounded-md py-1 text-sm font-medium transition ${mode === "login" ? "bg-white shadow" : "text-slate-500"}`}
+              className={`flex-1 rounded-md py-1 text-sm font-medium transition active:scale-[0.98] ${mode === "login" ? "bg-white shadow" : "text-slate-500"}`}
               onClick={() => {
                 setMode("login");
                 setError(null);
@@ -75,7 +75,7 @@ export default function AuthBar() {
               Kirish
             </button>
             <button
-              className={`flex-1 rounded-md py-1 text-sm font-medium transition ${mode === "register" ? "bg-white shadow" : "text-slate-500"}`}
+              className={`flex-1 rounded-md py-1 text-sm font-medium transition active:scale-[0.98] ${mode === "register" ? "bg-white shadow" : "text-slate-500"}`}
               onClick={() => {
                 setMode("register");
                 setError(null);
@@ -116,11 +116,11 @@ export default function AuthBar() {
               maxLength={128}
               required
             />
-            {error && <p className="text-xs text-red-600">{error}</p>}
+            {error && <p className="animate-shake text-xs text-red-600">{error}</p>}
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-md bg-slate-800 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
+              className="w-full rounded-md bg-slate-800 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700 active:scale-[0.98] disabled:opacity-50"
             >
               {busy ? "Ishlanmoqda..." : mode === "login" ? "Kirish" : "Ro'yxatdan o'tish"}
             </button>

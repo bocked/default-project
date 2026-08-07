@@ -95,7 +95,7 @@ export default function RoomSwitcher({ api }: { api: CanvasApi }) {
           </div>
         ) : (
           <button
-            className="rounded-full bg-white/95 px-3 py-1.5 text-sm font-medium text-slate-700 shadow transition hover:bg-white"
+            className="rounded-full bg-white/95 px-3 py-1.5 text-sm font-medium text-slate-700 shadow transition hover:bg-white active:scale-95"
             onClick={() => setOpen((o) => !o)}
           >
             🚪 Xonalar
@@ -104,10 +104,10 @@ export default function RoomSwitcher({ api }: { api: CanvasApi }) {
       </div>
 
       {open && (
-        <div className="absolute left-3 top-14 z-50 w-80 rounded-xl bg-white p-4 shadow-xl" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="animate-slide-up absolute left-3 top-14 z-50 w-80 rounded-xl bg-white p-4 shadow-xl" onPointerDown={(e) => e.stopPropagation()}>
           <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-1">
             <button
-              className={`flex-1 rounded-md py-1 text-sm font-medium transition ${mode === "list" ? "bg-white shadow" : "text-slate-500"}`}
+              className={`flex-1 rounded-md py-1 text-sm font-medium transition active:scale-[0.98] ${mode === "list" ? "bg-white shadow" : "text-slate-500"}`}
               onClick={() => {
                 setMode("list");
                 setError(null);
@@ -116,7 +116,7 @@ export default function RoomSwitcher({ api }: { api: CanvasApi }) {
               Xonalar
             </button>
             <button
-              className={`flex-1 rounded-md py-1 text-sm font-medium transition ${mode === "create" ? "bg-white shadow" : "text-slate-500"}`}
+              className={`flex-1 rounded-md py-1 text-sm font-medium transition active:scale-[0.98] ${mode === "create" ? "bg-white shadow" : "text-slate-500"}`}
               onClick={() => {
                 setMode("create");
                 setError(null);
@@ -152,7 +152,7 @@ export default function RoomSwitcher({ api }: { api: CanvasApi }) {
                     </div>
                   </div>
                   <button
-                    className="shrink-0 rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-slate-700"
+                    className="shrink-0 rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-slate-700 active:scale-95"
                     onClick={() => join(r.slug, !r.isPublic)}
                   >
                     Kirish
@@ -200,7 +200,7 @@ export default function RoomSwitcher({ api }: { api: CanvasApi }) {
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full rounded-md bg-slate-800 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
+                className="w-full rounded-md bg-slate-800 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700 active:scale-[0.98] disabled:opacity-50"
               >
                 {busy ? "Yaratilmoqda..." : "Yaratish"}
               </button>
@@ -211,14 +211,14 @@ export default function RoomSwitcher({ api }: { api: CanvasApi }) {
 
       {privateFor && (
         <div
-          className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-900/40"
+          className="animate-fade-in absolute inset-0 z-[60] flex items-center justify-center bg-slate-900/40"
           onPointerDown={(e) => {
             e.stopPropagation();
             setPrivateFor(null);
             setPrivatePassword("");
           }}
         >
-          <form onSubmit={submitPrivate} className="w-72 rounded-xl bg-white p-4 shadow-xl" onPointerDown={(e) => e.stopPropagation()}>
+          <form onSubmit={submitPrivate} className="animate-slide-up w-72 rounded-xl bg-white p-4 shadow-xl" onPointerDown={(e) => e.stopPropagation()}>
             <h3 className="mb-1 text-sm font-semibold text-slate-800">Maxfiy xona: {privateFor.name}</h3>
             <p className="mb-3 text-xs text-slate-400">Kirish uchun parol kerak.</p>
             <input

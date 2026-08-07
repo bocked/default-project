@@ -253,7 +253,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   if (banned) {
     return (
       <div className="flex h-full items-center justify-center bg-slate-100">
-        <div className="rounded-xl bg-white p-8 text-center shadow">
+        <div className="animate-slide-up rounded-xl bg-white p-8 text-center shadow">
           <div className="text-4xl">🚫</div>
           <h1 className="mt-2 text-xl font-semibold text-slate-800">Siz bloklangansiz</h1>
           <p className="mt-1 text-sm text-slate-500">Bu kustav daftariga kirishingiz cheklangan.</p>
@@ -265,9 +265,13 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   return (
     <div
       ref={containerRef}
-      className={`relative h-full w-full touch-none overflow-hidden bg-slate-100 select-none ${
+      className={`canvas-dot-grid relative h-full w-full touch-none overflow-hidden bg-slate-100 select-none ${
         tool === "MOVE" ? "cursor-grab" : "cursor-crosshair"
       } ${panning ? "cursor-grabbing" : ""} ${drag ? "cursor-grabbing" : ""}`}
+      style={{
+        backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
+        backgroundPosition: `${offset.x}px ${offset.y}px`,
+      }}
       onPointerMove={handlePointerMove}
       onPointerUp={endPointer}
       onPointerCancel={endPointer}
@@ -280,7 +284,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
         className="absolute left-0 top-0"
         style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: "0 0" }}
       >
-        {items.map((item) => {
+        {items.map((item, index) => {
           const pos = { x: item.x, y: item.y };
           const isHovered = hoveredId === item.id;
           return (
@@ -289,19 +293,20 @@ export default function Canvas({ api }: { api: CanvasApi }) {
                 onPointerDown={(e) => handleItemPointerDown(e, item)}
                 onPointerEnter={() => setHoveredId(item.id)}
                 onPointerLeave={() => setHoveredId(null)}
-                className="group relative"
+                className="animate-pop-in group relative cursor-grab active:cursor-grabbing"
+                style={{ animationDelay: `${Math.min(index, 24) * 10}ms` }}
               >
                 {item.type === "IMAGE" ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={item.content}
                     alt=""
-                    className="pointer-events-none max-h-72 max-w-72 rounded-md shadow-lg"
+                    className={`pointer-events-none max-h-72 max-w-72 rounded-md shadow-lg transition-shadow duration-200 ${isHovered ? "shadow-2xl" : ""}`}
                     style={{ outline: isHovered ? "2px solid #3b82f6" : "none" }}
                   />
                 ) : item.type === "STICKY" ? (
                   <div
-                    className="pointer-events-none min-w-40 max-w-64 rounded p-3 shadow-md"
+                    className={`pointer-events-none min-w-40 max-w-64 rounded p-3 shadow-md transition-shadow duration-200 ${isHovered ? "shadow-xl" : ""}`}
                     style={{
                       backgroundColor: item.color ?? "#fef08a",
                       fontFamily: "var(--font-geist-sans), sans-serif",
@@ -310,7 +315,9 @@ export default function Canvas({ api }: { api: CanvasApi }) {
                     <p className="whitespace-pre-wrap text-sm leading-5 text-slate-800">{item.content}</p>
                   </div>
                 ) : (
-                  <div className="pointer-events-none max-w-64 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 shadow-md">
+                  <div
+                    className={`pointer-events-none max-w-64 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 shadow-md transition-shadow duration-200 ${isHovered ? "shadow-xl" : ""}`}
+                  >
                     <p className="whitespace-pre-wrap text-sm text-slate-800" style={{ color: item.color ?? undefined }}>
                       {item.content}
                     </p>
@@ -319,7 +326,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
 
                 {/* Reaction bubbles */}
                 {Object.keys(item.reactions).length > 0 && (
-                  <div className="pointer-events-none absolute -bottom-3 left-1/2 flex -translate-x-1/2 gap-1 rounded-full bg-white/90 px-2 py-0.5 text-xs shadow">
+                  <div className="animate-pop-in pointer-events-none absolute -bottom-3 left-1/2 flex -translate-x-1/2 gap-1 rounded-full bg-white/90 px-2 py-0.5 text-xs shadow">
                     {Object.entries(item.reactions).map(([emoji, count]) => (
                       <span key={emoji}>
                         {emoji}
@@ -331,11 +338,11 @@ export default function Canvas({ api }: { api: CanvasApi }) {
 
                 {/* Hover reaction bar */}
                 {isHovered && (
-                  <div className="absolute -top-8 left-1/2 flex -translate-x-1/2 gap-0.5 rounded-full bg-slate-800/90 px-1.5 py-1 shadow">
+                  <div className="animate-pop-in absolute -top-8 left-1/2 flex -translate-x-1/2 gap-0.5 rounded-full bg-slate-800/90 px-1.5 py-1 shadow">
                     {EMOJIS.map((emoji) => (
                       <button
                         key={emoji}
-                        className="rounded-full px-1 text-sm transition hover:scale-125"
+                        className="rounded-full px-1 text-sm transition hover:scale-125 active:scale-90"
                         onPointerDown={(e) => {
                           e.stopPropagation();
                           react(item.id, emoji);
@@ -382,7 +389,10 @@ export default function Canvas({ api }: { api: CanvasApi }) {
 
         {/* Pending text input */}
         {pendingText && (
-          <div className="absolute" style={{ left: pendingText.x, top: pendingText.y, transform: "translate(-50%, -50%)" }}>
+          <div
+            className="animate-pop-in absolute"
+            style={{ left: pendingText.x, top: pendingText.y, transform: "translate(-50%, -50%)" }}
+          >
             <input
               autoFocus
               placeholder="Yozing..."
@@ -401,7 +411,11 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       {Object.values(cursors).map((c) => {
         const pos = worldToScreen({ x: c.x, y: c.y });
         return (
-          <div key={c.id} className="pointer-events-none absolute z-20" style={{ left: pos.x, top: pos.y }}>
+          <div
+            key={c.id}
+            className="pointer-events-none absolute z-20"
+            style={{ left: pos.x, top: pos.y, transition: "left 90ms linear, top 90ms linear" }}
+          >
             <div className="relative">
               <svg width="16" height="16" viewBox="0 0 24 24" fill={c.color}>
                 <path d="M5 3l14 7-6.5 1.5L9 19z" />
@@ -456,7 +470,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
 
       {/* Undo chip after own delete */}
       {lastDeletedId && (
-        <div className="absolute bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 shadow-lg">
+        <div className="animate-fade-in absolute bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 shadow-lg">
           <span className="text-sm text-white">{"Element o'chirildi"}</span>
           <button
             className="rounded-full bg-white/15 px-2.5 py-0.5 text-sm font-medium text-white transition hover:bg-white/25"
@@ -489,7 +503,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       </div>
 
       {toast && (
-        <div className="absolute bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-slate-800/90 px-4 py-2 text-sm text-white shadow-lg">
+        <div className="animate-toast-in absolute bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-slate-800/90 px-4 py-2 text-sm text-white shadow-lg">
           {toast}
         </div>
       )}
@@ -498,14 +512,14 @@ export default function Canvas({ api }: { api: CanvasApi }) {
 
       {reportFor && (
         <div
-          className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-900/40"
+          className="animate-fade-in absolute inset-0 z-[60] flex items-center justify-center bg-slate-900/40"
           onPointerDown={(e) => {
             e.stopPropagation();
             setReportFor(null);
           }}
         >
           <form
-            className="w-80 rounded-xl bg-white p-4 shadow-xl"
+            className="animate-slide-up w-80 rounded-xl bg-white p-4 shadow-xl"
             onSubmit={submitReport}
             onPointerDown={(e) => e.stopPropagation()}
           >

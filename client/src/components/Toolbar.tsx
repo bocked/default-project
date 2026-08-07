@@ -29,8 +29,9 @@ export default function Toolbar({ tool, setTool, color, setColor, colors, online
           <button
             key={t.key}
             title={t.label}
-            className={`flex h-9 w-9 items-center justify-center rounded-lg text-lg transition ${
-              tool === t.key ? "bg-blue-100 text-blue-600" : "text-slate-500 hover:bg-slate-100"
+            aria-pressed={tool === t.key}
+            className={`flex h-9 w-9 items-center justify-center rounded-lg text-lg transition-transform active:scale-90 ${
+              tool === t.key ? "animate-pop-in bg-blue-100 text-blue-600" : "text-slate-500 hover:scale-105 hover:bg-slate-100"
             }`}
             onClick={() => setTool(t.key)}
           >
@@ -43,7 +44,10 @@ export default function Toolbar({ tool, setTool, color, setColor, colors, online
         {colors.map((c) => (
           <button
             key={c}
-            className={`h-5 w-5 rounded-full transition ${color === c ? "ring-2 ring-blue-500 ring-offset-1" : "hover:scale-110"}`}
+            aria-label={`Rang ${c}`}
+            className={`h-5 w-5 rounded-full transition-transform active:scale-75 ${
+              color === c ? "ring-2 ring-blue-500 ring-offset-1" : "hover:scale-110"
+            }`}
             style={{ backgroundColor: c }}
             onClick={() => setColor(c)}
           />
@@ -53,7 +57,7 @@ export default function Toolbar({ tool, setTool, color, setColor, colors, online
       <div className="h-6 w-px bg-slate-200" />
 
       <div className="flex items-center gap-1.5 text-sm text-slate-600">
-        <span className={`h-2 w-2 rounded-full ${connected ? "bg-green-500" : "bg-red-400"}`} />
+        <span className={`h-2 w-2 rounded-full ${connected ? "animate-pulse bg-green-500" : "bg-red-400"}`} />
         {connected ? `${online} onlayn` : "ulanish... "}
       </div>
 
@@ -67,7 +71,7 @@ export default function Toolbar({ tool, setTool, color, setColor, colors, online
       <div className="h-6 w-px bg-slate-200" />
 
       <button
-        className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+        className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 active:scale-95"
         onClick={onAdmin}
       >
         🛠 Admin
