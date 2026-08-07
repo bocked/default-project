@@ -24,8 +24,8 @@ describe("presence", () => {
 
   it("sweeps stale users", () => {
     presence.clear();
-    presence.join("s1", "1.1.1.1", "Alice", "#fff", 0);
-    presence.join("s2", "1.1.1.1", "Bob", "#000", 0);
+    presence.join("s1", "1.1.1.1", "Alice", "#fff", undefined, 0);
+    presence.join("s2", "1.1.1.1", "Bob", "#000", undefined, 0);
     presence.touch("s1", 1, 1, 39_500); // fresh relative to now=40_000
     presence.sweep(30_000, 40_000);
     expect(presence.get("s1")).toBeDefined();

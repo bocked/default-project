@@ -21,6 +21,7 @@ import {
 } from "../schemas.js";
 import { Cooldown } from "../lib/cooldown.js";
 import { SocketRateLimiter } from "../lib/socketRateLimit.js";
+import { verifyToken } from "../lib/token.js";
 
 const CURSOR_THROTTLE_MS = 30;
 const ITEM_ADD_COOLDOWN_MS = 1000;
@@ -36,6 +37,17 @@ const reactionCooldown = new Cooldown(REACTION_COOLDOWN_MS);
 const socketEventLimiter = new SocketRateLimiter(10_000, 400);
 const socketIpLimiter = new SocketRateLimiter(60_000, 120);
 const MAX_CONNECTIONS_PER_IP = 30;
+
+const ADMIN_ROLES = ["ADMIN", "MODERATOR"];
+
+/** Ownership check: admins always pass, otherwise the item must belong to the
+ * connected user (or be an old guest item created from this same IP). */
+function canEditItem(item: { userId: string | null; ipAddress: string }, socket: Socket): boolean {
+  if (socket.data.isAdmin) return true;
+  if (socket.data.userId && item.userId === socket.data.userId) return true;
+  if (!item.userId && item.ipAddress === socket.data.ip) return true;
+  return false;
+}
 
 async function broadcastPresence(): Promise<void> {
   await bus.publish("presence:update", {
@@ -93,6 +105,26 @@ export function initSocket(io: Server): void {
     }
   }, 10_000);
 
+  io.use((socket, next) => {
+    const token =
+      typeof socket.handshake.auth?.token === "string" ? socket.handshake.auth.token : "";
+    if (!token) {
+      // Anonymous guest - allowed.
+      next();
+      return;
+    }
+    verifyToken(token)
+      .then((payload) => {
+        if (!payload) {
+          next(new Error("Invalid token"));
+          return;
+        }
+        socket.data.user = payload;
+        next();
+      })
+      .catch(() => next(new Error("Invalid token")));
+  });
+
   io.on("connection", (socket) => {
     handleConnection(socket);
   });
@@ -102,12 +134,35 @@ function handleConnection(socket: Socket): void {
   const ip = clientIp(socket.handshake.headers);
   socket.data.ip = ip;
 
+  // Authenticated users keep their account identity; guests get a random name.
+  const user = socket.data.user as
+    | { id: string; username: string; role: string; displayName?: string; color?: string }
+    | undefined;
+  const name = user?.displayName ?? user?.username ?? randomGuestName();
+  const color = user?.color ?? randomCursorColor();
+  socket.data.name = name;
+  socket.data.userId = user?.id;
+
   // Guard against one IP opening too many sockets.
   if (presence.countByIp(ip) >= MAX_CONNECTIONS_PER_IP) {
     socket.emit("error", "Too many connections from this address");
     socket.disconnect(true);
     return;
   }
+
+  const join = (): void => {
+    presence.join(socket.id, ip, name, color, user?.id);
+    setOnlineCount(presence.count());
+    broadcastPresence();
+    socket.emit("canvas:init", {
+      online: presence.count(),
+      ip,
+      name,
+      color,
+      userId: user?.id ?? null,
+    });
+    registerHandlers(socket, name, color);
+  };
 
   // Reject banned clients immediately.
   prisma.bannedIp
@@ -118,35 +173,11 @@ function handleConnection(socket: Socket): void {
         socket.disconnect(true);
         return;
       }
-
-      const name = randomGuestName();
-      const color = randomCursorColor();
-      socket.data.name = name;
-      presence.join(socket.id, ip, name, color);
-      setOnlineCount(presence.count());
-      broadcastPresence();
-
-      socket.emit("canvas:init", {
-        online: presence.count(),
-        ip,
-        name,
-        color,
-      });
-
-      // Initial items are fetched by the client over HTTP (/api/items) so we
-      // keep the socket handshake fast.
-      registerHandlers(socket, name, color);
+      join();
     })
     .catch(() => {
       // Database unavailable - still allow the client to connect (read-only).
-      const name = randomGuestName();
-      const color = randomCursorColor();
-      socket.data.name = name;
-      presence.join(socket.id, ip, name, color);
-      setOnlineCount(presence.count());
-      broadcastPresence();
-      socket.emit("canvas:init", { online: presence.count(), ip, name, color });
-      registerHandlers(socket, name, color);
+      join();
     });
 
   socket.on("disconnect", () => {
@@ -188,9 +219,11 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
           y: parsed.y,
           color: parsed.color ?? null,
           ipAddress: socket.data.ip,
+          userId: socket.data.userId ?? null,
         },
       });
-      await bus.publish("canvas:item-add", { item: publicItem(item) });
+      const authorName = socket.data.userId ? (socket.data.user?.displayName ?? socket.data.user?.username ?? null) : null;
+      await bus.publish("canvas:item-add", { item: { ...publicItem(item), authorName } });
     } catch {
       socket.emit("error", "Failed to save item");
     }
@@ -200,6 +233,15 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
     const parsed = parseZod(itemMoveSchema, data);
     if (!parsed) return;
     if (!socketIpLimiter.allow(socket.data.ip)) return;
+
+    // Only the author (or an admin) may move an item.
+    try {
+      const existing = await prisma.canvasItem.findUnique({ where: { id: parsed.id } });
+      if (!existing) return;
+      if (!socket.data.isAdmin && !canEditItem(existing, socket)) return;
+    } catch {
+      return;
+    }
 
     // Debounce persistence: track last write per item id on this socket.
     const now = Date.now();
@@ -225,7 +267,7 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
       const existing = await prisma.canvasItem.findUnique({ where: { id: parsed.id } });
       if (!existing) return;
       // Users may delete their own items; admins may delete anything.
-      if (!socket.data.isAdmin && existing.ipAddress !== socket.data.ip) return;
+      if (!socket.data.isAdmin && !canEditItem(existing, socket)) return;
       await prisma.canvasItem.delete({ where: { id: parsed.id } });
       await bus.publish("canvas:item-delete", { id: parsed.id });
     } catch {
@@ -258,6 +300,14 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
 
   // ----------------------------- admin -----------------------------
   socket.on("admin:auth", (data: unknown) => {
+    const user = socket.data.user as { role: string } | undefined;
+    // Role-based admins (JWT) are already authenticated.
+    if (user && ADMIN_ROLES.includes(user.role)) {
+      socket.data.isAdmin = true;
+      socket.emit("admin:authed", { ok: true });
+      addLog("info", `Admin logged in (socket ${socket.id.slice(0, 8)})`);
+      return;
+    }
     const parsed = parseZod(adminAuthSchema, data);
     if (!parsed) return;
     if (parsed.password === config.adminPassword) {

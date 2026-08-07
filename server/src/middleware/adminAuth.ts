@@ -1,16 +1,30 @@
 import { NextFunction, Request, Response } from "express";
 import { config } from "../config.js";
+import { tokenFromHeader, verifyToken } from "../lib/token.js";
+
+const ADMIN_ROLES = ["ADMIN", "MODERATOR"];
 
 /**
- * Protects /api/admin/* routes. Expects `Authorization: Bearer <ADMIN_PASSWORD>`.
+ * Protects /api/admin/* routes. Accepts either:
+ *  1. a legacy `Authorization: Bearer <ADMIN_PASSWORD>`, or
+ *  2. a JWT whose user role is ADMIN or MODERATOR.
+ * Attaches `req.user` when a valid JWT was used.
  */
-export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const header = req.headers.authorization ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const token = tokenFromHeader(req.headers.authorization);
 
-  if (!token || token !== config.adminPassword) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
+  if (token) {
+    if (token === config.adminPassword) {
+      next();
+      return;
+    }
+    const payload = await verifyToken(token);
+    if (payload && ADMIN_ROLES.includes(payload.role)) {
+      req.user = payload;
+      next();
+      return;
+    }
   }
-  next();
+
+  res.status(401).json({ error: "Unauthorized" });
 }

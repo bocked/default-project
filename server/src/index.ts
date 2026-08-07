@@ -7,6 +7,7 @@ import { Server } from "socket.io";
 import { config } from "./config.js";
 import { apiRouter } from "./routes/api.js";
 import { adminRouter } from "./routes/admin.js";
+import { authRouter } from "./routes/auth.js";
 import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
@@ -42,6 +43,13 @@ async function main(): Promise<void> {
   }
   await redis.connect();
 
+  if (!process.env.JWT_SECRET) {
+    logger.warn("JWT_SECRET is not set - using insecure development secret. Set it in production!");
+  }
+  if (process.env.NODE_ENV === "production" && config.adminPassword === "change-me") {
+    logger.warn("ADMIN_PASSWORD is still the default value. Change it in production!");
+  }
+
   const app = express();
   const server = http.createServer(app);
   const io = new Server(server, {
@@ -70,6 +78,7 @@ async function main(): Promise<void> {
   });
 
   app.use("/api", apiLimiter, apiRouter);
+  app.use("/api/auth", authRouter);
   app.use("/api/admin", adminRouter);
 
   // JSON error responses (multer file-size limits, JSON parse errors, ...)

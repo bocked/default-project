@@ -82,6 +82,24 @@ export const banCreateSchema = z.object({
 });
 export type BanCreate = z.infer<typeof banCreateSchema>;
 
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+export const registerSchema = z.object({
+  username: z.string().min(3).max(24).regex(/^[a-zA-Z0-9_.-]+$/, "username faqat harf, raqam, _ . - bo'lishi mumkin"),
+  displayName: z.string().min(1).max(32).optional(),
+  password: z.string().min(8).max(128, "parol 128 belgidan oshmasligi kerak"),
+  color: z.string().max(32).optional(),
+});
+export type RegisterInput = z.infer<typeof registerSchema>;
+
+export const loginSchema = z.object({
+  username: z.string().min(1).max(64),
+  password: z.string().min(1).max(128),
+});
+export type LoginInput = z.infer<typeof loginSchema>;
+
 /**
  * Parses unknown socket/request data against a schema. Returns `null` when the
  * input does not match so callers can drop the event/request silently.

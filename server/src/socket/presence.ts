@@ -27,6 +27,7 @@ export function randomCursorColor(): string {
 
 interface InternalUser extends PresenceUser {
   ip: string;
+  userId?: string;
 }
 
 /**
@@ -36,7 +37,7 @@ interface InternalUser extends PresenceUser {
 class PresenceStore {
   private users = new Map<string, InternalUser>();
 
-  join(socketId: string, ip: string, name: string, color: string, now = Date.now()): void {
+  join(socketId: string, ip: string, name: string, color: string, userId?: string, now = Date.now()): void {
     this.users.set(socketId, {
       id: socketId,
       ip,
@@ -45,6 +46,7 @@ class PresenceStore {
       x: 0,
       y: 0,
       updatedAt: now,
+      userId,
     });
   }
 

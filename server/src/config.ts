@@ -26,6 +26,8 @@ export const config = {
     .map((s) => s.trim())
     .filter(Boolean),
   adminPassword: process.env.ADMIN_PASSWORD ?? "change-me",
+  jwtSecret: process.env.JWT_SECRET ?? "dev-insecure-jwt-secret-change-me",
+  jwtExpiresInSeconds: num(process.env.JWT_EXPIRES_IN_SECONDS, 30 * 24 * 60 * 60),
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? `http://localhost:${num(process.env.PORT, 4000)}`,
   maxUploadBytes: num(process.env.MAX_UPLOAD_BYTES, 10 * 1024 * 1024),
   logToConsole: bool(process.env.LOG_TO_CONSOLE, true),

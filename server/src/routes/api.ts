@@ -10,6 +10,7 @@ import { config } from "../config.js";
 import { bus } from "../lib/bus.js";
 import { strictLimiter } from "../lib/rateLimit.js";
 import { validateBody, itemCreateSchema } from "../schemas.js";
+import { attachUser } from "../middleware/auth.js";
 import { z } from "zod";
 
 export const apiRouter = Router();
@@ -44,11 +45,15 @@ export interface PublicItem {
   y: number;
   color: string | null;
   reactions: Record<string, number>;
+  userId: string | null;
+  authorName: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export function publicItem(item: CanvasItem): PublicItem {
+export type ItemWithAuthor = CanvasItem & { user?: { displayName: string } | null };
+
+export function publicItem(item: ItemWithAuthor): PublicItem {
   return {
     id: item.id,
     type: item.type,
@@ -57,6 +62,8 @@ export function publicItem(item: CanvasItem): PublicItem {
     y: item.y,
     color: item.color,
     reactions: safeReactions(item.reactions),
+    userId: item.userId ?? null,
+    authorName: item.user?.displayName ?? null,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
   };
@@ -65,7 +72,7 @@ export function publicItem(item: CanvasItem): PublicItem {
 // GET /api/items - initial canvas state
 apiRouter.get("/items", async (_req, res) => {
   try {
-    const items = await prisma.canvasItem.findMany({ orderBy: { createdAt: "asc" }, take: 5000 });
+    const items = await prisma.canvasItem.findMany({ orderBy: { createdAt: "asc" }, take: 5000, include: { user: { select: { displayName: true } } } });
     res.json({ items: items.map(publicItem) });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
@@ -73,7 +80,7 @@ apiRouter.get("/items", async (_req, res) => {
 });
 
 // POST /api/items - create a text/sticky item over HTTP
-apiRouter.post("/items", requireNotBanned, strictLimiter, validateBody(httpItemCreateSchema), async (req, res) => {
+apiRouter.post("/items", requireNotBanned, attachUser, strictLimiter, validateBody(httpItemCreateSchema), async (req, res) => {
   try {
     const { type, content, x, y, color } = res.locals.body as HttpItemCreate;
     const ip = clientIp(req.headers);
@@ -85,10 +92,15 @@ apiRouter.post("/items", requireNotBanned, strictLimiter, validateBody(httpItemC
         y,
         color: color ?? null,
         ipAddress: ip,
+        userId: req.user?.sub ?? null,
       },
     });
     await bus.publish("canvas:item-add", { item: publicItem(item) });
-    res.json({ item: publicItem(item) });
+    const responseItem = {
+      ...publicItem(item),
+      authorName: req.user?.displayName ?? null,
+    };
+    res.json({ item: responseItem });
   } catch {
     res.status(500).json({ error: "Failed to create item" });
   }

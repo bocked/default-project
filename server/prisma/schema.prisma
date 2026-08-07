@@ -7,6 +7,27 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  USER
+  MODERATOR
+  ADMIN
+}
+
+model User {
+  id           String       @id @default(uuid())
+  username     String       @unique
+  passwordHash String
+  role         Role         @default(USER)
+  displayName  String
+  color        String       @default("#3b82f6")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  items CanvasItem[]
+
+  @@index([role])
+}
+
 model CanvasItem {
   id        String   @id @default(uuid())
   type      String
@@ -19,8 +40,12 @@ model CanvasItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
   @@index([createdAt])
   @@index([type])
+  @@index([userId])
 }
 
 model BannedIp {

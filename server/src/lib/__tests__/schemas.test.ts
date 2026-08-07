@@ -6,7 +6,39 @@ import {
   itemReactionSchema,
   adminAuthSchema,
   adminBanSchema,
+  loginSchema,
+  registerSchema,
 } from "../../schemas.js";
+
+describe("registerSchema", () => {
+  it("accepts a valid registration", () => {
+    const parsed = parseZod(registerSchema, { username: "ali_92", displayName: "Ali", password: "kuchli-parol", color: "#fff" });
+    expect(parsed).toEqual({ username: "ali_92", displayName: "Ali", password: "kuchli-parol", color: "#fff" });
+  });
+
+  it("rejects a too-short password", () => {
+    expect(parseZod(registerSchema, { username: "ali", password: "short" })).toBeNull();
+  });
+
+  it("rejects a username with invalid characters or too short", () => {
+    expect(parseZod(registerSchema, { username: "ali xato", password: "kuchli-parol" })).toBeNull();
+    expect(parseZod(registerSchema, { username: "ab", password: "kuchli-parol" })).toBeNull();
+  });
+});
+
+describe("loginSchema", () => {
+  it("accepts valid credentials", () => {
+    expect(parseZod(loginSchema, { username: "ali", password: "parol" })).toEqual({
+      username: "ali",
+      password: "parol",
+    });
+  });
+
+  it("rejects missing fields", () => {
+    expect(parseZod(loginSchema, { username: "ali" })).toBeNull();
+    expect(parseZod(loginSchema, {})).toBeNull();
+  });
+});
 
 describe("schemas", () => {
   describe("itemCreateSchema", () => {
