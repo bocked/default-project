@@ -161,6 +161,12 @@ function handleConnection(socket: Socket): void {
       color,
       userId: user?.id ?? null,
     });
+    // Role-based admins are authenticated on connect; no password needed.
+    if (user && ADMIN_ROLES.includes(user.role)) {
+      socket.data.isAdmin = true;
+      socket.emit("admin:authed", { ok: true });
+      addLog("info", `Admin ${user.username} connected`);
+    }
     registerHandlers(socket, name, color);
   };
 

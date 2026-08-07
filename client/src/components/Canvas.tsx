@@ -5,6 +5,7 @@ import type { CanvasApi } from "@/hooks/useCanvas";
 import type { CanvasItem } from "@/lib/types";
 import Toolbar from "./Toolbar";
 import AdminPanel from "./AdminPanel";
+import AuthBar from "./AuthBar";
 
 type Tool = "MOVE" | "TEXT" | "STICKY" | "IMAGE";
 
@@ -373,6 +374,11 @@ export default function Canvas({ api }: { api: CanvasApi }) {
           identity={identity}
           onAdmin={() => setShowAdmin(true)}
         />
+      </div>
+
+      {/* Auth */}
+      <div className="absolute right-3 top-3 z-50">
+        <AuthBar />
       </div>
 
       {/* Zoom controls */}

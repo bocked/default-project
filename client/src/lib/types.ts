@@ -1,17 +1,5 @@
 export type ItemType = "TEXT" | "STICKY" | "IMAGE";
 
-export interface CanvasItem {
-  id: string;
-  type: ItemType;
-  content: string;
-  x: number;
-  y: number;
-  color: string | null;
-  reactions: Record<string, number>;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface PresenceUser {
   id: string;
   name: string;
@@ -45,4 +33,29 @@ export interface Identity {
 
 export interface ServerConfig {
   url: string;
+}
+
+export type UserRole = "USER" | "MODERATOR" | "ADMIN";
+
+export interface User {
+  id: string;
+  username: string;
+  role: UserRole;
+  displayName: string;
+  color: string;
+  createdAt: string;
+}
+
+export interface CanvasItem {
+  id: string;
+  type: ItemType;
+  content: string;
+  x: number;
+  y: number;
+  color: string | null;
+  reactions: Record<string, number>;
+  userId: string | null;
+  authorName: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

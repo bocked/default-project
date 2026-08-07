@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import { config } from "@/lib/config";
+import { useAuth } from "@/components/AuthProvider";
 import type {
   AdminLogEntry,
   CanvasItem,
@@ -16,6 +17,7 @@ const CURSOR_TTL_MS = 6000;
 
 export function useCanvas() {
   const socketRef = useRef<Socket | null>(null);
+  const { token } = useAuth();
   const [connected, setConnected] = useState(false);
   const [banned, setBanned] = useState(false);
   const [identity, setIdentity] = useState<Identity | null>(null);
@@ -30,15 +32,24 @@ export function useCanvas() {
     const socket = io(config.url, {
       transports: ["websocket", "polling"],
       reconnectionDelayMax: 5000,
+      auth: token ? { token } : undefined,
     });
     socketRef.current = socket;
 
     socket.on("connect", () => setConnected(true));
     socket.on("disconnect", () => setConnected(false));
 
+    socket.on("connect_error", () => {
+      // Invalid/expired token - drop the session so the next render reconnects
+      // as a guest.
+      if (token) {
+        window.localStorage.removeItem("canvas_token");
+      }
+    });
+
     socket.on("banned", () => setBanned(true));
 
-    socket.on("canvas:init", (data: { online: number; ip: string; name: string; color: string }) => {
+    socket.on("canvas:init", (data: { online: number; ip: string; name: string; color: string; userId?: string | null }) => {
       setIdentity({ ip: data.ip, name: data.name, color: data.color });
       setOnline(data.online);
     });
@@ -90,7 +101,7 @@ export function useCanvas() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, []);
+  }, [token]);
 
   // Prune stale cursors periodically.
   useEffect(() => {
@@ -184,6 +195,7 @@ export function useCanvas() {
     const res = await fetch(`${config.url}/api/upload`, {
       method: "POST",
       body: form,
+      headers: token ? { authorization: `Bearer ${token}` } : {},
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -191,7 +203,7 @@ export function useCanvas() {
     }
     const data = (await res.json()) as { url: string };
     return data.url;
-  }, []);
+  }, [token]);
 
   const fetchInitialItems = useCallback(async () => {
     try {
