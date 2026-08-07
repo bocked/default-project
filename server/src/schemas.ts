@@ -36,6 +36,15 @@ export const itemDeleteSchema = z.object({
 });
 export type ItemDelete = z.infer<typeof itemDeleteSchema>;
 
+export const itemUpdateSchema = z.object({
+  id: z.string().min(1).max(64),
+  content: z.string().min(1).max(4000).optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "color hex formatda bo'lishi kerak").optional(),
+  width: z.number().int().min(16).max(2048).optional(),
+  height: z.number().int().min(16).max(2048).optional(),
+});
+export type ItemUpdate = z.infer<typeof itemUpdateSchema>;
+
 export const itemReactionSchema = z.object({
   id: z.string().min(1).max(64),
   emoji: z.string().min(1).max(8),

@@ -71,6 +71,7 @@ Ulanish: `io(BASE_URL, { auth: { token } })` — `token` ixtiyoriy (mehmon sifat
 | `identity:update` | `{ name?, color? }` — mehmon ism/`#rrggbb` rang; authed userlar faqat rang o'zgartiradi |
 | `canvas:item-add` | `{ type, content, x, y, color? }` |
 | `canvas:item-move` | `{ id, x, y }` |
+| `canvas:item-update` | `{ id, content?, color?, width?, height? }` — content/color TEXT/STICKY, width/height IMAGE uchun; faqat egasi/admin |
 | `canvas:item-delete` | `{ id }` |
 | `canvas:item-undo` | `{ id }` — o'chirilgan elementni tiklash |
 | `canvas:reaction` | `{ id, emoji }` |
@@ -88,6 +89,7 @@ Ulanish: `io(BASE_URL, { auth: { token } })` — `token` ixtiyoriy (mehmon sifat
 | `canvas:init` | `{ online, ip, name, color, userId? }` |
 | `canvas:item-add` | `{ item }` |
 | `canvas:item-move` | `{ id, x, y }` |
+| `canvas:item-update` | `{ id, content?, color?, width?, height?, roomId }` |
 | `canvas:item-delete` | `{ id, roomId? }` |
 | `identity:updated` | `{ name, color }` — o'z identity'ingiz yangilanganda |
 | `canvas:item-reaction` | `{ id, reactions }` |

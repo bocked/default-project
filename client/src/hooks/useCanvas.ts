@@ -140,6 +140,23 @@ export function useCanvas() {
       setItems((prev) => prev.map((i) => (i.id === payload.id ? { ...i, x: payload.x, y: payload.y } : i)));
     });
 
+    socket.on(
+      "canvas:item-update",
+      (payload: { id: string; content?: string; color?: string; width?: number; height?: number }) => {
+        setItems((prev) =>
+          prev.map((i) => {
+            if (i.id !== payload.id) return i;
+            const next = { ...i };
+            if (payload.content !== undefined) next.content = payload.content;
+            if (payload.color !== undefined) next.color = payload.color;
+            if (payload.width !== undefined) next.width = payload.width;
+            if (payload.height !== undefined) next.height = payload.height;
+            return next;
+          })
+        );
+      }
+    );
+
     socket.on("canvas:item-delete", (payload: { id: string }) => {
       setItems((prev) => prev.filter((i) => i.id !== payload.id));
     });
@@ -247,6 +264,29 @@ export function useCanvas() {
     (id: string) => {
       setItems((prev) => prev.filter((i) => i.id !== id));
       send("canvas:item-delete", { id });
+    },
+    [send]
+  );
+
+  const patchItemLocal = useCallback(
+    (id: string, patch: { content?: string; color?: string; width?: number; height?: number }) => {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+    },
+    []
+  );
+
+  const updateItem = useCallback(
+    (id: string, patch: { content?: string; color?: string; width?: number; height?: number }) => {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+      send("canvas:item-update", { id, ...patch });
+    },
+    [send]
+  );
+
+  const resizeItem = useCallback(
+    (id: string, width: number, height: number) => {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, width, height } : i)));
+      send("canvas:item-update", { id, width, height });
     },
     [send]
   );
@@ -403,6 +443,9 @@ export function useCanvas() {
     addItem,
     moveItem,
     deleteItem,
+    patchItemLocal,
+    updateItem,
+    resizeItem,
     undoItem,
     react,
     updateCursor,

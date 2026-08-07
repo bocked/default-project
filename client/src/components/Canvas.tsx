@@ -26,6 +26,22 @@ interface DragState {
   startWorldY: number;
 }
 
+interface EditState {
+  id: string;
+  text: string;
+  color: string;
+}
+
+interface ResizeState {
+  id: string;
+  startClientX: number;
+  startClientY: number;
+  startW: number;
+  startH: number;
+}
+
+const IMAGE_DEFAULT = 288;
+
 export default function Canvas({ api }: { api: CanvasApi }) {
   const {
     connected,
@@ -36,6 +52,9 @@ export default function Canvas({ api }: { api: CanvasApi }) {
     online,
     addItem,
     moveItem,
+    updateItem,
+    resizeItem,
+    patchItemLocal,
     react,
     updateCursor,
     fetchInitialItems,
@@ -55,6 +74,9 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [panning, setPanning] = useState<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EditState | null>(null);
+  const [resize, setResize] = useState<ResizeState | null>(null);
+  const resizeSendRef = useRef<{ last: number } | null>(null);
   const [pendingText, setPendingText] = useState<{ x: number; y: number } | null>(null);
   const [pendingImage, setPendingImage] = useState<{ x: number; y: number } | null>(null);
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
@@ -188,8 +210,24 @@ export default function Canvas({ api }: { api: CanvasApi }) {
         const ny = drag.startWorldY + (client.y - drag.startClientY) / zoom;
         moveItem(drag.id, Math.round(nx), Math.round(ny));
       }
+      if (resize) {
+        const dx = (client.x - resize.startClientX) / zoom;
+        const dy = (client.y - resize.startClientY) / zoom;
+        const w = Math.round(Math.max(24, resize.startW + dx));
+        const h = Math.round(Math.max(24, resize.startH + dy));
+        // Optimistic local resize every frame; only send to the server at most
+        // every 120ms (final size is flushed on pointer release).
+        const now = Date.now();
+        const last = resizeSendRef.current;
+        if (!last || now - last.last >= 120) {
+          resizeSendRef.current = { last: now };
+          resizeItem(resize.id, w, h);
+        } else {
+          patchItemLocal(resize.id, { width: w, height: h });
+        }
+      }
     },
-    [panning, drag, zoom, screenToWorld, moveItem, updateCursor]
+    [panning, drag, resize, zoom, screenToWorld, moveItem, updateCursor, resizeItem, patchItemLocal]
   );
 
   const handleBackgroundPointerDown = useCallback(
@@ -222,7 +260,13 @@ export default function Canvas({ api }: { api: CanvasApi }) {
   const endPointer = useCallback(() => {
     setDrag(null);
     setPanning(null);
-  }, []);
+    if (resize) {
+      const item = items.find((i) => i.id === resize.id);
+      if (item) resizeItem(resize.id, item.width ?? IMAGE_DEFAULT, item.height ?? IMAGE_DEFAULT);
+      setResize(null);
+      resizeSendRef.current = null;
+    }
+  }, [resize, items, resizeItem]);
 
   const handleItemPointerDown = useCallback(
     (e: React.PointerEvent, item: CanvasItem) => {
@@ -261,6 +305,18 @@ export default function Canvas({ api }: { api: CanvasApi }) {
       setPendingText(null);
     },
     [pendingText, addItem]
+  );
+
+  const commitEdit = useCallback(
+    (cancel: boolean) => {
+      if (!editing) return;
+      const text = editing.text.trim();
+      if (!cancel && text) {
+        updateItem(editing.id, { content: text.slice(0, 4000), color: editing.color });
+      }
+      setEditing(null);
+    },
+    [editing, updateItem]
   );
 
   const handleFile = useCallback(
@@ -356,6 +412,7 @@ export default function Canvas({ api }: { api: CanvasApi }) {
             : isMatch
               ? { outline: "2px solid #f59e0b", outlineOffset: "2px", borderRadius: "6px" }
               : undefined;
+          if (editing?.id === item.id) return null;
           return (
             <div key={item.id} className="absolute" style={{ left: pos.x, top: pos.y, transform: "translate(-50%, -50%)" }}>
               <div
@@ -364,7 +421,15 @@ export default function Canvas({ api }: { api: CanvasApi }) {
                 onPointerLeave={() => setHoveredId(null)}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  flyTo(item.id);
+                  if ((item.type === "TEXT" || item.type === "STICKY") && (isOwner(item) || isStaff(user))) {
+                    setEditing({
+                      id: item.id,
+                      text: item.content,
+                      color: item.color ?? (item.type === "STICKY" ? STICKY_COLORS[0] : TEXT_COLORS[1]),
+                    });
+                  } else {
+                    flyTo(item.id);
+                  }
                 }}
                 className="animate-pop-in group relative cursor-grab active:cursor-grabbing"
                 style={{ animationDelay: `${Math.min(index, 24) * 10}ms`, ...matchStyle }}
@@ -374,8 +439,13 @@ export default function Canvas({ api }: { api: CanvasApi }) {
                   <img
                     src={item.content}
                     alt=""
-                    className={`pointer-events-none max-h-72 max-w-72 rounded-md shadow-lg transition-shadow duration-200 ${isHovered ? "shadow-2xl" : ""}`}
-                    style={{ outline: isHovered ? "2px solid #3b82f6" : "none" }}
+                    className="pointer-events-none rounded-md bg-white shadow-lg transition-shadow duration-200"
+                    style={{
+                      width: item.width ?? IMAGE_DEFAULT,
+                      height: item.height ?? IMAGE_DEFAULT,
+                      objectFit: "contain",
+                      outline: isHovered ? "2px solid #3b82f6" : "none",
+                    }}
                   />
                 ) : item.type === "STICKY" ? (
                   <div
@@ -455,6 +525,26 @@ export default function Canvas({ api }: { api: CanvasApi }) {
                     )}
                   </div>
                 )}
+
+                {/* Image resize handle */}
+                {isHovered && item.type === "IMAGE" && (isOwner(item) || isStaff(user)) && (
+                  <div
+                    className="absolute right-1 bottom-1 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border border-white bg-blue-500 shadow"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      const rect = containerRef.current?.getBoundingClientRect();
+                      if (!rect) return;
+                      setResize({
+                        id: item.id,
+                        startClientX: e.clientX - rect.left,
+                        startClientY: e.clientY - rect.top,
+                        startW: item.width ?? IMAGE_DEFAULT,
+                        startH: item.height ?? IMAGE_DEFAULT,
+                      });
+                    }}
+                    title="O'lchamini o'zgartirish"
+                  />
+                )}
               </div>
             </div>
           );
@@ -476,6 +566,75 @@ export default function Canvas({ api }: { api: CanvasApi }) {
               }}
               onBlur={(e) => commitText(e.currentTarget.value, false)}
             />
+          </div>
+        )}
+
+        {/* Inline item editor */}
+        {editing && items.find((i) => i.id === editing.id) && (
+          <div
+            className="animate-pop-in absolute z-20"
+            style={{
+              left: items.find((i) => i.id === editing.id)!.x,
+              top: items.find((i) => i.id === editing.id)!.y,
+              transform: "translate(-50%, -50%)",
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="w-64 rounded-lg bg-white p-2 shadow-xl ring-2 ring-blue-400">
+              <textarea
+                autoFocus
+                value={editing.text}
+                onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    commitEdit(false);
+                  }
+                  if (e.key === "Escape") commitEdit(true);
+                }}
+                className="mb-1.5 h-24 w-full resize-none rounded-md border border-slate-200 px-2 py-1.5 text-sm text-slate-800 outline-none focus:border-blue-400"
+                placeholder="Tahrirlash..."
+              />
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex gap-1">
+                  {items
+                    .find((i) => i.id === editing.id)
+                    ?.type === "STICKY"
+                    ? STICKY_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => setEditing({ ...editing, color: c })}
+                          className={`h-4 w-4 rounded-full transition ${editing.color === c ? "ring-2 ring-blue-500" : ""}`}
+                          style={{ backgroundColor: c }}
+                          title={c}
+                        />
+                      ))
+                    : TEXT_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => setEditing({ ...editing, color: c })}
+                          className={`h-4 w-4 rounded-full transition ${editing.color === c ? "ring-2 ring-blue-500" : ""}`}
+                          style={{ backgroundColor: c }}
+                          title={c}
+                        />
+                      ))}
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => commitEdit(true)}
+                    className="rounded-md px-2 py-1 text-xs text-slate-500 transition hover:bg-slate-100"
+                  >
+                    Bekor
+                  </button>
+                  <button
+                    onClick={() => commitEdit(false)}
+                    className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white transition hover:bg-blue-500"
+                  >
+                    Saqlash
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

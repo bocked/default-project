@@ -53,6 +53,8 @@ export interface CanvasItem {
   x: number;
   y: number;
   color: string | null;
+  width: number | null;
+  height: number | null;
   reactions: Record<string, number>;
   userId: string | null;
   authorName: string | null;

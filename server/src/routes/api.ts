@@ -26,6 +26,7 @@ function invalidateCanvasCaches(): void {
 }
 bus.subscribe("canvas:item-add", invalidateCanvasCaches);
 bus.subscribe("canvas:item-move", invalidateCanvasCaches);
+bus.subscribe("canvas:item-update", invalidateCanvasCaches);
 bus.subscribe("canvas:item-delete", invalidateCanvasCaches);
 bus.subscribe("canvas:clear", invalidateCanvasCaches);
 
@@ -58,6 +59,8 @@ export interface PublicItem {
   x: number;
   y: number;
   color: string | null;
+  width: number | null;
+  height: number | null;
   reactions: Record<string, number>;
   userId: string | null;
   authorName: string | null;
@@ -76,6 +79,8 @@ export function publicItem(item: ItemWithAuthor): PublicItem {
     x: item.x,
     y: item.y,
     color: item.color,
+    width: item.width,
+    height: item.height,
     reactions: safeReactions(item.reactions),
     userId: item.userId ?? null,
     authorName: item.user?.displayName ?? null,

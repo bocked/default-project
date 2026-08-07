@@ -19,6 +19,7 @@ import {
   cursorMoveSchema,
   itemCreateSchema,
   itemMoveSchema,
+  itemUpdateSchema,
   itemDeleteSchema,
   itemReactionSchema,
   identityUpdateSchema,
@@ -145,6 +146,10 @@ export function initSocket(io: Server): void {
   bus.subscribe("canvas:item-move", (payload) => {
     const p = payload as { roomId?: string | null };
     emitToRoom(io, p.roomId ?? null, "canvas:item-move", payload);
+  });
+  bus.subscribe("canvas:item-update", (payload) => {
+    const p = payload as { roomId?: string | null };
+    emitToRoom(io, p.roomId ?? null, "canvas:item-update", payload);
   });
   bus.subscribe("canvas:item-delete", (payload) => {
     const p = payload as { roomId?: string | null };
@@ -469,6 +474,52 @@ function registerHandlers(socket: Socket, identity: { name: string; color: strin
       void recordEdit(parsed.id, "delete", {}, socket);
     } catch {
       /* ignore */
+    }
+  });
+
+  socket.on("canvas:item-update", async (data: unknown) => {
+    const parsed = parseZod(itemUpdateSchema, data);
+    if (!parsed) return;
+    if (!socketIpLimiter.allow(socket.data.ip)) return;
+
+    const existing = await prisma.canvasItem.findUnique({ where: { id: parsed.id } }).catch(() => null);
+    if (!existing || existing.deletedAt) return;
+    if (!sameRoom(existing, socket)) return;
+    if (!socket.data.isAdmin && !canEditItem(existing, socket)) return;
+
+    const patch: { content?: string; color?: string; width?: number; height?: number } = {};
+    const out: {
+      id: string;
+      content?: string;
+      color?: string;
+      width?: number;
+      height?: number;
+      roomId: string | null;
+    } = { id: parsed.id, roomId: existing.roomId };
+    if (parsed.content !== undefined && (existing.type === "TEXT" || existing.type === "STICKY")) {
+      const clean = censorText(parsed.content).trim();
+      if (clean.length === 0) return;
+      patch.content = clean.slice(0, 4000);
+      out.content = patch.content;
+    }
+    if (parsed.color !== undefined && (existing.type === "TEXT" || existing.type === "STICKY")) {
+      patch.color = parsed.color;
+      out.color = parsed.color;
+    }
+    if (parsed.width !== undefined && parsed.height !== undefined && existing.type === "IMAGE") {
+      patch.width = parsed.width;
+      patch.height = parsed.height;
+      out.width = parsed.width;
+      out.height = parsed.height;
+    }
+    if (!patch.content && !patch.color && patch.width === undefined) return;
+
+    try {
+      await prisma.canvasItem.update({ where: { id: parsed.id }, data: patch });
+      await bus.publish("canvas:item-update", out);
+      void recordEdit(parsed.id, "update", out, socket);
+    } catch {
+      /* item may have been deleted concurrently - ignore */
     }
   });
 

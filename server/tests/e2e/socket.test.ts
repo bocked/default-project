@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { io as ioClient, type Socket } from "socket.io-client";
 import { startTestServer, cleanDatabase, request, unique, onceMatch, type TestServer } from "./helpers.js";
+import { prisma } from "../../src/lib/prisma.js";
 
 describe("E2E: Socket.IO flows (init, presence, items, reactions, rooms)", () => {
   let ts: TestServer;
@@ -8,6 +9,7 @@ describe("E2E: Socket.IO flows (init, presence, items, reactions, rooms)", () =>
   let socket: Socket;
   let token = "";
   let socketItemId = "";
+  let userId = "";
 
   const waitEvent = (event: string, predicate: (payload: any) => boolean) =>
     onceMatch((cb) => socket.on(event, cb), predicate);
@@ -34,6 +36,7 @@ describe("E2E: Socket.IO flows (init, presence, items, reactions, rooms)", () =>
     const init = await waitEvent("canvas:init", () => true);
     expect(typeof init.online).toBe("number");
     expect(init.userId).toBeTruthy();
+    userId = init.userId;
     expect(socket.connected).toBe(true);
   });
 
@@ -119,5 +122,79 @@ describe("E2E: Socket.IO flows (init, presence, items, reactions, rooms)", () =>
     const payload = await upd;
     expect(payload.color).toBe("#8b5cf6");
     expect(payload.name).not.toBe("Qalbaki Ism");
+  });
+
+  it("updates an owned item's content and color via canvas:item-update", async () => {
+    const item = await prisma.canvasItem.create({
+      data: {
+        type: "STICKY",
+        content: "tahrirlash uchun",
+        x: 7,
+        y: 8,
+        color: "#fef08a",
+        ipAddress: "127.0.0.1",
+        userId,
+      },
+    });
+    const upd = waitEvent(
+      "canvas:item-update",
+      (p: any) => p.id === item.id && p.content === "yangi matn" && p.color === "#ef4444"
+    );
+    socket.emit("canvas:item-update", { id: item.id, content: "yangi matn", color: "#ef4444" });
+    const payload = await upd;
+    expect(payload.roomId).toBeNull();
+    const list = await request(base, "GET", "/api/items?limit=500");
+    const found = list.json.items.find((i: any) => i.id === item.id);
+    expect(found.content).toBe("yangi matn");
+    expect(found.color).toBe("#ef4444");
+  });
+
+  it("rejects edits to items the socket does not own", async () => {
+    const item = await prisma.canvasItem.create({
+      data: {
+        type: "TEXT",
+        content: "himoyalangan",
+        x: 9,
+        y: 9,
+        ipAddress: "127.0.0.1",
+        userId,
+      },
+    });
+
+    const intruder = ioClient(base, { transports: ["websocket"], reconnection: false });
+    const intruderInit = onceMatch((cb) => intruder.on("canvas:init", cb), () => true);
+    await new Promise<void>((resolve) => intruder.on("connect", resolve));
+    await intruderInit;
+    const updated = onceMatch(
+      (cb) => intruder.on("canvas:item-update", cb),
+      (p: any) => p.id === item.id,
+      700
+    ).catch(() => null);
+    intruder.emit("canvas:item-update", { id: item.id, content: "o'zgartirildi" });
+    expect(await updated).toBeNull();
+
+    const persisted = await prisma.canvasItem.findUnique({ where: { id: item.id } });
+    expect(persisted?.content).toBe("himoyalangan");
+    intruder.disconnect();
+  });
+
+  it("resizes an image item via canvas:item-update", async () => {
+    const item = await prisma.canvasItem.create({
+      data: {
+        type: "IMAGE",
+        content: "https://example.com/pic.png",
+        x: 10,
+        y: 10,
+        ipAddress: "127.0.0.1",
+        userId,
+      },
+    });
+    const upd = waitEvent("canvas:item-update", (p: any) => p.id === item.id && p.width === 400 && p.height === 300);
+    socket.emit("canvas:item-update", { id: item.id, width: 400, height: 300 });
+    const payload = await upd;
+    expect(payload.width).toBe(400);
+    const found = await prisma.canvasItem.findUnique({ where: { id: item.id } });
+    expect(found?.width).toBe(400);
+    expect(found?.height).toBe(300);
   });
 });

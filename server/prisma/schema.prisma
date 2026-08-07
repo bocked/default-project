@@ -57,6 +57,8 @@ model CanvasItem {
   x         Float
   y         Float
   color     String?
+  width     Int?
+  height    Int?
   ipAddress String
   reactions String   @default("{}")
   createdAt DateTime @default(now())
