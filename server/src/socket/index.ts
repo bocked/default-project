@@ -8,6 +8,11 @@ import { addLog } from "../lib/logstore.js";
 import { setOnlineCount } from "../routes/api.js";
 import { password } from "../lib/password.js";
 import { presence, randomGuestName, randomCursorColor } from "./presence.js";
+import {
+  syncRoom as syncPresenceRoom,
+  removeMember as removePresenceMember,
+  count as countPresence,
+} from "../lib/redisPresence.js";
 import { publicItem } from "../routes/api.js";
 import {
   parseZod,
@@ -109,10 +114,11 @@ function clearMoveTimers(socket: Socket): void {
 }
 
 async function broadcastPresence(roomId: string | null): Promise<void> {
+  const redisOnline = await countPresence(roomId);
   await bus.publish("presence:update", {
     roomId,
     users: presence.snapshotForRoom(roomId),
-    online: presence.countByRoom(roomId),
+    online: redisOnline ?? presence.countByRoom(roomId),
   });
 }
 
@@ -171,13 +177,18 @@ export function initSocket(io: Server): void {
     }
   });
 
-  // Presence sweeper - drop users that stopped sending heartbeats.
+  // Presence sweeper - drop users that stopped sending heartbeats and sync the
+  // local presence table into Redis for cross-instance online counts.
   setInterval(() => {
+    const rooms = presence.rooms();
+    for (const room of rooms) {
+      void syncPresenceRoom(room, presence.snapshotForRoom(room));
+    }
     const before = presence.count();
     presence.sweep(30_000);
     if (presence.count() !== before) {
       setOnlineCount(presence.count());
-      for (const room of presence.rooms()) void broadcastPresence(room);
+      for (const room of rooms) void broadcastPresence(room);
     }
   }, 10_000);
 
@@ -229,6 +240,7 @@ function handleConnection(socket: Socket): void {
   const join = (): void => {
     presence.join(socket.id, ip, name, color, user?.id, null);
     setOnlineCount(presence.count());
+    void syncPresenceRoom(null, presence.snapshotForRoom(null));
     void broadcastPresence(null);
     socket.emit("canvas:init", {
       online: presence.count(),
@@ -265,6 +277,7 @@ function handleConnection(socket: Socket): void {
   socket.on("disconnect", () => {
     const room = presence.roomOf(socket.id) ?? null;
     presence.leave(socket.id);
+    void removePresenceMember(room, socket.id);
     clearMoveTimers(socket);
     addCooldown.remove(socket.id);
     reactionCooldown.remove(socket.id);
@@ -317,6 +330,8 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
       socket.emit("room:joined", {
         room: { id: room.id, slug: room.slug, name: room.name, isPublic: room.isPublic },
       });
+      void syncPresenceRoom(oldRoom, presence.snapshotForRoom(oldRoom));
+      void syncPresenceRoom(room.id, presence.snapshotForRoom(room.id));
       void broadcastPresence(oldRoom);
       void broadcastPresence(room.id);
     } catch {
@@ -331,6 +346,8 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
     socket.data.roomId = null;
     presence.setRoom(socket.id, null);
     socket.emit("room:left", {});
+    void syncPresenceRoom(current, presence.snapshotForRoom(current));
+    void syncPresenceRoom(null, presence.snapshotForRoom(null));
     void broadcastPresence(current);
     void broadcastPresence(null);
   });
@@ -534,3 +551,4 @@ function registerHandlers(socket: Socket, name: string, color: string): void {
     }
   });
 }
+

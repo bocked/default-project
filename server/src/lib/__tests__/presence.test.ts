@@ -67,7 +67,7 @@ describe("presence", () => {
   });
 
   it("generates guest names and colors", () => {
-    expect(randomGuestName()).toMatch(/^\w+ \w+ \d{3}$/);
+    expect(randomGuestName()).toMatch(/^[\w']+ [\w']+ \d{3}$/);
     expect(randomCursorColor()).toMatch(/^#[0-9a-f]{6}$/i);
   });
 });

@@ -1,0 +1,36 @@
+# Render Blueprint for the canvas backend.
+# Optional: import this file in the Render dashboard to (re)create the service
+# with migrations run before each deploy.
+services:
+  - type: web
+    name: yerlikoglon-backend
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci && npm run build
+    preDeployCommand: npm run prisma:deploy
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.18.1
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        value: uploads
+      - key: R2_PUBLIC_URL
+        sync: false

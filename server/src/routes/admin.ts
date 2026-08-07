@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
+import { storage } from "../lib/storage.js";
 import { requireAdmin } from "../middleware/adminAuth.js";
 import { recentLogs, addLog } from "../lib/logstore.js";
 import { onlineCount } from "./api.js";
@@ -104,6 +105,41 @@ adminRouter.delete("/bans/:ip", async (req, res) => {
 adminRouter.get("/logs", (_req, res) => {
   res.json({ logs: recentLogs(200) });
 });
+
+// GET /api/admin/uploads - inspect a stored upload (R2 or local fallback)
+adminRouter.get(
+  "/uploads",
+  validateBody(z.object({ url: z.string().min(1).max(2048) })),
+  async (_req, res) => {
+    try {
+      const { url } = res.locals.body as { url: string };
+      const meta = await storage.metadata(url);
+      if (!meta) {
+        res.status(404).json({ error: "Upload not found" });
+        return;
+      }
+      res.json({ meta });
+    } catch {
+      res.status(404).json({ error: "Upload not found" });
+    }
+  }
+);
+
+// DELETE /api/admin/uploads - permanently remove a stored upload
+adminRouter.delete(
+  "/uploads",
+  validateBody(z.object({ url: z.string().min(1).max(2048) })),
+  async (_req, res) => {
+    try {
+      const { url } = res.locals.body as { url: string };
+      await storage.delete(url);
+      addLog("delete", `Upload removed: ${url.slice(-40)}`);
+      res.json({ ok: true });
+    } catch {
+      res.status(500).json({ error: "Failed to delete upload" });
+    }
+  }
+);
 
 // GET /api/admin/reports - moderation queue
 adminRouter.get("/reports", async (req, res) => {

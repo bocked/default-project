@@ -38,7 +38,7 @@ export function useCanvas() {
 
   const fetchMainItems = useCallback(async () => {
     try {
-      const res = await fetch(`${config.url}/api/items`);
+      const res = await fetch(`${config.url}/api/items?limit=2000`);
       if (!res.ok) return;
       const data = (await res.json()) as { items: CanvasItem[] };
       setItems(data.items);
