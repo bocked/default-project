@@ -37,6 +37,8 @@ export async function cleanDatabase(): Promise<void> {
     prisma.tag.deleteMany(),
     prisma.category.deleteMany(),
     prisma.bannedIp.deleteMany(),
+    prisma.adminLog.deleteMany(),
+    prisma.contentBlock.deleteMany(),
   ]);
 }
 

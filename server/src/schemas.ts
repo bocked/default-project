@@ -139,6 +139,43 @@ export const adminQuoteRejectSchema = z.object({
 });
 export type AdminQuoteReject = z.infer<typeof adminQuoteRejectSchema>;
 
+// ---------------------------------------------------------------------------
+// Admin panel v2 (moderation console)
+// ---------------------------------------------------------------------------
+
+export const quoteEditSchema = z.object({
+  text: z.string().trim().min(1).max(1000).optional(),
+  categorySlug: z.string().trim().min(1).max(60).optional(),
+  displayAuthor: z.string().trim().min(1).max(100).optional(),
+  tags: z.array(z.string().trim().max(40)).max(5).optional(),
+  telegramUrl,
+});
+export type QuoteEdit = z.infer<typeof quoteEditSchema>;
+
+export const bulkQuotesSchema = z.object({
+  ids: z.array(z.string().min(1)).max(200),
+  action: z.enum(["approve", "reject", "delete", "restore"]),
+  reason: z.string().trim().max(500).optional(),
+});
+export type BulkQuotes = z.infer<typeof bulkQuotesSchema>;
+
+export const bulkUsersSchema = z.object({
+  ids: z.array(z.string().min(1)).max(200),
+  action: z.enum(["block", "unblock", "delete", "restore"]),
+});
+export type BulkUsers = z.infer<typeof bulkUsersSchema>;
+
+export const tagUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+});
+export type TagUpdate = z.infer<typeof tagUpdateSchema>;
+
+export const contentUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  value: z.string().trim().min(1).max(2000),
+});
+export type ContentUpdate = z.infer<typeof contentUpdateSchema>;
+
 /**
  * Parses unknown socket/request data against a schema. Returns `null` when the
  * input does not match so callers can drop the event/request silently.

@@ -17,7 +17,7 @@ import {
   telegramVerifyExpiry,
 } from "../lib/tokens.js";
 import { sendVerificationEmail, sendPasswordResetEmail } from "../lib/email.js";
-import { getBotUsername } from "../lib/telegram.js";
+import { getBotUsername, sendAdminNotification } from "../lib/telegram.js";
 import {
   validateBody,
   registerSchema,
@@ -95,6 +95,9 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
     },
   });
   await issueVerification(user.email);
+  // Best-effort: keep the admin informed about new registrations.
+  const handle = [user.nickname, user.name].filter(Boolean).join(" / ") || user.email;
+  void sendAdminNotification(`🆕 Yangi foydalanuvchi ro'yxatdan o'tdi\n\n${user.email}${handle !== user.email ? `\n${handle}` : ""}`);
   res.status(201).json({ token: signAuthToken(user.id), user: toUser(user) });
 });
 
@@ -104,6 +107,10 @@ authRouter.post("/login", validateBody(loginSchema), async (_req, res) => {
   const user = await prisma.user.findUnique({ where: { email: body.email } });
   if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
     res.status(401).json({ error: "Email yoki parol noto'g'ri" });
+    return;
+  }
+  if (user.blocked) {
+    res.status(403).json({ error: "Hisob bloklangan", code: "ACCOUNT_BLOCKED" });
     return;
   }
   // Promote admin emails lazily so the account gets ADMIN even if it was

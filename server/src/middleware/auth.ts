@@ -19,15 +19,24 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
+  if (user.blocked) {
+    res.status(403).json({ error: "Hisob bloklangan", code: "ACCOUNT_BLOCKED" });
+    return;
+  }
   req.user = user;
   next();
 }
 
 /** Requires an authenticated user whose profile is activated: either the
- *  email was verified or the phone was verified via Telegram. */
+ *  email was verified or the phone was verified via Telegram. Admins are
+ *  trusted and never gated on email/phone verification. */
 export function requireVerified(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
     res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  if (req.user.role === "ADMIN") {
+    next();
     return;
   }
   if (!req.user.emailVerified && !req.user.phoneVerified) {

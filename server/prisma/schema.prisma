@@ -27,6 +27,32 @@ enum UserRole {
   ADMIN
 }
 
+model AdminLog {
+  id         String   @id @default(uuid())
+  adminId    String?
+  adminEmail String?
+  action     String
+  targetType String?
+  targetId   String?
+  detail     String?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([action])
+  @@index([targetType, targetId])
+}
+
+model ContentBlock {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  title     String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+}
+
 model User {
   id                          String    @id @default(uuid())
   email                       String    @unique
@@ -52,9 +78,14 @@ model User {
   telegramVerifyCodeExpiresAt DateTime?
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
+  // Moderation controls (admin panel).
+  blocked                     Boolean   @default(false)
+  blockedAt                   DateTime?
+  deletedAt                   DateTime?
   quotes                      Quote[]
 
   @@index([createdAt])
+  @@index([role, createdAt(sort: Desc)])
 }
 
 model Category {
@@ -89,6 +120,7 @@ model Quote {
   categoryId          String
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
+  deletedAt           DateTime?
   user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   category            Category    @relation(fields: [categoryId], references: [id])
   tags                Tag[]
@@ -98,4 +130,5 @@ model Quote {
   @@index([status, userId])
   @@index([userId, createdAt(sort: Desc)])
   @@index([telegramMessageId])
+  @@index([deletedAt, status])
 }

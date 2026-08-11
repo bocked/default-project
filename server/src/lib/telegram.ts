@@ -141,6 +141,12 @@ export async function sendTelegramMessage(
   await apiCall("sendMessage", body);
 }
 
+/** Fires a plain notification to the admin chat (no buttons). */
+export async function sendAdminNotification(text: string): Promise<void> {
+  if (!telegramEnabled()) return;
+  await sendTelegramMessage(config.telegramAdminChatId, text);
+}
+
 /** Asks the user for their phone number via a Request Contact button. */
 export async function requestContactMessage(chatId: number | string, text: string): Promise<void> {
   await sendTelegramMessage(chatId, text, {

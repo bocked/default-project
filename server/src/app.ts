@@ -12,6 +12,7 @@ import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
 import { quotesRouter } from "./routes/quotes.js";
 import { categoriesRouter, tagsRouter } from "./routes/catalog.js";
+import { contentRouter } from "./routes/content.js";
 import { telegramRouter } from "./routes/telegram.js";
 import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
@@ -19,6 +20,7 @@ import { prisma } from "./lib/prisma.js";
 import { logger } from "./lib/logger.js";
 import { apiLimiter, authLimiter } from "./lib/rateLimit.js";
 import { tryEnsureDefaultCategories } from "./lib/categories.js";
+import { tryEnsureDefaultContent } from "./lib/content.js";
 import { initSentry, setupSentryErrorHandler, captureException } from "./lib/sentry.js";
 
 export function originAllowed(origin: string): boolean {
@@ -112,6 +114,7 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   app.use("/api/quotes", quotesRouter);
   app.use("/api/categories", categoriesRouter);
   app.use("/api/tags", tagsRouter);
+  app.use("/api/content", contentRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/telegram", telegramRouter);
 
@@ -160,6 +163,7 @@ export async function startServer(): Promise<void> {
     await prisma.$connect();
     logger.info("postgres connected");
     await tryEnsureDefaultCategories();
+    await tryEnsureDefaultContent();
     await promoteAdminEmails();
   } catch (err) {
     logger.warn({ err }, "postgres unreachable, starting anyway");

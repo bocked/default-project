@@ -31,6 +31,12 @@ export const config = {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
+  // Optional comma-separated list of IPs allowed to reach /api/admin/*. When
+  // empty, the admin API stays open to any authenticated admin.
+  adminIpWhitelist: (process.env.ADMIN_IP_WHITELIST ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
   logToConsole: bool(process.env.LOG_TO_CONSOLE, true),
   logLevel: process.env.LOG_LEVEL ?? "info",
   sentryDsn: process.env.SENTRY_DSN ?? "",
