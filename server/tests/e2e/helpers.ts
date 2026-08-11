@@ -2,7 +2,6 @@ import type { Server as HttpServer } from "node:http";
 import type { Server as IOServer } from "socket.io";
 import { createApp } from "../../src/app.js";
 import { prisma } from "../../src/lib/prisma.js";
-import { disposeSocket } from "../../src/socket/index.js";
 
 export interface TestServer {
   base: string;
@@ -23,7 +22,6 @@ export async function startTestServer(): Promise<TestServer> {
     server,
     io,
     close: async () => {
-      disposeSocket();
       io.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await prisma.$disconnect();
@@ -33,14 +31,7 @@ export async function startTestServer(): Promise<TestServer> {
 
 /** Wipes every table so each test file starts from a known state. */
 export async function cleanDatabase(): Promise<void> {
-  await prisma.$transaction([
-    prisma.report.deleteMany(),
-    prisma.itemEdit.deleteMany(),
-    prisma.canvasItem.deleteMany(),
-    prisma.room.deleteMany(),
-    prisma.bannedIp.deleteMany(),
-    prisma.user.deleteMany(),
-  ]);
+  await prisma.$transaction([prisma.bannedIp.deleteMany()]);
 }
 
 export interface ReqOptions {

@@ -7,6 +7,6 @@ import { config } from "../config.js";
  */
 export const logger = pino({
   level: config.logLevel,
-  base: { service: "canvas-server" },
+  base: { service: "api-server" },
   timestamp: pino.stdTimeFunctions.isoTime,
 });

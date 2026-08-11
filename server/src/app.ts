@@ -9,14 +9,11 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { config } from "./config.js";
 import { apiRouter } from "./routes/api.js";
 import { adminRouter } from "./routes/admin.js";
-import { authRouter } from "./routes/auth.js";
-import { roomsRouter } from "./routes/rooms.js";
 import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { logger } from "./lib/logger.js";
 import { apiLimiter } from "./lib/rateLimit.js";
-import { LOCAL_UPLOADS_DIR } from "./lib/storage.js";
 import { initSentry, setupSentryErrorHandler, captureException } from "./lib/sentry.js";
 
 export function originAllowed(origin: string): boolean {
@@ -60,9 +57,9 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
     maxHttpBufferSize: 1_000_000,
   });
 
-  // Redis adapter enables cross-instance broadcasts + presence. When Redis is
-  // unavailable we fall back to a single-instance in-memory adapter so the
-  // server still works locally.
+  // Redis adapter enables cross-instance broadcasts. When Redis is unavailable
+  // we fall back to a single-instance in-memory adapter so the server still
+  // works locally.
   if (redis.available) {
     try {
       const pub = redis.client!.duplicate();
@@ -84,23 +81,18 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   app.use(express.json({ limit: "1mb" }));
   app.use(pinoHttp({ logger, autoLogging: options.autoLogging ?? config.logToConsole }));
 
-  // Local upload fallback (R2 is used when configured)
-  app.use("/uploads", express.static(LOCAL_UPLOADS_DIR));
-
   app.get("/health", (_req, res) => {
     res.json({ ok: true });
   });
 
   const useApiLimiter = options.noRateLimits ? [] : [apiLimiter];
   app.use("/api", ...useApiLimiter, apiRouter);
-  app.use("/api/auth", authRouter);
-  app.use("/api/rooms", roomsRouter);
   app.use("/api/admin", adminRouter);
 
   // Sentry error handler first (captures), then the JSON responder below.
   setupSentryErrorHandler(app);
 
-  // JSON error responses (multer file-size limits, JSON parse errors, ...)
+  // JSON error responses (JSON parse errors, rate-limit rejections, ...)
   app.use(
     (err: Error & { statusCode?: number; status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const status = err.statusCode ?? err.status ?? 500;
@@ -124,8 +116,8 @@ export async function startServer(): Promise<void> {
   // from the very first request. It is a no-op without SENTRY_DSN.
   initSentry();
 
-  // DB connect is best-effort: the HTTP + socket layers stay up (read-only)
-  // even when Postgres is unreachable, e.g. during local development.
+  // DB connect is best-effort: the HTTP + socket layers stay up even when
+  // Postgres is unreachable, e.g. during local development.
   try {
     await prisma.$connect();
     logger.info("postgres connected");
@@ -134,9 +126,6 @@ export async function startServer(): Promise<void> {
   }
   await redis.connect();
 
-  if (!process.env.JWT_SECRET) {
-    logger.warn("JWT_SECRET is not set - using insecure development secret. Set it in production!");
-  }
   if (process.env.NODE_ENV === "production" && config.adminPassword === "change-me") {
     logger.warn("ADMIN_PASSWORD is still the default value. Change it in production!");
   }

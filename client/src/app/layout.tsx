@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cheksiz kustav daftar",
-  description: "Real-vaqtli hamkorlikdagi cheksiz kustav daftar",
+  title: "Default Project",
+  description: "Yangi loyiha",
 };
 
 export default function RootLayout({

@@ -71,11 +71,6 @@ body {
   animation: shake 0.35s ease-in-out;
 }
 
-/* Dotted canvas grid (pans/zooms with the world). */
-.canvas-dot-grid {
-  background-image: radial-gradient(circle, rgba(15, 23, 42, 0.16) 1px, transparent 1px);
-}
-
 /* Subtle scrollbars for panels. */
 *::-webkit-scrollbar {
   width: 8px;

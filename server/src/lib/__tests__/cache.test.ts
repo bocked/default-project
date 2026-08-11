@@ -34,22 +34,6 @@ describe("TTLCache", () => {
     expect(cache.delete("a")).toBe(false);
   });
 
-  it("deletes keys by prefix", () => {
-    cache.set("items:first:500", 1);
-    cache.set("items:first:2000", 2);
-    cache.set("rooms:list", 3);
-    cache.deletePrefix("items:first:");
-    expect(cache.get("items:first:500")).toBeUndefined();
-    expect(cache.get("items:first:2000")).toBeUndefined();
-    expect(cache.get("rooms:list")).toBe(3);
-  });
-
-  it("ignores an empty prefix", () => {
-    cache.set("a", 1);
-    cache.deletePrefix("");
-    expect(cache.get("a")).toBe(1);
-  });
-
   it("clears everything", () => {
     cache.set("a", 1);
     cache.set("b", 2);

@@ -26,21 +26,10 @@ export const config = {
     .map((s) => s.trim())
     .filter(Boolean),
   adminPassword: process.env.ADMIN_PASSWORD ?? "change-me",
-  jwtSecret: process.env.JWT_SECRET ?? "dev-insecure-jwt-secret-change-me",
-  jwtExpiresInSeconds: num(process.env.JWT_EXPIRES_IN_SECONDS, 30 * 24 * 60 * 60),
-  publicBaseUrl: process.env.PUBLIC_BASE_URL ?? `http://localhost:${num(process.env.PORT, 4000)}`,
-  maxUploadBytes: num(process.env.MAX_UPLOAD_BYTES, 10 * 1024 * 1024),
   logToConsole: bool(process.env.LOG_TO_CONSOLE, true),
   logLevel: process.env.LOG_LEVEL ?? "info",
   sentryDsn: process.env.SENTRY_DSN ?? "",
   sentryTracesSampleRate: num(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.1),
   // Number of trusted reverse-proxy hops (Render LB / Nginx).
   trustProxy: num(process.env.TRUST_PROXY, 1),
-  r2: {
-    accountId: process.env.R2_ACCOUNT_ID ?? "",
-    accessKeyId: process.env.R2_ACCESS_KEY_ID ?? "",
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? "",
-    bucket: process.env.R2_BUCKET ?? "uploads",
-    publicUrl: process.env.R2_PUBLIC_URL ?? "",
-  },
 };

@@ -1,9 +1,9 @@
 /**
  * In-memory TTL cache.
  *
- * Sits in front of hot Prisma queries (banned-IP checks, room lists, the first
- * page of canvas items). It is intentionally small, dependency-free and
- * synchronous so it can be used inside hot middleware paths.
+ * Sits in front of hot Prisma queries (banned-IP checks). It is intentionally
+ * small, dependency-free and synchronous so it can be used inside hot
+ * middleware paths.
  *
  * Cross-instance consistency: caches hold data for a few seconds at most and
  * are invalidated through the Redis-backed event bus (`bus.publish`), which
@@ -40,14 +40,6 @@ export class TTLCache {
     return this.store.delete(key);
   }
 
-  /** Deletes every key starting with the given prefix (e.g. "items:first:"). */
-  deletePrefix(prefix: string): void {
-    if (!prefix) return;
-    for (const key of this.store.keys()) {
-      if (key.startsWith(prefix)) this.store.delete(key);
-    }
-  }
-
   clear(): void {
     this.store.clear();
   }
@@ -60,14 +52,7 @@ export class TTLCache {
 /** Shared default cache instance (fine for a single-process server). */
 export const cache = new TTLCache();
 
-// Short, pragmatic TTLs for the hot paths.
 export const CACHE_TTL = {
-  /** Banned-IP lookup result, seconds. Bans are invalidated via bus anyway. */
+  /** Banned-IP lookup result. Bans are invalidated via the bus anyway. */
   banned: 30_000,
-  /** Public room list + room metadata. */
-  rooms: 15_000,
-  /** First page of the main canvas (invalidated on every write via bus). */
-  itemsFirstPage: 1_500,
-  /** Room item snapshots served by POST /api/rooms/:slug/items. */
-  roomItems: 3_000,
 };

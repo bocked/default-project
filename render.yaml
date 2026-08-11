@@ -1,4 +1,4 @@
-# Render Blueprint for the canvas backend.
+# Render Blueprint for the backend.
 # Optional: import this file in the Render dashboard to (re)create the service
 # with migrations run before each deploy.
 services:
@@ -19,23 +19,9 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
-      - key: JWT_SECRET
-        generateValue: true
       - key: ADMIN_PASSWORD
         sync: false
       - key: CORS_ORIGINS
         value: "https://default-project-bza.pages.dev,https://*.pages.dev,https://yerlikoglon.uz,https://www.yerlikoglon.uz,http://localhost:3000"
-      - key: PUBLIC_BASE_URL
-        value: "https://yerlikoglon-backend.onrender.com"
       - key: SENTRY_DSN
-        sync: false
-      - key: R2_ACCOUNT_ID
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: R2_BUCKET
-        value: uploads
-      - key: R2_PUBLIC_URL
         sync: false
