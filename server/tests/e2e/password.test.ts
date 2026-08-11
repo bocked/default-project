@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { startTestServer, cleanDatabase, request, unique, type TestServer } from "./helpers.js";
 import { emailTranscript } from "../../src/lib/email.js";
+import { config } from "../../src/config.js";
+import { prisma } from "../../src/lib/prisma.js";
 
 function resetLinkFor(email: string): string {
   const record = [...emailTranscript].reverse().find(
@@ -80,5 +82,31 @@ describe("E2E: password reset flow", () => {
       body: { token: "deadbeef", password: "Whatever123!" },
     });
     expect(res.status).toBe(400);
+  });
+
+  it("grants ADMIN to configured admin emails on register and promotes on login", async () => {
+    const adminEmail = `admin-${unique("adm")}@example.com`;
+    config.adminEmails.push(adminEmail);
+
+    const reg = await request(base, "POST", "/api/auth/register", {
+      body: { email: adminEmail, password: "AdminPass123!", name: "Admin" },
+    });
+    expect(reg.status).toBe(201);
+    expect(reg.json.user.role).toBe("ADMIN");
+
+    // A USER created before its email was added to adminEmails is promoted on login.
+    const email = `${unique("late")}@example.com`;
+    await request(base, "POST", "/api/auth/register", {
+      body: { email, password: "LatePass123!", name: "Late" },
+    });
+    config.adminEmails.push(email);
+    const login = await request(base, "POST", "/api/auth/login", {
+      body: { email, password: "LatePass123!" },
+    });
+    expect(login.status).toBe(200);
+    expect(login.json.user.role).toBe("ADMIN");
+
+    const row = await prisma.user.findUnique({ where: { email } });
+    expect(row?.role).toBe("ADMIN");
   });
 });

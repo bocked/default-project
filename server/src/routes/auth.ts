@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
+import { config } from "../config.js";
 import { requireAuth } from "../middleware/auth.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import {
@@ -81,6 +82,7 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
       passwordHash: await hashPassword(body.password),
       name: body.name ?? null,
       nickname: body.nickname ?? null,
+      role: config.adminEmails.includes(body.email.toLowerCase()) ? "ADMIN" : "USER",
     },
   });
   await issueVerification(user.email);
@@ -95,7 +97,14 @@ authRouter.post("/login", validateBody(loginSchema), async (_req, res) => {
     res.status(401).json({ error: "Email yoki parol noto'g'ri" });
     return;
   }
-  res.json({ token: signAuthToken(user.id), user: toUser(user) });
+  // Promote admin emails lazily so the account gets ADMIN even if it was
+  // created before the email was listed (or by the register endpoint itself).
+  const promote =
+    user.role !== "ADMIN" && config.adminEmails.includes(user.email.toLowerCase());
+  const current = promote
+    ? await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } })
+    : user;
+  res.json({ token: signAuthToken(user.id), user: toUser(current) });
 });
 
 // POST /api/auth/verify-email

@@ -26,7 +26,7 @@ export const config = {
     .map((s) => s.trim())
     .filter(Boolean),
   adminPassword: process.env.ADMIN_PASSWORD ?? "change-me",
-  // Emails whose accounts are granted the ADMIN role on server startup.
+  // Emails whose accounts are granted the ADMIN role (on startup, register or login).
   adminEmails: (process.env.ADMIN_EMAILS ?? "mirabbostolqinjonov@gmail.com")
     .split(",")
     .map((s) => s.trim().toLowerCase())
