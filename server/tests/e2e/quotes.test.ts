@@ -62,7 +62,7 @@ describe("E2E: auth, quotes, search and Telegram moderation", () => {
       body: { text: "Birinchi iqtibos.", categorySlug: category!.slug, tags: ["Bilim"], anonymous: true },
     });
     expect(post.status).toBe(403);
-    expect(post.json.code).toBe("EMAIL_NOT_VERIFIED");
+    expect(post.json.code).toBe("NOT_VERIFIED");
 
     await verifyEmail(base, email);
   });
