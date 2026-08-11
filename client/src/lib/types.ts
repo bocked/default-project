@@ -9,6 +9,7 @@ export interface User {
   nickname: string | null;
   role: string;
   emailVerified: boolean;
+  phoneVerified: boolean;
   createdAt: string;
 }
 

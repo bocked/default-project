@@ -23,14 +23,15 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   next();
 }
 
-/** Requires an authenticated user whose email has been verified. */
+/** Requires an authenticated user whose profile is activated: either the
+ *  email was verified or the phone was verified via Telegram. */
 export function requireVerified(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  if (!req.user.emailVerified) {
-    res.status(403).json({ error: "Email tasdiqlanmagan", code: "EMAIL_NOT_VERIFIED" });
+  if (!req.user.emailVerified && !req.user.phoneVerified) {
+    res.status(403).json({ error: "Profil tasdiqlanmagan", code: "NOT_VERIFIED" });
     return;
   }
   next();

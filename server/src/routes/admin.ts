@@ -43,7 +43,7 @@ adminRouter.get("/quotes", async (req, res) => {
     const quotes = await prisma.quote.findMany({
       where: status ? { status } : undefined,
       include: {
-        user: { select: { id: true, email: true, name: true, nickname: true } },
+        user: { select: { id: true, email: true, name: true, nickname: true, telegramId: true, phoneNumber: true } },
         category: true,
         tags: true,
       },
@@ -153,4 +153,29 @@ adminRouter.delete("/bans/:ip", async (req, res) => {
 // GET /api/admin/logs - recent moderation logs
 adminRouter.get("/logs", (_req, res) => {
   res.json({ logs: recentLogs(200) });
+});
+
+// GET /api/admin/users - all users with admin-only contact details.
+adminRouter.get("/users", async (_req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        nickname: true,
+        role: true,
+        emailVerified: true,
+        phoneVerified: true,
+        telegramId: true,
+        phoneNumber: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+    res.json({ users });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
 });

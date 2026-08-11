@@ -56,3 +56,35 @@ export function hashPasswordResetToken(token: string): string {
 export function passwordResetExpiry(): Date {
   return new Date(Date.now() + config.verificationTokenHours * 60 * 60 * 1000);
 }
+
+// ---------------------------------------------------------------------------
+// Telegram verification tokens / codes
+// ---------------------------------------------------------------------------
+
+/** Opaque token embedded in `t.me/<bot>?start=verify_<token>`. */
+export function generateTelegramVerifyToken(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+export function hashTelegramVerifyToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+/** 6-digit code shown to the user in Telegram. */
+export function generateTelegramVerifyCode(): string {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+}
+
+export function hashTelegramVerifyCode(code: string): string {
+  return crypto.createHash("sha256").update(code).digest("hex");
+}
+
+/** Verification session (the /start link) lifetime. */
+export function telegramVerifyExpiry(): Date {
+  return new Date(Date.now() + 15 * 60 * 1000);
+}
+
+/** 6-digit code lifetime. */
+export function telegramCodeExpiry(): Date {
+  return new Date(Date.now() + 5 * 60 * 1000);
+}

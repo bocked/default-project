@@ -3,7 +3,19 @@ import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import { addLog } from "../lib/logstore.js";
-import { answerCallbackQuery, editModerationMessage } from "../lib/telegram.js";
+import {
+  answerCallbackQuery,
+  editModerationMessage,
+  sendTelegramMessage,
+  requestContactMessage,
+  sendVerificationCodeMessage,
+} from "../lib/telegram.js";
+import {
+  hashTelegramVerifyToken,
+  generateTelegramVerifyCode,
+  hashTelegramVerifyCode,
+  telegramCodeExpiry,
+} from "../lib/tokens.js";
 
 export const telegramRouter = Router();
 
@@ -29,6 +41,10 @@ telegramRouter.post("/webhook", async (req, res) => {
       await handleCallback(update.callback_query);
     } else if (update?.message?.reply_to_message) {
       await handleReply(update.message);
+    } else if (update?.message?.contact) {
+      await handleContact(update.message);
+    } else if (typeof update?.message?.text === "string" && update.message.text.startsWith("/start")) {
+      await handleStart(update.message);
     }
   } catch (err) {
     logger.error({ err }, "telegram webhook handler failed");
@@ -104,4 +120,63 @@ async function handleReply(msg: Record<string, any>): Promise<void> {
   });
   await editModerationMessage(msg.chat.id, repliedId, rejectedText(quote, reason), null);
   addLog("warn", `Iqtibos rad etildi (Telegram): ${quote.text.slice(0, 40)}...`);
+}
+
+// ---------------------------------------------------------------------------
+// Phone verification: /start verify_<token> then a shared contact.
+// ---------------------------------------------------------------------------
+
+async function handleStart(msg: Record<string, any>): Promise<void> {
+  const chatId: number | undefined = msg.chat?.id;
+  const text = String(msg.text ?? "");
+  const match = text.match(/^\/start\s+verify_([0-9a-f]+)$/i);
+  if (!match || chatId === undefined) return;
+
+  const digest = hashTelegramVerifyToken(match[1]);
+  const user = await prisma.user.findFirst({ where: { telegramVerifyToken: digest } });
+  if (!user || !user.telegramVerifyExpiresAt || user.telegramVerifyExpiresAt < new Date()) {
+    await sendTelegramMessage(chatId, "Havola yaroqsiz yoki muddati o'tgan. Saytda qayta urinib ko'ring.");
+    return;
+  }
+
+  // Remember which Telegram chat is completing this session so the shared
+  // contact can be linked back to the correct user.
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { telegramVerifyChatId: String(chatId) },
+  });
+  await requestContactMessage(chatId, "Telefon raqamingizni yuborish uchun quyidagi tugmani bosing:");
+}
+
+async function handleContact(msg: Record<string, any>): Promise<void> {
+  const chatId: number | undefined = msg.chat?.id;
+  const contact: Record<string, any> | undefined = msg.contact;
+  if (chatId === undefined || !contact?.phone_number) return;
+  // In a private chat the shared contact belongs to the account that pressed
+  // the button; ignore messages whose contact user_id does not match.
+  if (contact.user_id !== undefined && String(contact.user_id) !== String(chatId)) return;
+
+  const user = await prisma.user.findFirst({ where: { telegramVerifyChatId: String(chatId) } });
+  if (!user || !user.telegramVerifyExpiresAt || user.telegramVerifyExpiresAt < new Date()) {
+    await sendTelegramMessage(
+      chatId,
+      "Tasdiqlash sessiyasi topilmadi yoki muddati o'tgan. Saytda qayta urinib ko'ring."
+    );
+    return;
+  }
+
+  const phone = String(contact.phone_number).replace(/[^\d+]/g, "");
+  const code = generateTelegramVerifyCode();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      telegramId: String(chatId),
+      phoneNumber: phone,
+      telegramVerifyCode: hashTelegramVerifyCode(code),
+      telegramVerifyCodeExpiresAt: telegramCodeExpiry(),
+      telegramVerifyChatId: null,
+    },
+  });
+  await sendVerificationCodeMessage(chatId, code);
+  addLog("info", `Telegram orqali telefon raqam bog'landi: ${phone.slice(0, 5)}...`);
 }

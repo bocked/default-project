@@ -97,6 +97,14 @@ export const updateProfileSchema = z.object({
 });
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 
+export const telegramVerifySchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, { message: "Kod 6 ta raqamdan iborat bo'lishi kerak" }),
+});
+export type TelegramVerify = z.infer<typeof telegramVerifySchema>;
+
 // ---------------------------------------------------------------------------
 // Quotes
 // ---------------------------------------------------------------------------

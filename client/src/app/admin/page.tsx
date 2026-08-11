@@ -19,7 +19,14 @@ interface AdminQuote {
   createdAt: string;
   category: { id: string; name: string; slug: string };
   tags: { id: string; name: string; slug: string }[];
-  user: { id: string; email: string; name: string | null; nickname: string | null };
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    nickname: string | null;
+    telegramId: string | null;
+    phoneNumber: string | null;
+  };
 }
 
 interface Stats {
@@ -29,6 +36,19 @@ interface Stats {
   users: number;
 }
 
+interface AdminUser {
+  id: string;
+  email: string;
+  name: string | null;
+  nickname: string | null;
+  role: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  telegramId: string | null;
+  phoneNumber: string | null;
+  createdAt: string;
+}
+
 const TABS: QuoteStatus[] = ["PENDING", "APPROVED", "REJECTED"];
 
 export default function AdminPage() {
@@ -36,8 +56,9 @@ export default function AdminPage() {
   const router = useRouter();
 
   const [stats, setStats] = useState<Stats | null>(null);
-  const [tab, setTab] = useState<QuoteStatus>("PENDING");
+  const [tab, setTab] = useState<QuoteStatus | "USERS">("PENDING");
   const [quotes, setQuotes] = useState<AdminQuote[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,13 +88,31 @@ export default function AdminPage() {
     }
   }, [tab]);
 
+  const loadUsers = useCallback(async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await api<{ users: AdminUser[] }>("/api/admin/users");
+      setUsers(data.users);
+    } catch {
+      setError("Foydalanuvchilarni yuklab bo'lmadi");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isAdmin) return;
-    const t = window.setTimeout(() => void loadQuotes(), 0);
+    const t = window.setTimeout(() => void (tab === "USERS" ? loadUsers() : loadQuotes()), 0);
     return () => window.clearTimeout(t);
-  }, [isAdmin, loadQuotes]);
+  }, [isAdmin, tab, loadUsers, loadQuotes]);
 
   async function refreshAll(): Promise<void> {
+    if (tab === "USERS") {
+      const u = await api<{ users: AdminUser[] }>("/api/admin/users").catch(() => null);
+      if (u) setUsers(u.users);
+      return;
+    }
     const [s, q] = await Promise.all([
       api<Stats>("/api/admin/stats").catch(() => null),
       api<{ quotes: AdminQuote[] }>(`/api/admin/quotes?status=${tab}`).catch(() => null),
@@ -173,6 +212,17 @@ export default function AdminPage() {
             {t === "PENDING" ? "Kutilmoqda" : t === "APPROVED" ? "Tasdiqlangan" : "Rad etilgan"}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setTab("USERS")}
+          className={
+            tab === "USERS"
+              ? "rounded-full border border-blue-600 bg-blue-600 px-3 py-1 text-xs font-medium text-white"
+              : "rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
+          }
+        >
+          Foydalanuvchilar
+        </button>
       </div>
 
       {error && (
@@ -181,79 +231,134 @@ export default function AdminPage() {
 
       {busy && !error && <p className="text-sm text-slate-400 dark:text-slate-500">Yuklanmoqda...</p>}
 
-      {!busy && quotes.length === 0 && (
+      {tab !== "USERS" && !busy && quotes.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
           <p className="text-sm text-slate-500 dark:text-slate-400">Bu bo&apos;limda iqtiboslar yo&apos;q.</p>
         </div>
       )}
 
-      <div className="space-y-4">
-        {quotes.map((quote) => (
-          <div
-            key={quote.id}
-            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none"
-          >
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <StatusBadge status={quote.status} />
-              <span>{quote.category.name}</span>
-              <span>{new Date(quote.createdAt).toLocaleDateString("uz-UZ")}</span>
-            </div>
+      {tab === "USERS" && !busy && users.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
+          <p className="text-sm text-slate-500 dark:text-slate-400">Foydalanuvchilar yo&apos;q.</p>
+        </div>
+      )}
 
-            <blockquote className="mt-3 font-serif text-lg leading-relaxed text-slate-800 dark:text-slate-100">
-              &ldquo;{quote.text}&rdquo;
-            </blockquote>
-
-            {quote.telegramUrl && <TelegramPost url={quote.telegramUrl} />}
-
-            <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-              Muallif: <span className="font-medium text-slate-700 dark:text-slate-300">{quote.displayAuthor}</span>
-              {quote.anonymous && <span className="ml-2 text-slate-400 dark:text-slate-500">(anonim)</span>}
-            </div>
-            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Egasi: <span className="text-slate-700 dark:text-slate-300">{quote.user.email}</span>
-              {quote.user.name && <span> · {quote.user.name}</span>}
-              {quote.user.nickname && <span> · @{quote.user.nickname}</span>}
-            </div>
-
-            {quote.tags.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                {quote.tags.map((tag) => (
-                  <span key={tag.id} className="text-xs text-blue-600 dark:text-blue-400">
-                    #{tag.name}
+      {tab === "USERS" && (
+        <div className="space-y-3">
+          {users.map((u) => (
+            <div
+              key={u.id}
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{u.email}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {[u.name, u.nickname ? `@${u.nickname}` : null].filter(Boolean).join(" · ") || "Ism kiritilmagan"}
+                  </p>
+                </div>
+                <span
+                  className={
+                    u.role === "ADMIN"
+                      ? "rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-500/20 dark:text-blue-300"
+                      : "rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                  }
+                >
+                  {u.role === "ADMIN" ? "Admin" : "Foydalanuvchi"}
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                <span>
+                  Email:{" "}
+                  <span className={u.emailVerified ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}>
+                    {u.emailVerified ? "tasdiqlangan" : "tasdiqlanmagan"}
                   </span>
-                ))}
+                </span>
+                <span>
+                  Telegram:{" "}
+                  <span className={u.phoneVerified ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}>
+                    {u.phoneVerified ? "faollashtirilgan" : "faollashtirilmagan"}
+                  </span>
+                </span>
+                <span>Telegram ID: {u.telegramId ?? "—"}</span>
+                <span>Telefon: {u.phoneNumber ?? "—"}</span>
+                <span>Ro&apos;yxat: {new Date(u.createdAt).toLocaleDateString("uz-UZ")}</span>
               </div>
-            )}
+            </div>
+          ))}
+        </div>
+      )}
 
-            {quote.status === "REJECTED" && quote.rejectionReason && (
-              <p className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-                Rad etish sababi: {quote.rejectionReason}
-              </p>
-            )}
-
-            {quote.status === "PENDING" && (
-              <div className="mt-4 flex gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => approve(quote.id)}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 dark:hover:bg-emerald-500"
-                >
-                  Ruxsat berish
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => reject(quote.id)}
-                  className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50 dark:hover:bg-rose-500"
-                >
-                  Rad etish
-                </button>
+      {tab !== "USERS" && (
+        <div className="space-y-4">
+          {quotes.map((quote) => (
+            <div
+              key={quote.id}
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none"
+            >
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <StatusBadge status={quote.status} />
+                <span>{quote.category.name}</span>
+                <span>{new Date(quote.createdAt).toLocaleDateString("uz-UZ")}</span>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+
+              <blockquote className="mt-3 font-serif text-lg leading-relaxed text-slate-800 dark:text-slate-100">
+                &ldquo;{quote.text}&rdquo;
+              </blockquote>
+
+              {quote.telegramUrl && <TelegramPost url={quote.telegramUrl} />}
+
+              <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                Muallif: <span className="font-medium text-slate-700 dark:text-slate-300">{quote.displayAuthor}</span>
+                {quote.anonymous && <span className="ml-2 text-slate-400 dark:text-slate-500">(anonim)</span>}
+              </div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Egasi: <span className="text-slate-700 dark:text-slate-300">{quote.user.email}</span>
+                {quote.user.name && <span> · {quote.user.name}</span>}
+                {quote.user.nickname && <span> · @{quote.user.nickname}</span>}
+                {quote.user.phoneNumber && <span> · {quote.user.phoneNumber}</span>}
+              </div>
+
+              {quote.tags.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  {quote.tags.map((tag) => (
+                    <span key={tag.id} className="text-xs text-blue-600 dark:text-blue-400">
+                      #{tag.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {quote.status === "REJECTED" && quote.rejectionReason && (
+                <p className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+                  Rad etish sababi: {quote.rejectionReason}
+                </p>
+              )}
+
+              {quote.status === "PENDING" && (
+                <div className="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => approve(quote.id)}
+                    className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 dark:hover:bg-emerald-500"
+                  >
+                    Ruxsat berish
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => reject(quote.id)}
+                    className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50 dark:hover:bg-rose-500"
+                  >
+                    Rad etish
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

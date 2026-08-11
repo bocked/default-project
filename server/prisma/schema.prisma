@@ -28,20 +28,31 @@ enum UserRole {
 }
 
 model User {
-  id                        String    @id @default(uuid())
-  email                     String    @unique
-  passwordHash              String
-  name                      String? // real name (private, admin-only)
-  nickname                  String?
-  role                      UserRole  @default(USER)
-  emailVerified             Boolean   @default(false)
-  emailVerificationToken    String?   @unique
-  emailVerificationExpiresAt DateTime?
-  resetPasswordToken        String?   @unique
-  resetPasswordExpiresAt    DateTime?
-  createdAt                 DateTime  @default(now())
-  updatedAt                 DateTime  @updatedAt
-  quotes                    Quote[]
+  id                          String    @id @default(uuid())
+  email                       String    @unique
+  passwordHash                String
+  name                        String? // real name (private, admin-only)
+  nickname                    String?
+  role                        UserRole  @default(USER)
+  emailVerified               Boolean   @default(false)
+  emailVerificationToken      String?   @unique
+  emailVerificationExpiresAt  DateTime?
+  resetPasswordToken          String?   @unique
+  resetPasswordExpiresAt      DateTime?
+  // Telegram phone verification (private, admin-only).
+  telegramId                  String?   @unique
+  phoneNumber                 String?
+  phoneVerified               Boolean   @default(false)
+  // Pending Telegram verification session: hashed /start token bound to the
+  // chat, and the hashed 6-digit code sent to that chat.
+  telegramVerifyToken         String?   @unique
+  telegramVerifyExpiresAt     DateTime?
+  telegramVerifyChatId        String?
+  telegramVerifyCode          String?
+  telegramVerifyCodeExpiresAt DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  quotes                      Quote[]
 
   @@index([createdAt])
 }

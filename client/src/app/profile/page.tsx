@@ -16,6 +16,10 @@ export default function ProfilePage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
+  const [tgSession, setTgSession] = useState<{ botUsername: string; start: string } | null>(null);
+  const [tgCode, setTgCode] = useState("");
+  const [tgBusy, setTgBusy] = useState(false);
+  const [tgMessage, setTgMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -50,6 +54,43 @@ export default function ProfilePage() {
     }
   }
 
+  async function startTelegramVerify(): Promise<void> {
+    if (!user) return;
+    setTgBusy(true);
+    setTgMessage(null);
+    try {
+      const data = await api<{ botUsername: string; start: string }>("/api/auth/telegram/session", {
+        method: "POST",
+      });
+      setTgSession(data);
+      window.open(`https://t.me/${data.botUsername}?start=${data.start}`, "_blank");
+    } catch (err) {
+      setTgMessage(err instanceof Error ? err.message : "Xatolik yuz berdi");
+    } finally {
+      setTgBusy(false);
+    }
+  }
+
+  async function submitTelegramCode(event: React.FormEvent): Promise<void> {
+    event.preventDefault();
+    if (!user) return;
+    setTgBusy(true);
+    setTgMessage(null);
+    try {
+      await api<{ ok: boolean }>("/api/auth/telegram/verify", {
+        method: "POST",
+        body: { code: tgCode },
+      });
+      setTgCode("");
+      setTgSession(null);
+      await refresh();
+    } catch (err) {
+      setTgMessage(err instanceof Error ? err.message : "Xatolik yuz berdi");
+    } finally {
+      setTgBusy(false);
+    }
+  }
+
   function handleCreated(quote: Quote): void {
     setQuotes((prev) => [quote, ...prev]);
   }
@@ -70,26 +111,84 @@ export default function ProfilePage() {
       </section>
 
       {!user.emailVerified && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/30">
-          <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Email hali tasdiqlanmagan</p>
-            <p className="text-xs text-amber-700 dark:text-amber-400">Iqtibos qo&apos;shishdan oldin emailingizni tasdiqlang.</p>
-            {resendMessage && <p className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">{resendMessage}</p>}
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/30">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Email hali tasdiqlanmagan</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                {user.phoneVerified
+                  ? "Profil Telegram orqali faollashtirilgan, email tasdiqlash hali kutilmoqda."
+                  : "Iqtibos qo'shishdan oldin emailingizni tasdiqlang yoki Telegram orqali faollashtiring."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={resendVerification}
+              disabled={resending}
+              className="rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50 dark:hover:bg-amber-500"
+            >
+              {resending ? "Yuborilmoqda..." : "Tasdiqlash havolasini qayta yuborish"}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={resendVerification}
-            disabled={resending}
-            className="rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50 dark:hover:bg-amber-500"
-          >
-            {resending ? "Yuborilmoqda..." : "Tasdiqlash havolasini qayta yuborish"}
-          </button>
+          {resendMessage && <p className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">{resendMessage}</p>}
+
+          <div className="mt-3 border-t border-amber-200 pt-3 dark:border-amber-500/30">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Telegram orqali tasdiqlash</p>
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Botdan telefon raqamingizni yuborib, undan olingan kod bilan profilni faollashtiring.
+                </p>
+              </div>
+              {!user.phoneVerified && (
+                <button
+                  type="button"
+                  onClick={startTelegramVerify}
+                  disabled={tgBusy}
+                  className="rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50 dark:hover:bg-blue-500"
+                >
+                  {tgBusy ? "Yuborilmoqda..." : "Telegram orqali tasdiqlash"}
+                </button>
+              )}
+            </div>
+
+            {tgSession && (
+              <form onSubmit={submitTelegramCode} className="mt-3 flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="mb-1 block text-xs font-medium text-amber-800 dark:text-amber-300">
+                    Botdan olgan 6 xonali kod
+                  </label>
+                  <input
+                    value={tgCode}
+                    onChange={(e) => setTgCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    inputMode="numeric"
+                    pattern="\d{6}"
+                    required
+                    maxLength={6}
+                    placeholder="000000"
+                    className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-amber-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={tgBusy}
+                  className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 dark:hover:bg-emerald-500"
+                >
+                  {tgBusy ? "Tekshirilmoqda..." : "Tasdiqlash"}
+                </button>
+              </form>
+            )}
+
+            {tgMessage && <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-300">{tgMessage}</p>}
+          </div>
         </div>
       )}
 
       <ProfileSettings key={user.id} user={user} onSaved={refresh} />
 
-      {user.emailVerified && categories.length > 0 && <QuoteForm categories={categories} onCreated={handleCreated} />}
+      {(user.emailVerified || user.phoneVerified) && categories.length > 0 && (
+        <QuoteForm categories={categories} onCreated={handleCreated} />
+      )}
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">

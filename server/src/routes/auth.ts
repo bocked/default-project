@@ -11,8 +11,13 @@ import {
   generatePasswordResetToken,
   hashPasswordResetToken,
   passwordResetExpiry,
+  generateTelegramVerifyToken,
+  hashTelegramVerifyToken,
+  hashTelegramVerifyCode,
+  telegramVerifyExpiry,
 } from "../lib/tokens.js";
 import { sendVerificationEmail, sendPasswordResetEmail } from "../lib/email.js";
+import { getBotUsername } from "../lib/telegram.js";
 import {
   validateBody,
   registerSchema,
@@ -22,6 +27,7 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   updateProfileSchema,
+  telegramVerifySchema,
   type Register,
   type Login,
   type VerifyEmail,
@@ -29,6 +35,7 @@ import {
   type ForgotPassword,
   type ResetPassword,
   type UpdateProfile,
+  type TelegramVerify,
 } from "../schemas.js";
 
 export const authRouter = Router();
@@ -40,6 +47,7 @@ interface SafeUser {
   nickname: string | null;
   role: string;
   emailVerified: boolean;
+  phoneVerified: boolean;
   createdAt: Date;
 }
 
@@ -51,6 +59,7 @@ function toUser(user: SafeUser): SafeUser {
     nickname: user.nickname,
     role: user.role,
     emailVerified: user.emailVerified,
+    phoneVerified: user.phoneVerified,
     createdAt: user.createdAt,
   };
 }
@@ -185,4 +194,55 @@ authRouter.patch("/me", requireAuth, validateBody(updateProfileSchema), async (r
   if (body.nickname !== undefined) data.nickname = body.nickname;
   const user = await prisma.user.update({ where: { id: req.user!.id }, data });
   res.json({ user: toUser(user) });
+});
+
+// POST /api/auth/telegram/session - start phone verification via Telegram.
+authRouter.post("/telegram/session", requireAuth, async (req, res) => {
+  if (req.user!.phoneVerified) {
+    res.status(400).json({ error: "Profil allaqachon faollashtirilgan" });
+    return;
+  }
+  const botUsername = await getBotUsername();
+  if (!botUsername) {
+    res.status(500).json({ error: "Telegram bot sozlanmagan" });
+    return;
+  }
+  const token = generateTelegramVerifyToken();
+  await prisma.user.update({
+    where: { id: req.user!.id },
+    data: {
+      telegramVerifyToken: hashTelegramVerifyToken(token),
+      telegramVerifyExpiresAt: telegramVerifyExpiry(),
+      telegramVerifyChatId: null,
+      telegramVerifyCode: null,
+      telegramVerifyCodeExpiresAt: null,
+    },
+  });
+  res.json({ botUsername, start: `verify_${token}`, expiresAt: telegramVerifyExpiry().toISOString() });
+});
+
+// POST /api/auth/telegram/verify - redeem the 6-digit code from Telegram.
+authRouter.post("/telegram/verify", requireAuth, validateBody(telegramVerifySchema), async (req, res) => {
+  const body = res.locals.body as TelegramVerify;
+  const user = req.user!;
+  if (!user.telegramVerifyCode || !user.telegramVerifyCodeExpiresAt || user.telegramVerifyCodeExpiresAt < new Date()) {
+    res.status(400).json({ error: "Kod yaroqsiz yoki muddati o'tgan" });
+    return;
+  }
+  if (user.telegramVerifyCode !== hashTelegramVerifyCode(body.code)) {
+    res.status(400).json({ error: "Kod noto'g'ri" });
+    return;
+  }
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      phoneVerified: true,
+      telegramVerifyCode: null,
+      telegramVerifyCodeExpiresAt: null,
+      telegramVerifyToken: null,
+      telegramVerifyExpiresAt: null,
+      telegramVerifyChatId: null,
+    },
+  });
+  res.json({ ok: true, user: toUser(updated) });
 });

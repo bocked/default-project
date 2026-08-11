@@ -104,3 +104,56 @@ export async function answerCallbackQuery(callbackQueryId: string, text?: string
     show_alert: false,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Phone verification bot
+// ---------------------------------------------------------------------------
+
+/** Reply keyboard with a single "share my phone number" button. */
+export interface ReplyKeyboard {
+  keyboard: Array<Array<{ text: string; request_contact?: boolean }>>;
+  resize_keyboard?: boolean;
+  one_time_keyboard?: boolean;
+}
+
+/** Cached `getMe` result so the bot username is resolved once. */
+let cachedBotUsername: string | null | undefined;
+
+/** The bot's public @username (no leading @), used to build deep links. */
+export async function getBotUsername(): Promise<string | null> {
+  if (cachedBotUsername !== undefined) return cachedBotUsername;
+  if (!config.telegramBotToken) {
+    cachedBotUsername = null;
+    return null;
+  }
+  const json = await apiCall<TelegramResult<{ username?: string }>>("getMe", {});
+  cachedBotUsername = json?.result?.username ?? null;
+  return cachedBotUsername;
+}
+
+export async function sendTelegramMessage(
+  chatId: number | string,
+  text: string,
+  replyMarkup?: ReplyKeyboard
+): Promise<void> {
+  const body: Record<string, unknown> = { chat_id: chatId, text };
+  if (replyMarkup) body.reply_markup = replyMarkup;
+  await apiCall("sendMessage", body);
+}
+
+/** Asks the user for their phone number via a Request Contact button. */
+export async function requestContactMessage(chatId: number | string, text: string): Promise<void> {
+  await sendTelegramMessage(chatId, text, {
+    keyboard: [[{ text: "📱 Telefon raqamni yuborish", request_contact: true }]],
+    resize_keyboard: true,
+    one_time_keyboard: true,
+  });
+}
+
+/** Sends the 6-digit code in monospace so it is easy to select and copy. */
+export async function sendVerificationCodeMessage(chatId: number | string, code: string): Promise<void> {
+  await sendTelegramMessage(
+    chatId,
+    `Sizning tasdiqlash kodingiz:\n\n` + "`" + code + "`" + `\n\nSaytga qayting va botdan olgan kodni kiriting.`
+  );
+}
