@@ -52,13 +52,14 @@ export async function sendEmail(input: SendEmailInput): Promise<boolean> {
     return true;
   }
   try {
-    await transport.sendMail({
+    const info = await transport.sendMail({
       from: config.smtpFrom,
       to: input.to,
       subject: input.subject,
       text: input.text,
       html: input.html,
     });
+    logger.info({ to: input.to, subject: input.subject, messageId: info.messageId }, "email sent");
     return true;
   } catch (err) {
     logger.error({ err, to: input.to }, "failed to send email");
