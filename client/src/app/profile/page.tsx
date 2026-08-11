@@ -91,6 +91,18 @@ export default function ProfilePage() {
     }
   }
 
+  const tgLink = tgSession ? `https://t.me/${tgSession.botUsername}?start=${tgSession.start}` : null;
+
+  async function copyTgLink(): Promise<void> {
+    if (!tgLink) return;
+    try {
+      await navigator.clipboard.writeText(tgLink);
+      setTgMessage("Havola nusxalandi");
+    } catch {
+      setTgMessage("Havolani nusxalab bo'lmadi, qo'lda ko'chiring");
+    }
+  }
+
   function handleCreated(quote: Quote): void {
     setQuotes((prev) => [quote, ...prev]);
   }
@@ -152,31 +164,64 @@ export default function ProfilePage() {
               )}
             </div>
 
-            {tgSession && (
-              <form onSubmit={submitTelegramCode} className="mt-3 flex items-end gap-2">
-                <div className="flex-1">
-                  <label className="mb-1 block text-xs font-medium text-amber-800 dark:text-amber-300">
-                    Botdan olgan 6 xonali kod
-                  </label>
-                  <input
-                    value={tgCode}
-                    onChange={(e) => setTgCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    inputMode="numeric"
-                    pattern="\d{6}"
-                    required
-                    maxLength={6}
-                    placeholder="000000"
-                    className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-amber-600 dark:bg-slate-900 dark:text-slate-100"
-                  />
+            {tgSession && tgLink && (
+              <div className="mt-3 space-y-3">
+                <div className="rounded-xl border border-amber-300 bg-amber-100/60 px-3 py-2.5 dark:border-amber-600 dark:bg-amber-900/20">
+                  <p className="mb-1 text-xs font-medium text-amber-800 dark:text-amber-300">
+                    Botda ushbu unikal havola orqali start bosing (yangi havola olish uchun pastdagi tugmani bosing):
+                  </p>
+                  <a
+                    href={tgLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block break-all text-xs font-semibold text-blue-700 underline dark:text-blue-400"
+                  >
+                    {tgLink}
+                  </a>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={copyTgLink}
+                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
+                    >
+                      Havolani nusxalash
+                    </button>
+                    <button
+                      type="button"
+                      onClick={startTelegramVerify}
+                      disabled={tgBusy}
+                      className="rounded-lg border border-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-600 dark:text-amber-300 dark:hover:bg-amber-900/30"
+                    >
+                      {tgBusy ? "Yuborilmoqda..." : "Yangi unikal havola olish"}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="submit"
-                  disabled={tgBusy}
-                  className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 dark:hover:bg-emerald-500"
-                >
-                  {tgBusy ? "Tekshirilmoqda..." : "Tasdiqlash"}
-                </button>
-              </form>
+
+                <form onSubmit={submitTelegramCode} className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="mb-1 block text-xs font-medium text-amber-800 dark:text-amber-300">
+                      Botdan olgan 6 xonali kod
+                    </label>
+                    <input
+                      value={tgCode}
+                      onChange={(e) => setTgCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      inputMode="numeric"
+                      pattern="\d{6}"
+                      required
+                      maxLength={6}
+                      placeholder="000000"
+                      className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-amber-600 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={tgBusy}
+                    className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 dark:hover:bg-emerald-500"
+                  >
+                    {tgBusy ? "Tekshirilmoqda..." : "Tasdiqlash"}
+                  </button>
+                </form>
+              </div>
             )}
 
             {tgMessage && <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-300">{tgMessage}</p>}
