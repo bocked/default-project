@@ -42,4 +42,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: 979dbdeb9428a8828dfc3c6520fc1713
           workingDirectory: client
+          # Pin a known-good version instead of "latest" (wrangler@4.121.0
+          # resolved to a broken miniflare@5...alpha on the registry).
+          wranglerVersion: "4.120.1"
           command: pages deploy out --project-name=default-project --branch=main
