@@ -34,6 +34,44 @@ function getTransporter(): Transporter | null {
   return null;
 }
 
+/** Parses `"Iqtibosim <noreply@yerlikoglon.uz>"` into {name, email}. */
+function parseSender(from: string): { name: string; email: string } {
+  const match = from.match(/^(.*?)\s*<([^>]+)>$/);
+  if (match) return { name: match[1].trim(), email: match[2].trim() };
+  return { name: "", email: from.trim() };
+}
+
+async function sendViaBrevo(input: SendEmailInput): Promise<boolean> {
+  try {
+    const sender = parseSender(config.smtpFrom);
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": config.brevoApiKey,
+        "accept": "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        sender,
+        to: [{ email: input.to }],
+        subject: input.subject,
+        htmlContent: input.html,
+        textContent: input.text,
+      }),
+    });
+    if (!res.ok) {
+      logger.error({ status: res.status, body: await res.text(), to: input.to }, "failed to send email (brevo api)");
+      return false;
+    }
+    const data = (await res.json()) as { messageId?: string };
+    logger.info({ to: input.to, subject: input.subject, messageId: data.messageId }, "email sent (brevo api)");
+    return true;
+  } catch (err) {
+    logger.error({ err, to: input.to }, "failed to send email (brevo api)");
+    return false;
+  }
+}
+
 export interface SendEmailInput {
   to: string;
   subject: string;
@@ -43,6 +81,9 @@ export interface SendEmailInput {
 
 export async function sendEmail(input: SendEmailInput): Promise<boolean> {
   const record: EmailRecord = { ...input, at: new Date().toISOString() };
+  if (config.brevoApiKey) {
+    return sendViaBrevo(input);
+  }
   const transport = getTransporter();
   if (!transport) {
     // No SMTP configured: log + keep a transcript for tests/dev.

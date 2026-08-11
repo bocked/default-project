@@ -55,6 +55,10 @@ export const config = {
   smtpUser: process.env.SMTP_USER ?? "",
   smtpPass: process.env.SMTP_PASS ?? "",
   smtpFrom: process.env.SMTP_FROM ?? "Iqtibosim <noreply@yerlikoglon.uz>",
+  // Brevo transactional HTTP API (preferred over SMTP: works from hosts whose
+  // egress to Brevo SMTP is blocked, e.g. Render free tier). Leave empty to
+  // fall back to nodemailer SMTP.
+  brevoApiKey: process.env.BREVO_API_KEY ?? "",
 
   // Telegram moderation bot. Empty token disables outbound bot calls
   // (the webhook still processes incoming updates).
