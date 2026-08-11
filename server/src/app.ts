@@ -9,11 +9,16 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { config } from "./config.js";
 import { apiRouter } from "./routes/api.js";
 import { adminRouter } from "./routes/admin.js";
+import { authRouter } from "./routes/auth.js";
+import { quotesRouter } from "./routes/quotes.js";
+import { categoriesRouter, tagsRouter } from "./routes/catalog.js";
+import { telegramRouter } from "./routes/telegram.js";
 import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { logger } from "./lib/logger.js";
-import { apiLimiter } from "./lib/rateLimit.js";
+import { apiLimiter, authLimiter } from "./lib/rateLimit.js";
+import { tryEnsureDefaultCategories } from "./lib/categories.js";
 import { initSentry, setupSentryErrorHandler, captureException } from "./lib/sentry.js";
 
 export function originAllowed(origin: string): boolean {
@@ -87,7 +92,16 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
 
   const useApiLimiter = options.noRateLimits ? [] : [apiLimiter];
   app.use("/api", ...useApiLimiter, apiRouter);
+  if (useApiLimiter.length) {
+    app.use("/api/auth", authLimiter, authRouter);
+  } else {
+    app.use("/api/auth", authRouter);
+  }
+  app.use("/api/quotes", quotesRouter);
+  app.use("/api/categories", categoriesRouter);
+  app.use("/api/tags", tagsRouter);
   app.use("/api/admin", adminRouter);
+  app.use("/api/telegram", telegramRouter);
 
   // Sentry error handler first (captures), then the JSON responder below.
   setupSentryErrorHandler(app);
@@ -121,6 +135,7 @@ export async function startServer(): Promise<void> {
   try {
     await prisma.$connect();
     logger.info("postgres connected");
+    await tryEnsureDefaultCategories();
   } catch (err) {
     logger.warn({ err }, "postgres unreachable, starting anyway");
   }

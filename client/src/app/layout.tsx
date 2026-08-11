@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/lib/auth";
+import { SiteShell } from "@/components/SiteShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Default Project",
-  description: "Yangi loyiha",
+  title: "Iqtibosim — iqtiboslar to'plami",
+  description: "Fikrlarni to'playdigan, bo'limlar va heshteglar bo'yicha saralanadigan iqtiboslar sayti.",
 };
 
 export default function RootLayout({
@@ -23,11 +25,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="uz"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="h-full flex flex-col overflow-hidden">{children}</body>
+    <html lang="uz" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className="min-h-screen bg-background text-foreground">
+        <AuthProvider>
+          <SiteShell>{children}</SiteShell>
+        </AuthProvider>
+      </body>
     </html>
   );
 }

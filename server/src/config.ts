@@ -32,4 +32,32 @@ export const config = {
   sentryTracesSampleRate: num(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.1),
   // Number of trusted reverse-proxy hops (Render LB / Nginx).
   trustProxy: num(process.env.TRUST_PROXY, 1),
+
+  // ------------------------------------------------------------------
+  // Iqtibosim (auth, email verification, Telegram moderation)
+  // ------------------------------------------------------------------
+  jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
+  // Public frontend origin, used to build email verification links.
+  appUrl: process.env.APP_URL ?? "http://localhost:3000",
+  // Email verification token lifetime in hours.
+  verificationTokenHours: num(process.env.VERIFICATION_TOKEN_HOURS, 24),
+
+  // SMTP (nodemailer). Leave SMTP_HOST empty to fall back to a console
+  // logger + in-memory transcript (dev/test mode).
+  smtpHost: process.env.SMTP_HOST ?? "",
+  smtpPort: num(process.env.SMTP_PORT, 587),
+  smtpSecure: bool(process.env.SMTP_SECURE, false),
+  smtpUser: process.env.SMTP_USER ?? "",
+  smtpPass: process.env.SMTP_PASS ?? "",
+  smtpFrom: process.env.SMTP_FROM ?? "Iqtibosim <noreply@localhost>",
+
+  // Telegram moderation bot. Empty token disables outbound bot calls
+  // (the webhook still processes incoming updates).
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
+  telegramAdminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID ?? "",
+  // Secret shared with Telegram when registering the webhook
+  // (`X-Telegram-Bot-Api-Secret-Token` header).
+  telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? "",
+  // Public HTTPS URL used by scripts/set-telegram-webhook.ts.
+  telegramWebhookUrl: process.env.TELEGRAM_WEBHOOK_URL ?? "",
 };

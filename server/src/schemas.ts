@@ -40,6 +40,69 @@ export const banCreateSchema = z.object({
 });
 export type BanCreate = z.infer<typeof banCreateSchema>;
 
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+const email = z.string().trim().toLowerCase().email();
+
+export const registerSchema = z.object({
+  email,
+  password: z.string().min(8).max(72),
+  name: z.string().trim().max(100).optional(),
+  nickname: z.string().trim().max(50).optional(),
+});
+export type Register = z.infer<typeof registerSchema>;
+
+export const loginSchema = z.object({
+  email,
+  password: z.string().min(1).max(72),
+});
+export type Login = z.infer<typeof loginSchema>;
+
+export const verifyEmailSchema = z.object({
+  token: z.string().trim().min(20).max(128),
+});
+export type VerifyEmail = z.infer<typeof verifyEmailSchema>;
+
+export const resendVerificationSchema = z.object({
+  email,
+});
+export type ResendVerification = z.infer<typeof resendVerificationSchema>;
+
+export const updateProfileSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .max(100)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+  nickname: z
+    .string()
+    .trim()
+    .max(50)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+});
+export type UpdateProfile = z.infer<typeof updateProfileSchema>;
+
+// ---------------------------------------------------------------------------
+// Quotes
+// ---------------------------------------------------------------------------
+
+export const quoteCreateSchema = z.object({
+  text: z.string().trim().min(1).max(1000),
+  categorySlug: z.string().trim().min(1).max(60),
+  tags: z.array(z.string().trim().max(40)).max(5).default([]),
+  anonymous: z.boolean().default(false),
+});
+export type QuoteCreate = z.infer<typeof quoteCreateSchema>;
+
+export const adminQuoteRejectSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+export type AdminQuoteReject = z.infer<typeof adminQuoteRejectSchema>;
+
 /**
  * Parses unknown socket/request data against a schema. Returns `null` when the
  * input does not match so callers can drop the event/request silently.

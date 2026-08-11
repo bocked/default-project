@@ -15,3 +15,67 @@ model BannedIp {
 
   @@index([createdAt])
 }
+
+enum QuoteStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id                        String    @id @default(uuid())
+  email                     String    @unique
+  passwordHash              String
+  name                      String? // real name (private, admin-only)
+  nickname                  String?
+  emailVerified             Boolean   @default(false)
+  emailVerificationToken    String?   @unique
+  emailVerificationExpiresAt DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  quotes                    Quote[]
+
+  @@index([createdAt])
+}
+
+model Category {
+  id     String  @id @default(uuid())
+  name   String
+  slug   String  @unique
+  quotes Quote[]
+
+  @@index([name])
+}
+
+model Tag {
+  id     String  @id @default(uuid())
+  name   String
+  slug   String  @unique
+  quotes Quote[]
+
+  @@index([name])
+}
+
+model Quote {
+  id                  String      @id @default(uuid())
+  text                String
+  displayAuthor       String
+  anonymous           Boolean     @default(false)
+  status              QuoteStatus @default(PENDING)
+  rejectionReason     String?
+  awaitingRejection   Boolean     @default(false)
+  telegramMessageId   Int? // id of the Telegram moderation message
+  userId              String
+  categoryId          String
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category            Category    @relation(fields: [categoryId], references: [id])
+  tags                Tag[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([status, categoryId])
+  @@index([status, userId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([telegramMessageId])
+}

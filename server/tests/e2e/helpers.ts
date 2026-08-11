@@ -31,7 +31,13 @@ export async function startTestServer(): Promise<TestServer> {
 
 /** Wipes every table so each test file starts from a known state. */
 export async function cleanDatabase(): Promise<void> {
-  await prisma.$transaction([prisma.bannedIp.deleteMany()]);
+  await prisma.$transaction([
+    prisma.quote.deleteMany(),
+    prisma.user.deleteMany(),
+    prisma.tag.deleteMany(),
+    prisma.category.deleteMany(),
+    prisma.bannedIp.deleteMany(),
+  ]);
 }
 
 export interface ReqOptions {

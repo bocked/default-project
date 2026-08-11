@@ -25,3 +25,25 @@ services:
         value: "https://default-project-bza.pages.dev,https://*.pages.dev,https://yerlikoglon.uz,https://www.yerlikoglon.uz,http://localhost:3000"
       - key: SENTRY_DSN
         sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: APP_URL
+        value: "https://default-project-bza.pages.dev"
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ADMIN_CHAT_ID
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_WEBHOOK_URL
+        sync: false

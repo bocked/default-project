@@ -23,3 +23,21 @@ export const adminLimiter = rateLimit({
   ...standard,
   message: { error: "Too many requests" },
 });
+
+/** Guard on /api/auth (brute-force protection for login/register). */
+export const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});
+
+/** Guard on quote creation (per hour). */
+export const quoteCreateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});
