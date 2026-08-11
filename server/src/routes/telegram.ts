@@ -45,6 +45,15 @@ telegramRouter.post("/webhook", async (req, res) => {
       await handleContact(update.message);
     } else if (typeof update?.message?.text === "string" && update.message.text.startsWith("/start")) {
       await handleStart(update.message);
+    } else {
+      logger.warn(
+        {
+          updateId: update?.update_id,
+          topKeys: update ? Object.keys(update) : null,
+          messageKeys: update?.message ? Object.keys(update.message) : null,
+        },
+        "telegram update: no handler matched"
+      );
     }
   } catch (err) {
     logger.error({ err }, "telegram webhook handler failed");
@@ -162,10 +171,23 @@ async function handleStart(msg: Record<string, any>): Promise<void> {
 async function handleContact(msg: Record<string, any>): Promise<void> {
   const chatId: number | undefined = msg.chat?.id;
   const contact: Record<string, any> | undefined = msg.contact;
-  if (chatId === undefined || !contact?.phone_number) return;
-  // In a private chat the shared contact belongs to the account that pressed
-  // the button; ignore messages whose contact user_id does not match.
-  if (contact.user_id !== undefined && String(contact.user_id) !== String(chatId)) return;
+  if (chatId === undefined || !contact?.phone_number) {
+    logger.warn(
+      {
+        chatId,
+        contactKeys: contact ? Object.keys(contact) : null,
+        phoneNumber: contact?.phone_number,
+      },
+      "telegram contact ignored: chat or phone missing"
+    );
+    return;
+  }
+  // In a private chat only the chat owner can send us messages, so a shared
+  // contact belongs to the verification session regardless of whether Telegram
+  // includes a user_id (it is absent for manually attached contacts).
+  if (contact.user_id !== undefined && String(contact.user_id) !== String(chatId)) {
+    logger.warn({ chatId, contactUserId: contact.user_id }, "telegram contact: user_id differs from chat id");
+  }
 
   const user = await prisma.user.findFirst({ where: { telegramVerifyChatId: String(chatId) } });
   if (!user || !user.telegramVerifyExpiresAt || user.telegramVerifyExpiresAt < new Date()) {
