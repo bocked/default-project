@@ -165,6 +165,16 @@ async function handleContact(msg: Record<string, any>): Promise<void> {
     return;
   }
 
+  // One Telegram account can only be linked to one profile.
+  const linked = await prisma.user.findFirst({ where: { telegramId: String(chatId) } });
+  if (linked && linked.id !== user.id) {
+    await sendTelegramMessage(
+      chatId,
+      "Bu Telegram akkaunt boshqa profilga bog'langan. Saytda email orqali tasdiqlang yoki yangi profil yarating."
+    );
+    return;
+  }
+
   const phone = String(contact.phone_number).replace(/[^\d+]/g, "");
   const code = generateTelegramVerifyCode();
   await prisma.user.update({
