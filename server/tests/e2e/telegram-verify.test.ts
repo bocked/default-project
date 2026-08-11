@@ -115,6 +115,41 @@ describe("E2E: Telegram phone verification flow (/start verify_... then contact)
     expect(after.telegramVerifyCode).toBeTruthy();
   });
 
+  it("handles a contact delivered as a reply to the bot's request message", async () => {
+    const email = `${unique("tgv4")}@example.com`;
+    const token = "c".repeat(32);
+    const chatId = 555000444;
+
+    await prisma.user.create({
+      data: {
+        email,
+        passwordHash: "x",
+        telegramVerifyToken: hashTelegramVerifyToken(token),
+        telegramVerifyExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    });
+    await request(base, "POST", "/api/telegram/webhook", {
+      headers: { "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET },
+      body: startUpdate(token, chatId),
+    });
+    const contact = await request(base, "POST", "/api/telegram/webhook", {
+      headers: { "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET },
+      body: {
+        message: {
+          message_id: 2,
+          chat: { id: chatId },
+          contact: { phone_number: "+998907778899", first_name: "Test", user_id: chatId },
+          reply_to_message: { message_id: 1, text: "Telefon raqamingizni yuboring" },
+        },
+      },
+    });
+    expect(contact.status).toBe(200);
+    const after = await prisma.user.findUniqueOrThrow({ where: { email } });
+    expect(after.telegramId).toBe(String(chatId));
+    expect(after.phoneNumber).toBe("+998907778899");
+    expect(after.telegramVerifyCode).toBeTruthy();
+  });
+
   it("does not accept a contact from a chat without an active session", async () => {
     const before = await prisma.user.count();
     const contact = await request(base, "POST", "/api/telegram/webhook", {

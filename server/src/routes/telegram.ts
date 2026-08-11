@@ -39,10 +39,12 @@ telegramRouter.post("/webhook", async (req, res) => {
     const update = req.body as Record<string, any>;
     if (update?.callback_query) {
       await handleCallback(update.callback_query);
+    } else if (update?.message?.contact) {
+      // A contact always belongs to the verification flow, even when the client
+      // attaches it as a reply to the bot's request message.
+      await handleContact(update.message);
     } else if (update?.message?.reply_to_message) {
       await handleReply(update.message);
-    } else if (update?.message?.contact) {
-      await handleContact(update.message);
     } else if (typeof update?.message?.text === "string" && update.message.text.startsWith("/start")) {
       await handleStart(update.message);
     } else {
