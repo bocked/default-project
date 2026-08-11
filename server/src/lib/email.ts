@@ -47,7 +47,8 @@ export async function sendEmail(input: SendEmailInput): Promise<boolean> {
   if (!transport) {
     // No SMTP configured: log + keep a transcript for tests/dev.
     emailTranscript.push(record);
-    logger.info({ to: input.to, subject: input.subject }, "email (not sent: SMTP not configured)");
+    const link = input.text.match(/https?:\/\/\S+/)?.[0];
+    logger.info({ to: input.to, subject: input.subject, link }, "email (not sent: SMTP not configured)");
     return true;
   }
   try {
