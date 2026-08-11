@@ -10,12 +10,18 @@ export default function Home() {
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
+  const [content, setContent] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [tag, setTag] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
+
+  const heroTitle = content["hero.title"] ?? "Iqtibosim";
+  const heroSubtitle =
+    content["hero.subtitle"] ??
+    "Dono fikrlarni o'qing va o'zingiznikini qo'shing. Har bir iqtibos moderatsiyadan o'tadi.";
 
   const fetchQuotes = useCallback(async () => {
     setLoading(true);
@@ -43,6 +49,9 @@ export default function Home() {
     void api<{ tags: Tag[] }>("/api/tags")
       .then((data) => setTags(data.tags))
       .catch(() => setTags([]));
+    void api<{ content: Record<string, string> }>("/api/content")
+      .then((data) => setContent(data.content))
+      .catch(() => setContent({}));
   }, []);
 
   // Debounced "realtime" search as the user types.
@@ -61,10 +70,8 @@ export default function Home() {
   return (
     <div className="space-y-6">
       <section className="pt-2 text-center">
-        <h1 className="font-serif text-4xl font-bold text-slate-900 dark:text-white">Iqtibosim</h1>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Dono fikrlarni o&apos;qing va o&apos;zingiznikini qo&apos;shing. Har bir iqtibos moderatsiyadan o&apos;tadi.
-        </p>
+        <h1 className="font-serif text-4xl font-bold text-slate-900 dark:text-white">{heroTitle}</h1>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{heroSubtitle}</p>
       </section>
 
       <div className="relative">
