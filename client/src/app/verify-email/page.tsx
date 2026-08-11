@@ -43,17 +43,19 @@ export default function VerifyEmailPage() {
 
   return (
     <div className="mx-auto mt-8 w-full max-w-sm">
-      <div className="animate-slide-up rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-        {phase === "checking" && <p className="text-sm text-slate-500">Email tasdiqlanmoqda...</p>}
+      <div className="animate-slide-up rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none">
+        {phase === "checking" && <p className="text-sm text-slate-500 dark:text-slate-400">Email tasdiqlanmoqda...</p>}
 
         {phase === "success" && (
           <>
-            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-emerald-100 text-2xl">✓</div>
-            <h1 className="text-lg font-semibold text-slate-900">Email tasdiqlandi!</h1>
-            <p className="mt-1 text-sm text-slate-500">Endi iqtibos qo&apos;shishingiz mumkin.</p>
+            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-emerald-100 text-2xl dark:bg-emerald-500/20">
+              ✓
+            </div>
+            <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Email tasdiqlandi!</h1>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Endi iqtibos qo&apos;shishingiz mumkin.</p>
             <Link
               href="/profile"
-              className="mt-4 inline-block rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+              className="mt-4 inline-block rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
             >
               Profilga o&apos;tish
             </Link>
@@ -62,12 +64,14 @@ export default function VerifyEmailPage() {
 
         {phase === "error" && (
           <>
-            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-rose-100 text-2xl">!</div>
-            <h1 className="text-lg font-semibold text-slate-900">Xatolik</h1>
-            <p className="mt-1 text-sm text-slate-500">{message}</p>
+            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-rose-100 text-2xl dark:bg-rose-500/20">
+              !
+            </div>
+            <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Xatolik</h1>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{message}</p>
             <Link
               href="/"
-              className="mt-4 inline-block rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
+              className="mt-4 inline-block rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600"
             >
               Bosh sahifaga qaytish
             </Link>

@@ -7,19 +7,26 @@ import {
   generateEmailVerificationToken,
   hashEmailVerificationToken,
   emailVerificationExpiry,
+  generatePasswordResetToken,
+  hashPasswordResetToken,
+  passwordResetExpiry,
 } from "../lib/tokens.js";
-import { sendVerificationEmail } from "../lib/email.js";
+import { sendVerificationEmail, sendPasswordResetEmail } from "../lib/email.js";
 import {
   validateBody,
   registerSchema,
   loginSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
   updateProfileSchema,
   type Register,
   type Login,
   type VerifyEmail,
   type ResendVerification,
+  type ForgotPassword,
+  type ResetPassword,
   type UpdateProfile,
 } from "../schemas.js";
 
@@ -30,6 +37,7 @@ interface SafeUser {
   email: string;
   name: string | null;
   nickname: string | null;
+  role: string;
   emailVerified: boolean;
   createdAt: Date;
 }
@@ -40,6 +48,7 @@ function toUser(user: SafeUser): SafeUser {
     email: user.email,
     name: user.name,
     nickname: user.nickname,
+    role: user.role,
     emailVerified: user.emailVerified,
     createdAt: user.createdAt,
   };
@@ -112,6 +121,45 @@ authRouter.post("/resend-verification", validateBody(resendVerificationSchema), 
   if (user && !user.emailVerified) {
     await issueVerification(user.email);
   }
+  res.json({ ok: true });
+});
+
+// POST /api/auth/forgot-password - email a time-limited reset link. Always
+// answers ok so the endpoint cannot be used to enumerate registered emails.
+authRouter.post("/forgot-password", validateBody(forgotPasswordSchema), async (_req, res) => {
+  const body = res.locals.body as ForgotPassword;
+  const user = await prisma.user.findUnique({ where: { email: body.email } });
+  if (user) {
+    const token = generatePasswordResetToken();
+    await prisma.user.update({
+      where: { email: user.email },
+      data: {
+        resetPasswordToken: hashPasswordResetToken(token),
+        resetPasswordExpiresAt: passwordResetExpiry(),
+      },
+    });
+    await sendPasswordResetEmail(user.email, token);
+  }
+  res.json({ ok: true });
+});
+
+// POST /api/auth/reset-password - redeem the reset token and set a new password.
+authRouter.post("/reset-password", validateBody(resetPasswordSchema), async (_req, res) => {
+  const body = res.locals.body as ResetPassword;
+  const digest = hashPasswordResetToken(body.token);
+  const user = await prisma.user.findFirst({ where: { resetPasswordToken: digest } });
+  if (!user || !user.resetPasswordExpiresAt || user.resetPasswordExpiresAt < new Date()) {
+    res.status(400).json({ error: "Tiklash havolasi yaroqsiz yoki muddati o'tgan" });
+    return;
+  }
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await hashPassword(body.password),
+      resetPasswordToken: null,
+      resetPasswordExpiresAt: null,
+    },
+  });
   res.json({ ok: true });
 });
 

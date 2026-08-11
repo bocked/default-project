@@ -61,19 +61,24 @@ export default function Home() {
   return (
     <div className="space-y-6">
       <section className="pt-2 text-center">
-        <h1 className="text-3xl font-bold text-slate-900">Iqtibosim</h1>
-        <p className="mt-2 text-sm text-slate-500">
+        <h1 className="font-serif text-4xl font-bold text-slate-900 dark:text-white">Iqtibosim</h1>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
           Dono fikrlarni o&apos;qing va o&apos;zingiznikini qo&apos;shing. Har bir iqtibos moderatsiyadan o&apos;tadi.
         </p>
       </section>
 
       <div className="relative">
-        <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">🔎</span>
+        <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+        </span>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Iqtibos, muallif yoki heshteg bo'yicha qidirish..."
-          className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-900"
         />
       </div>
 
@@ -105,23 +110,25 @@ export default function Home() {
         </div>
       )}
 
-      <div className="flex items-center justify-between text-xs text-slate-400">
+      <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
         <span>
           {loading ? "Qidirilmoqda..." : `${total} ta iqtibos`}
           {activeFilter ? " (filtrlangan)" : ""}
         </span>
         {activeFilter && (
-          <button type="button" onClick={() => { setCategory(""); setTag(""); }} className="text-blue-600 hover:underline">
+          <button type="button" onClick={() => { setCategory(""); setTag(""); }} className="text-blue-600 hover:underline dark:text-blue-400">
             Filtrni tozalash
           </button>
         )}
       </div>
 
-      {error && <p className="rounded-xl bg-rose-50 p-4 text-sm text-rose-600">{error}</p>}
+      {error && (
+        <p className="rounded-xl bg-rose-50 p-4 text-sm text-rose-600 dark:bg-rose-950/40 dark:text-rose-300">{error}</p>
+      )}
 
       {!loading && quotes.length === 0 && !error && (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center">
-          <p className="text-sm text-slate-500">Hozircha iqtiboslar yo&apos;q. Birinchi bo&apos;lib qo&apos;shing!</p>
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
+          <p className="text-sm text-slate-500 dark:text-slate-400">Hozircha iqtiboslar yo&apos;q. Birinchi bo&apos;lib qo&apos;shing!</p>
         </div>
       )}
 
@@ -149,8 +156,8 @@ function FilterChip({
   const cls = active
     ? tone === "blue"
       ? "border-blue-600 bg-blue-600 text-white"
-      : "border-slate-800 bg-slate-800 text-white"
-    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900";
+      : "border-slate-800 bg-slate-800 text-white dark:border-slate-200 dark:bg-slate-200 dark:text-slate-900"
+    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white";
   return (
     <button type="button" onClick={onClick} className={`${base} ${cls}`}>
       {children}

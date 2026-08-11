@@ -93,3 +93,31 @@ export function sendVerificationEmail(to: string, token: string): Promise<boolea
 
   return sendEmail({ to, subject: "Iqtibosim — emailni tasdiqlang", text, html });
 }
+
+function resetPasswordUrl(token: string): string {
+  return `${config.appUrl.replace(/\/$/, "")}/reset-password?token=${encodeURIComponent(token)}`;
+}
+
+export function sendPasswordResetEmail(to: string, token: string): Promise<boolean> {
+  const link = resetPasswordUrl(token);
+  const text = [
+    "Iqtibosim — parolni tiklash",
+    "",
+    "Parolingizni tiklash uchun quyidagi havolani oching:",
+    link,
+    "",
+    "Bu havola vaqtinchalik bo'lib, bir marta ishlatiladi. Agar siz parol tiklashni so'ramagan bo'lsangiz, bu xabarni e'tiborsiz qoldiring.",
+  ].join("\n");
+
+  const html = `
+  <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+    <h2 style="color:#0f172a">Iqtibosim</h2>
+    <p style="color:#334155;line-height:1.6">Parolingizni tiklash uchun quyidagi tugmani bosing:</p>
+    <p style="margin:24px 0">
+      <a href="${link}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block">Parolni tiklash</a>
+    </p>
+    <p style="font-size:13px;color:#94a3b8">Bu havola vaqtinchalik bo'lib, bir marta ishlatiladi. Agar siz parol tiklashni so'ramagan bo'lsangiz, bu xabarni e'tiborsiz qoldiring.</p>
+  </div>`;
+
+  return sendEmail({ to, subject: "Iqtibosim — parolni tiklash", text, html });
+}

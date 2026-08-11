@@ -7,6 +7,7 @@ export interface User {
   email: string;
   name: string | null;
   nickname: string | null;
+  role: string;
   emailVerified: boolean;
   createdAt: string;
 }
@@ -32,6 +33,7 @@ export interface Quote {
   text: string;
   displayAuthor: string;
   anonymous: boolean;
+  telegramUrl?: string | null;
   status?: QuoteStatus;
   rejectionReason?: string | null;
   createdAt: string;

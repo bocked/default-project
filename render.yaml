@@ -38,7 +38,9 @@ services:
       - key: SMTP_PASS
         sync: false
       - key: SMTP_FROM
-        sync: false
+        value: "Iqtibosim <noreply@yerlikoglon.uz>"
+      - key: ADMIN_EMAILS
+        value: "mirabbostolqinjonov@gmail.com"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_ADMIN_CHAT_ID

@@ -70,6 +70,17 @@ export const resendVerificationSchema = z.object({
 });
 export type ResendVerification = z.infer<typeof resendVerificationSchema>;
 
+export const forgotPasswordSchema = z.object({
+  email,
+});
+export type ForgotPassword = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z.object({
+  token: z.string().trim().min(20).max(128),
+  password: z.string().min(8).max(72),
+});
+export type ResetPassword = z.infer<typeof resetPasswordSchema>;
+
 export const updateProfileSchema = z.object({
   name: z
     .string()
@@ -90,11 +101,28 @@ export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 // Quotes
 // ---------------------------------------------------------------------------
 
+// Telegram post link: https://t.me/<channel>/<message_id>
+const telegramUrl = z
+  .string()
+  .trim()
+  .max(200)
+  .optional()
+  .transform((v) => (v === undefined || v === "" ? undefined : v))
+  .pipe(
+    z
+      .string()
+      .regex(/^https:\/\/(t\.me|telegram\.me)\/[A-Za-z0-9_]{3,64}\/[0-9]{1,15}$/, {
+        message: "Telegram havolasi https://t.me/kanal/123 ko'rinishida bo'lishi kerak",
+      })
+      .optional()
+  );
+
 export const quoteCreateSchema = z.object({
   text: z.string().trim().min(1).max(1000),
   categorySlug: z.string().trim().min(1).max(60),
   tags: z.array(z.string().trim().max(40)).max(5).default([]),
   anonymous: z.boolean().default(false),
+  telegramUrl,
 });
 export type QuoteCreate = z.infer<typeof quoteCreateSchema>;
 

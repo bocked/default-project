@@ -80,7 +80,19 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   // for rate limiting and logging.
   app.set("trust proxy", config.trustProxy);
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+          // Telegram post widget: the script itself and its iframe both load
+          // from telegram.org.
+          "script-src": ["'self'", "https://telegram.org"],
+          "frame-src": ["https://telegram.org"],
+        },
+      },
+    })
+  );
   app.use(cors({ origin: corsOrigin }));
   app.use(compression());
   app.use(express.json({ limit: "1mb" }));
@@ -124,6 +136,18 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   return { app, server, io };
 }
 
+/** Grants the ADMIN role to every configured admin email. Best-effort. */
+async function promoteAdminEmails(): Promise<void> {
+  if (config.adminEmails.length === 0) return;
+  const result = await prisma.user.updateMany({
+    where: { email: { in: config.adminEmails } },
+    data: { role: "ADMIN" },
+  });
+  if (result.count > 0) {
+    logger.info(`granted ADMIN role to ${result.count} user(s)`);
+  }
+}
+
 /** Production entry point: connects infra, listens, wires graceful shutdown. */
 export async function startServer(): Promise<void> {
   // Sentry must be initialised before anything else so errors are captured
@@ -136,6 +160,7 @@ export async function startServer(): Promise<void> {
     await prisma.$connect();
     logger.info("postgres connected");
     await tryEnsureDefaultCategories();
+    await promoteAdminEmails();
   } catch (err) {
     logger.warn({ err }, "postgres unreachable, starting anyway");
   }

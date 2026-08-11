@@ -1,6 +1,8 @@
 import { NextFunction, Request, Response } from "express";
 import crypto from "node:crypto";
 import { config } from "../config.js";
+import { prisma } from "../lib/prisma.js";
+import { verifyAuthToken } from "../lib/tokens.js";
 
 /**
  * Constant-time comparison for the shared admin password. Both values are
@@ -13,13 +15,29 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Protects /api/admin/* routes. Accepts `Authorization: Bearer <ADMIN_PASSWORD>`.
+ * Protects /api/admin/* routes. Accepts either:
+ *  - `Authorization: Bearer <ADMIN_PASSWORD>` (shared secret), or
+ *  - a regular auth JWT belonging to a user with the ADMIN role.
  */
 export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "").trim();
-  if (token && safeEqual(token, config.adminPassword)) {
+  if (!token) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  if (safeEqual(token, config.adminPassword)) {
     next();
     return;
   }
-  res.status(401).json({ error: "Unauthorized" });
+  const payload = verifyAuthToken(token);
+  if (!payload) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+  if (!user || user.role !== "ADMIN") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  next();
 }

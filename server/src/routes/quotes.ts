@@ -20,6 +20,7 @@ interface PublicQuote {
   text: string;
   displayAuthor: string;
   anonymous: boolean;
+  telegramUrl: string | null;
   createdAt: Date;
   category: { id: string; name: string; slug: string };
   tags: { id: string; name: string; slug: string }[];
@@ -31,6 +32,7 @@ function toPublicQuote(q: any): PublicQuote {
     text: q.text,
     displayAuthor: q.displayAuthor,
     anonymous: q.anonymous,
+    telegramUrl: q.telegramUrl ?? null,
     createdAt: q.createdAt,
     category: q.category,
     tags: q.tags,
@@ -145,6 +147,7 @@ quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireVerified, validat
         text: body.text,
         displayAuthor,
         anonymous: body.anonymous,
+        telegramUrl: body.telegramUrl ?? null,
         userId: req.user!.id,
         categoryId: category.id,
         tags: {

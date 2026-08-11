@@ -22,15 +22,23 @@ enum QuoteStatus {
   REJECTED
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 model User {
   id                        String    @id @default(uuid())
   email                     String    @unique
   passwordHash              String
   name                      String? // real name (private, admin-only)
   nickname                  String?
+  role                      UserRole  @default(USER)
   emailVerified             Boolean   @default(false)
   emailVerificationToken    String?   @unique
   emailVerificationExpiresAt DateTime?
+  resetPasswordToken        String?   @unique
+  resetPasswordExpiresAt    DateTime?
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
   quotes                    Quote[]
@@ -65,6 +73,7 @@ model Quote {
   rejectionReason     String?
   awaitingRejection   Boolean     @default(false)
   telegramMessageId   Int? // id of the Telegram moderation message
+  telegramUrl         String? // optional t.me/<channel>/<id> post embedded on the site
   userId              String
   categoryId          String
   createdAt           DateTime    @default(now())

@@ -26,6 +26,11 @@ export const config = {
     .map((s) => s.trim())
     .filter(Boolean),
   adminPassword: process.env.ADMIN_PASSWORD ?? "change-me",
+  // Emails whose accounts are granted the ADMIN role on server startup.
+  adminEmails: (process.env.ADMIN_EMAILS ?? "mirabbostolqinjonov@gmail.com")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
   logToConsole: bool(process.env.LOG_TO_CONSOLE, true),
   logLevel: process.env.LOG_LEVEL ?? "info",
   sentryDsn: process.env.SENTRY_DSN ?? "",
@@ -49,7 +54,7 @@ export const config = {
   smtpSecure: bool(process.env.SMTP_SECURE, false),
   smtpUser: process.env.SMTP_USER ?? "",
   smtpPass: process.env.SMTP_PASS ?? "",
-  smtpFrom: process.env.SMTP_FROM ?? "Iqtibosim <noreply@localhost>",
+  smtpFrom: process.env.SMTP_FROM ?? "Iqtibosim <noreply@yerlikoglon.uz>",
 
   // Telegram moderation bot. Empty token disables outbound bot calls
   // (the webhook still processes incoming updates).

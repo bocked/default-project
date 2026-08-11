@@ -39,3 +39,20 @@ export function hashEmailVerificationToken(token: string): string {
 export function emailVerificationExpiry(): Date {
   return new Date(Date.now() + config.verificationTokenHours * 60 * 60 * 1000);
 }
+
+// ---------------------------------------------------------------------------
+// Password reset tokens
+// ---------------------------------------------------------------------------
+
+export function generatePasswordResetToken(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+/** Digest a token before storing it (same sha-256 approach as email tokens). */
+export function hashPasswordResetToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+export function passwordResetExpiry(): Date {
+  return new Date(Date.now() + config.verificationTokenHours * 60 * 60 * 1000);
+}

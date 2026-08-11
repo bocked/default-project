@@ -55,7 +55,7 @@ export default function ProfilePage() {
   }
 
   if (loading || !user) {
-    return <p className="py-16 text-center text-sm text-slate-500">Yuklanmoqda...</p>;
+    return <p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Yuklanmoqda...</p>;
   }
 
   const pendingCount = quotes.filter((q) => q.status === "PENDING").length;
@@ -63,24 +63,24 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6">
       <section>
-        <h1 className="text-2xl font-bold text-slate-900">Mening profilim</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mening profilim</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           {user.email} · {pendingCount} ta iqtibos moderatsiyada
         </p>
       </section>
 
       {!user.emailVerified && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/30">
           <div>
-            <p className="text-sm font-medium text-amber-800">Email hali tasdiqlanmagan</p>
-            <p className="text-xs text-amber-700">Iqtibos qo&apos;shishdan oldin emailingizni tasdiqlang.</p>
-            {resendMessage && <p className="mt-1 text-xs font-medium text-amber-800">{resendMessage}</p>}
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Email hali tasdiqlanmagan</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400">Iqtibos qo&apos;shishdan oldin emailingizni tasdiqlang.</p>
+            {resendMessage && <p className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">{resendMessage}</p>}
           </div>
           <button
             type="button"
             onClick={resendVerification}
             disabled={resending}
-            className="rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+            className="rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50 dark:hover:bg-amber-500"
           >
             {resending ? "Yuborilmoqda..." : "Tasdiqlash havolasini qayta yuborish"}
           </button>
@@ -93,12 +93,12 @@ export default function ProfilePage() {
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-800">Mening iqtiboslarim</h2>
-          <span className="text-xs text-slate-400">{quotes.length} ta</span>
+          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Mening iqtiboslarim</h2>
+          <span className="text-xs text-slate-400 dark:text-slate-500">{quotes.length} ta</span>
         </div>
         {quotes.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center">
-            <p className="text-sm text-slate-500">
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
               Hali iqtibos qo&apos;shmagansiz. Yuqoridagi forma orqali birinchi iqtibosingizni yuboring.
             </p>
           </div>
@@ -133,35 +133,35 @@ function ProfileSettings({
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-sm font-semibold text-slate-800">Profil sozlamalari</h2>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none">
+      <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Profil sozlamalari</h2>
       <form onSubmit={saveProfile} className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">
+          <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
             Haqiqiy ism (faqat adminlarga ko&apos;rinadi)
           </label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-900"
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">Nickname (sahifada ko&apos;rinadi)</label>
+          <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Nickname (sahifada ko&apos;rinadi)</label>
           <input
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-900"
           />
         </div>
         <div className="sm:col-span-2">
           <button
             type="submit"
-            className="rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
+            className="rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600"
           >
             Saqlash
           </button>
-          {profileSaved && <span className="ml-3 text-sm text-emerald-600">Saqlandi ✓</span>}
+          {profileSaved && <span className="ml-3 text-sm text-emerald-600 dark:text-emerald-400">Saqlandi ✓</span>}
         </div>
       </form>
     </section>
