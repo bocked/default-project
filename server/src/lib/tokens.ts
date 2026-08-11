@@ -61,9 +61,13 @@ export function passwordResetExpiry(): Date {
 // Telegram verification tokens / codes
 // ---------------------------------------------------------------------------
 
-/** Opaque token embedded in `t.me/<bot>?start=verify_<token>`. */
+/** Opaque token embedded in `t.me/<bot>?start=verify_<token>`.
+ *  Telegram silently drops deep-link payloads longer than 64 characters, so the
+ *  `verify_` prefix plus this token must stay well under that limit
+ *  (32 hex chars + 7 prefix = 39). A 128-bit value is ample for a 15-minute
+ *  session token. */
 export function generateTelegramVerifyToken(): string {
-  return crypto.randomBytes(32).toString("hex");
+  return crypto.randomBytes(16).toString("hex");
 }
 
 export function hashTelegramVerifyToken(token: string): string {

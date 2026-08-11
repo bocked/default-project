@@ -129,8 +129,19 @@ async function handleReply(msg: Record<string, any>): Promise<void> {
 async function handleStart(msg: Record<string, any>): Promise<void> {
   const chatId: number | undefined = msg.chat?.id;
   const text = String(msg.text ?? "");
+  if (chatId === undefined) return;
+
   const match = text.match(/^\/start\s+verify_([0-9a-f]+)$/i);
-  if (!match || chatId === undefined) return;
+  if (!match) {
+    // Telegram drops oversized/malformed deep-link payloads, so a user can end
+    // up here with a bare /start. Point them back to the site instead of
+    // silently ignoring the message.
+    await sendTelegramMessage(
+      chatId,
+      "Bu bot orqali profilni tasdiqlash uchun saytdagi profil sahifasida «Telegram orqali tasdiqlash» tugmasini bosing va botga yuborilgan unikal havolani oching."
+    );
+    return;
+  }
 
   const digest = hashTelegramVerifyToken(match[1]);
   const user = await prisma.user.findFirst({ where: { telegramVerifyToken: digest } });
