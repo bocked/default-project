@@ -14,6 +14,8 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [tag, setTag] = useState("");
+  const [page, setPage] = useState(1);
+  const [showAllTags, setShowAllTags] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
@@ -23,7 +25,7 @@ export default function Home() {
     content["hero.subtitle"] ??
     "Dono fikrlarni o'qing va o'zingiznikini qo'shing. Har bir iqtibos moderatsiyadan o'tadi.";
 
-  const fetchQuotes = useCallback(async () => {
+  const fetchQuotes = useCallback(async (nextPage: number) => {
     setLoading(true);
     setError(null);
     try {
@@ -31,9 +33,10 @@ export default function Home() {
       if (search.trim()) params.set("q", search.trim());
       if (category) params.set("category", category);
       if (tag) params.set("tag", tag);
+      params.set("page", String(nextPage));
       const qs = params.toString();
       const data = await api<PaginatedQuotes>(`/api/quotes${qs ? `?${qs}` : ""}`);
-      setQuotes(data.quotes);
+      setQuotes((prev) => (nextPage === 1 ? data.quotes : [...prev, ...data.quotes]));
       setTotal(data.total);
     } catch {
       setError("Iqtiboslarni yuklab bo'lmadi");
@@ -54,18 +57,26 @@ export default function Home() {
       .catch(() => setContent({}));
   }, []);
 
-  // Debounced "realtime" search as the user types.
+  // Debounced "realtime" search as the user types. Resets pagination.
   useEffect(() => {
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
-      void fetchQuotes();
+      setPage(1);
+      void fetchQuotes(1);
     }, 300);
     return () => {
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
     };
   }, [fetchQuotes]);
 
+  async function loadMore(): Promise<void> {
+    const next = page + 1;
+    await fetchQuotes(next);
+    setPage(next);
+  }
+
   const activeFilter = category || tag;
+  const remaining = total - quotes.length;
 
   return (
     <div className="space-y-6">
@@ -104,7 +115,7 @@ export default function Home() {
 
       {tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {tags.slice(0, 15).map((t) => (
+          {(showAllTags ? tags : tags.slice(0, 15)).map((t) => (
             <FilterChip
               key={t.id}
               active={tag === t.slug}
@@ -114,12 +125,25 @@ export default function Home() {
               #{t.name}
             </FilterChip>
           ))}
+          {tags.length > 15 && (
+            <button
+              type="button"
+              onClick={() => setShowAllTags((v) => !v)}
+              className="rounded-full border border-dashed border-slate-300 px-3 py-1 text-xs font-medium text-slate-500 transition hover:border-blue-400 hover:text-blue-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-blue-500 dark:hover:text-blue-400"
+            >
+              {showAllTags ? "Yashirish" : `Barcha heshteglar (${tags.length})`}
+            </button>
+          )}
         </div>
       )}
 
       <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
         <span>
-          {loading ? "Qidirilmoqda..." : `${total} ta iqtibos`}
+          {loading && quotes.length === 0
+            ? "Qidirilmoqda..."
+            : total === 0
+              ? "0 ta iqtibos"
+              : `${quotes.length} / ${total} ta iqtibos`}
           {activeFilter ? " (filtrlangan)" : ""}
         </span>
         {activeFilter && (
@@ -144,6 +168,19 @@ export default function Home() {
           <QuoteCard key={quote.id} quote={quote} />
         ))}
       </div>
+
+      {remaining > 0 && !error && (
+        <div className="flex justify-center pt-1">
+          <button
+            type="button"
+            onClick={() => void loadMore()}
+            disabled={loading}
+            className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-400 hover:text-blue-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-500 dark:hover:text-blue-400"
+          >
+            {loading ? "Yuklanmoqda..." : `Ko'proq ko'rsatish (yana ${remaining} ta)`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
