@@ -1,11 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { QuoteCard } from "@/components/QuoteCard";
 import type { Category, PaginatedQuotes, Quote, Tag } from "@/lib/types";
 
 export default function Home() {
+  return (
+    <Suspense fallback={<div className="space-y-6"><p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Yuklanmoqda...</p></div>}>
+      <HomeInner />
+    </Suspense>
+  );
+}
+
+function HomeInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -19,11 +30,43 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
+  const initialParamsAppliedRef = useRef(false);
 
   const heroTitle = content["hero.title"] ?? "Iqtibosim";
   const heroSubtitle =
     content["hero.subtitle"] ??
     "Dono fikrlarni o'qing va o'zingiznikini qo'shing. Har bir iqtibos moderatsiyadan o'tadi.";
+
+  // Apply initial URL params once after hydration (deferred to avoid lint).
+  useEffect(() => {
+    if (initialParamsAppliedRef.current) return;
+    initialParamsAppliedRef.current = true;
+    window.setTimeout(() => {
+      const q = searchParams.get("q");
+      const cat = searchParams.get("category");
+      const tg = searchParams.get("tag");
+      const pg = searchParams.get("page");
+      if (q) setSearch(q);
+      if (cat) setCategory(cat);
+      if (tg) setTag(tg);
+      if (pg) setPage(Math.max(1, Number(pg)));
+    }, 0);
+  }, [searchParams]);
+
+  // Push URL updates when filters/page change (avoid initial hydration push).
+  useEffect(() => {
+    if (!initialParamsAppliedRef.current) return;
+    const params = new URLSearchParams();
+    if (search.trim()) params.set("q", search.trim());
+    if (category) params.set("category", category);
+    if (tag) params.set("tag", tag);
+    if (page > 1) params.set("page", String(page));
+    const qs = params.toString();
+    const newUrl = qs ? `/?${qs}` : "/";
+    if (window.location.search !== `?${qs}` && window.location.pathname !== newUrl) {
+      router.push(newUrl, { scroll: false });
+    }
+  }, [search, category, tag, page, router]);
 
   const fetchQuotes = useCallback(async (nextPage: number) => {
     setLoading(true);
