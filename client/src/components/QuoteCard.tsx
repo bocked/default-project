@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { Quote } from "@/lib/types";
 import { StatusBadge } from "./StatusBadge";
 import { TelegramPost } from "./TelegramPost";
@@ -32,9 +33,14 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
       {quote.tags.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
           {quote.tags.map((tag) => (
-            <span key={tag.id} className="text-xs text-blue-600 dark:text-blue-400">
-              #{tag.name}
-            </span>
+            <Link
+              key={tag.id}
+              href={`/?tag=${encodeURIComponent(tag.slug)}`}
+              className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition"
+            >
+              <span aria-hidden="true">#</span>
+              <span>{tag.name}</span>
+            </Link>
           ))}
         </div>
       )}

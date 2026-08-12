@@ -144,16 +144,35 @@ function HomeInner() {
       </div>
 
       {categories.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          <FilterChip active={!category} onClick={() => setCategory("")}>
-            Barchasi
-          </FilterChip>
-          {categories.map((c) => (
-            <FilterChip key={c.id} active={category === c.slug} onClick={() => setCategory(category === c.slug ? "" : c.slug)}>
-              {c.name}
-            </FilterChip>
-          ))}
-        </div>
+        <nav className="overflow-x-auto pb-2 -mx-4 px-4" aria-label="Kategoriyalar">
+          <div className="flex gap-2 min-w-max">
+            <button
+              type="button"
+              onClick={() => setCategory("")}
+              className={`flex-shrink-0 rounded-full border px-4 py-1.5 text-sm font-medium transition whitespace-nowrap ${
+                !category
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:text-white"
+              }`}
+            >
+              Barchasi
+            </button>
+            {categories.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setCategory(category === c.slug ? "" : c.slug)}
+                className={`flex-shrink-0 rounded-full border px-4 py-1.5 text-sm font-medium transition whitespace-nowrap ${
+                  category === c.slug
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:text-white"
+                }`}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </nav>
       )}
 
       {tags.length > 0 && (

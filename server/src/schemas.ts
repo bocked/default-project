@@ -175,6 +175,12 @@ export const tagUpdateSchema = z.object({
 });
 export type TagUpdate = z.infer<typeof tagUpdateSchema>;
 
+export const categoryUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  slug: z.string().trim().min(1).max(60),
+});
+export type CategoryUpdate = z.infer<typeof categoryUpdateSchema>;
+
 export const contentUpdateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   value: z.string().trim().min(1).max(2000),

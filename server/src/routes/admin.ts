@@ -21,6 +21,7 @@ import {
   bulkUsersSchema,
   userRoleUpdateSchema,
   tagUpdateSchema,
+  categoryUpdateSchema,
   contentUpdateSchema,
   type AdminQuoteReject,
   type QuoteEdit,
@@ -28,6 +29,7 @@ import {
   type BulkUsers,
   type UserRoleUpdate,
   type TagUpdate,
+  type CategoryUpdate,
   type ContentUpdate,
 } from "../schemas.js";
 
@@ -715,6 +717,117 @@ adminRouter.delete("/tags/:id", async (req, res) => {
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: "Heshteg o'chirilmadi" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Categories
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/categories - all categories with quote counts.
+adminRouter.get("/categories", async (_req, res) => {
+  try {
+    const categories = await prisma.category.findMany({
+      include: { _count: { select: { quotes: { where: { deletedAt: null } } } } },
+      orderBy: { name: "asc" },
+    });
+    res.json({ categories: categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, quoteCount: c._count.quotes })) });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// POST /api/admin/categories - create a new category.
+adminRouter.post("/categories", validateBody(categoryUpdateSchema), async (req, res) => {
+  try {
+    const body = res.locals.body as CategoryUpdate;
+    const slug = body.slug.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!slug) {
+      res.status(400).json({ error: "Slug bo'sh bo'lishi mumkin emas" });
+      return;
+    }
+    const existing = await prisma.category.findUnique({ where: { slug } });
+    if (existing) {
+      res.status(409).json({ error: "Bunday bo'lim allaqachon mavjud" });
+      return;
+    }
+    const category = await prisma.category.create({
+      data: { name: body.name.trim(), slug },
+    });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "category.create",
+      targetType: "category",
+      targetId: category.id,
+      detail: category.name,
+      ip: clientIp(req.headers),
+    });
+    res.json({ category });
+  } catch {
+    res.status(500).json({ error: "Bo'lim yaratilmadi" });
+  }
+});
+
+// PATCH /api/admin/categories/:id - rename a category.
+adminRouter.patch("/categories/:id", validateBody(categoryUpdateSchema), async (req, res) => {
+  try {
+    const body = res.locals.body as CategoryUpdate;
+    const slug = body.slug.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!slug) {
+      res.status(400).json({ error: "Slug bo'sh bo'lishi mumkin emas" });
+      return;
+    }
+    const existing = await prisma.category.findUnique({ where: { slug } });
+    if (existing && existing.id !== req.params.id) {
+      res.status(409).json({ error: "Bunday bo'lim allaqachon mavjud" });
+      return;
+    }
+    const category = await prisma.category.update({
+      where: { id: req.params.id },
+      data: { name: body.name.trim(), slug },
+    });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "category.edit",
+      targetType: "category",
+      targetId: category.id,
+      detail: category.name,
+      ip: clientIp(req.headers),
+    });
+    res.json({ category });
+  } catch {
+    res.status(500).json({ error: "Bo'lim tahrirlanmadi" });
+  }
+});
+
+// DELETE /api/admin/categories/:id - delete a category (only if no quotes).
+adminRouter.delete("/categories/:id", async (req, res) => {
+  try {
+    const category = await prisma.category.findUnique({ where: { id: req.params.id } });
+    if (!category) {
+      res.status(404).json({ error: "Bo'lim topilmadi" });
+      return;
+    }
+    const quoteCount = await prisma.quote.count({ where: { categoryId: category.id, deletedAt: null } });
+    if (quoteCount > 0) {
+      res.status(400).json({ error: "Bu bo'limda iqtiboslar bor, avval ularni o'chiring yoki boshqa bo'limga ko'chiring" });
+      return;
+    }
+    await prisma.category.delete({ where: { id: category.id } });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "category.delete",
+      targetType: "category",
+      targetId: category.id,
+      detail: category.name,
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Bo'lim o'chirilmadi" });
   }
 });
 

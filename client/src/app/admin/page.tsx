@@ -36,6 +36,8 @@ export default function AdminDashboard() {
     { label: "Onlayn", value: stats?.online ?? 0, tone: "blue" as const },
   ];
 
+  const WWW_UZ_STATS_URL = "https://www.uz/stat/48123";
+
   return (
     <div className="space-y-6">
       <PageTitle
@@ -63,6 +65,53 @@ export default function AdminDashboard() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-5">
+        <AdminCard className="lg:col-span-3">
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+            So&apos;nggi 14 kunlik faollik
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            Kunlik ro&apos;yxatdan o&apos;tishlar va iqtiboslar.
+          </p>
+          <ActivityChart data={activity} />
+        </AdminCard>
+
+        <AdminCard className="lg:col-span-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">WWW.UZ Statistikasi</h2>
+            <a
+              href={WWW_UZ_STATS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+            >
+              Batafsil
+            </a>
+          </div>
+          <div className="mt-3 space-y-3">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/70">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Sayt tashrif buyuruvchilari, ko&apos;rishlar va trafik manbalari haqida batafsil statistika www.uz saytida mavjud.
+              </p>
+              <a
+                href={WWW_UZ_STATS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 mt-2 text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              >
+                <span>www.uz statistikasini ko&apos;rish</span>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/70">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Saytga yashirin o&apos;rnatilgan www.uz hisoblagich (ID: 48123) har bir tashrifni yuzagachi rejimda qayd etadi.
+              </p>
+            </div>
+          </div>
+        </AdminCard>
+
         <AdminCard className="lg:col-span-3">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
             So&apos;nggi 14 kunlik faollik

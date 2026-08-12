@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
 import { NavBar } from "./NavBar";
+import { WwwUzTracker } from "./WwwUzTracker";
 
 export function SiteShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -21,6 +22,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col">
+      <WwwUzTracker />
       <NavBar />
       <main className={`mx-auto w-full flex-1 px-4 py-6 ${isAdmin ? "max-w-6xl" : "max-w-3xl"}`}>
         {children}
