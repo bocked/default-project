@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import {
   AdminButton,
@@ -282,7 +283,13 @@ export default function AdminQuotesPage() {
                       Muallif: <span className="font-medium text-slate-700 dark:text-slate-300">{quote.displayAuthor}</span>
                     </span>
                     <span>
-                      Egasi: <span className="text-slate-700 dark:text-slate-300">{quote.user.email}</span>
+                      Egasi:{" "}
+                      <Link
+                        href={`/user?id=${quote.user.id}`}
+                        className="font-medium text-slate-700 hover:text-blue-600 hover:underline dark:text-slate-300 dark:hover:text-blue-400"
+                      >
+                        {quote.user.email}
+                      </Link>
                     </span>
                   </div>
 

@@ -209,4 +209,68 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
     expect(activity.json.activity.length).toBe(7);
     expect(typeof activity.json.activity[0].registrations).toBe("number");
   });
+
+  it("grants and revokes the ADMIN role; self-demotion is blocked", async () => {
+    const id = await makeUser(`${unique("role")}@example.com`);
+
+    // Grant admin via the shared admin secret.
+    const grant = await request(base, "PATCH", `/api/admin/users/${id}/role`, {
+      token: ADMIN,
+      body: { role: "ADMIN" },
+    });
+    expect(grant.status).toBe(200);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id } })).role).toBe("ADMIN");
+
+    // A real admin JWT cannot demote their own account.
+    const login = await request(base, "POST", "/api/auth/login", {
+      body: { email: "mirabbostolqinjonov@gmail.com", password: "admin-password" },
+    });
+    expect(login.status).toBe(200);
+    const selfId = (await prisma.user.findUniqueOrThrow({ where: { email: "mirabbostolqinjonov@gmail.com" } })).id;
+    const self = await request(base, "PATCH", `/api/admin/users/${selfId}/role`, {
+      token: login.json.token,
+      body: { role: "USER" },
+    });
+    expect(self.status).toBe(400);
+
+    // Revoke admin from the promoted user.
+    const revoke = await request(base, "PATCH", `/api/admin/users/${id}/role`, {
+      token: ADMIN,
+      body: { role: "USER" },
+    });
+    expect(revoke.status).toBe(200);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id } })).role).toBe("USER");
+
+    // Invalid role is rejected.
+    const bad = await request(base, "PATCH", `/api/admin/users/${id}/role`, {
+      token: ADMIN,
+      body: { role: "SUPERUSER" },
+    });
+    expect(bad.status).toBe(400);
+  });
+
+  it("exposes a public author profile with approved quotes only", async () => {
+    const id = await makeUser(`${unique("author")}@example.com`);
+    const cat = await prisma.category.findFirstOrThrow();
+    const approved = await prisma.quote.create({
+      data: { text: "Ommaviy iqtibos.", displayAuthor: "Anonim", anonymous: true, status: "APPROVED", userId: id, categoryId: cat.id },
+    });
+    await prisma.quote.create({
+      data: { text: "Yashirin iqtibos.", displayAuthor: "Anonim", anonymous: true, status: "PENDING", userId: id, categoryId: cat.id },
+    });
+
+    const res = await request(base, "GET", `/api/users/${id}`);
+    expect(res.status).toBe(200);
+    expect(res.json.user.id).toBe(id);
+    expect(res.json.quotes.map((q: any) => q.id)).toEqual([approved.id]);
+    expect(res.json.quotes[0].text).toBe("Ommaviy iqtibos.");
+
+    const missing = await request(base, "GET", "/api/users/does-not-exist");
+    expect(missing.status).toBe(404);
+
+    const delId = await makeUser(`${unique("gone")}@example.com`);
+    await prisma.user.update({ where: { id: delId }, data: { deletedAt: new Date() } });
+    const gone = await request(base, "GET", `/api/users/${delId}`);
+    expect(gone.status).toBe(404);
+  });
 });

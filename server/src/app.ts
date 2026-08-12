@@ -11,6 +11,7 @@ import { apiRouter } from "./routes/api.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
 import { quotesRouter } from "./routes/quotes.js";
+import { usersRouter } from "./routes/users.js";
 import { categoriesRouter, tagsRouter } from "./routes/catalog.js";
 import { contentRouter } from "./routes/content.js";
 import { telegramRouter } from "./routes/telegram.js";
@@ -112,6 +113,7 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
     app.use("/api/auth", authRouter);
   }
   app.use("/api/quotes", quotesRouter);
+  app.use("/api/users", usersRouter);
   app.use("/api/categories", categoriesRouter);
   app.use("/api/tags", tagsRouter);
   app.use("/api/content", contentRouter);

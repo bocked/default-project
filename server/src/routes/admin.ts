@@ -19,12 +19,14 @@ import {
   quoteEditSchema,
   bulkQuotesSchema,
   bulkUsersSchema,
+  userRoleUpdateSchema,
   tagUpdateSchema,
   contentUpdateSchema,
   type AdminQuoteReject,
   type QuoteEdit,
   type BulkQuotes,
   type BulkUsers,
+  type UserRoleUpdate,
   type TagUpdate,
   type ContentUpdate,
 } from "../schemas.js";
@@ -530,6 +532,36 @@ adminRouter.delete("/users/:id", async (req, res) => {
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: "Foydalanuvchi o'chirilmadi" });
+  }
+});
+
+// PATCH /api/admin/users/:id/role - grant or revoke the ADMIN role.
+adminRouter.patch("/users/:id/role", validateBody(userRoleUpdateSchema), async (req, res) => {
+  try {
+    const { role } = res.locals.body as UserRoleUpdate;
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) {
+      res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      return;
+    }
+    const actorId = adminId(req);
+    if (actorId && target.id === actorId) {
+      res.status(400).json({ error: "O'zingizning rolingizni o'zgartira olmaysiz" });
+      return;
+    }
+    const user = await prisma.user.update({ where: { id: target.id }, data: { role } });
+    await recordAudit({
+      adminId: actorId,
+      adminEmail: adminEmail(req),
+      action: "user.role",
+      targetType: "user",
+      targetId: user.id,
+      detail: `${target.role} -> ${role}`,
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true, user: { id: user.id, role: user.role } });
+  } catch {
+    res.status(500).json({ error: "Rol o'zgartirilmadi" });
   }
 });
 

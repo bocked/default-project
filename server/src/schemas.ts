@@ -165,6 +165,11 @@ export const bulkUsersSchema = z.object({
 });
 export type BulkUsers = z.infer<typeof bulkUsersSchema>;
 
+export const userRoleUpdateSchema = z.object({
+  role: z.enum(["USER", "ADMIN"]),
+});
+export type UserRoleUpdate = z.infer<typeof userRoleUpdateSchema>;
+
 export const tagUpdateSchema = z.object({
   name: z.string().trim().min(1).max(40),
 });

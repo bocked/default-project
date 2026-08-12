@@ -49,6 +49,17 @@ export interface PaginatedQuotes {
   limit: number;
 }
 
+export interface PublicUserProfile {
+  id: string;
+  nickname: string | null;
+  createdAt: string;
+}
+
+export interface PublicUserProfileData {
+  user: PublicUserProfile;
+  quotes: Quote[];
+}
+
 // ---------------------------------------------------------------------------
 // Admin console types
 // ---------------------------------------------------------------------------

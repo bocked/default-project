@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import {
   AdminButton,
   AdminCard,
@@ -16,6 +18,7 @@ import {
 import type { AdminUser } from "@/lib/types";
 
 export default function AdminUsersPage() {
+  const { user: me } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
@@ -80,6 +83,22 @@ export default function AdminUsersPage() {
       await load(search, role, blocked);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Amal bajarilmadi");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runRole(u: AdminUser, nextRole: string): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await api<{ ok: boolean }>(`/api/admin/users/${u.id}/role`, {
+        method: "PATCH",
+        body: { role: nextRole },
+      });
+      await load(search, role, blocked);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rol o'zgartirilmadi");
     } finally {
       setBusy(false);
     }
@@ -176,7 +195,12 @@ export default function AdminUsersPage() {
                       <Checkbox checked={selected.has(u.id)} onChange={() => toggle(u.id)} />
                     </td>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-slate-900 dark:text-white">{u.email}</p>
+                      <Link
+                        href={`/user?id=${u.id}`}
+                        className="font-medium text-slate-900 hover:text-blue-600 hover:underline dark:text-white dark:hover:text-blue-400"
+                      >
+                        {u.email}
+                      </Link>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
                         {[u.name, u.nickname ? `@${u.nickname}` : null].filter(Boolean).join(" · ") ||
                           "Ism kiritilmagan"}
@@ -203,6 +227,13 @@ export default function AdminUsersPage() {
                       <div className="flex justify-end gap-1.5">
                         {u.role !== "ADMIN" && (
                           <>
+                            <AdminButton
+                              variant="primary"
+                              disabled={busy}
+                              onClick={() => void runRole(u, "ADMIN")}
+                            >
+                              Admin qilish
+                            </AdminButton>
                             {u.blocked ? (
                               <AdminButton variant="slate" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/unblock`)}>
                                 Blokdan chiqarish
@@ -217,7 +248,16 @@ export default function AdminUsersPage() {
                             </AdminButton>
                           </>
                         )}
-                        {u.role === "ADMIN" && (
+                        {u.role === "ADMIN" && u.id !== me?.id && (
+                          <AdminButton
+                            variant="slate"
+                            disabled={busy}
+                            onClick={() => void runRole(u, "USER")}
+                          >
+                            Admindan chiqarish
+                          </AdminButton>
+                        )}
+                        {u.role === "ADMIN" && u.id === me?.id && (
                           <span className="text-xs text-slate-400 dark:text-slate-500">Boshqarib bo&apos;lmaydi</span>
                         )}
                       </div>
