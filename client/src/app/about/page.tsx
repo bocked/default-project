@@ -10,14 +10,19 @@ export const metadata: Metadata = {
 function Section({
   number,
   title,
+  id,
   children,
 }: {
   number: string;
   title: string;
+  id?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none">
+    <section
+      id={id}
+      className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none"
+    >
       <div className="flex items-center gap-3">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-blue-600 text-sm font-bold text-white">
           {number}
@@ -56,7 +61,7 @@ export default function AboutPage() {
         </p>
       </header>
 
-      <Section number="1" title="Asosiy sahifa va qidiruv">
+      <Section id="asosiy" number="1" title="Asosiy sahifa va qidiruv">
         <p>
           Saytning bosh sahifasida <strong>tasdiqlangan iqtiboslar lentasi</strong> joylashgan. Har bir iqtibos
           kartasida iqtibos matni, muallif, qo&apos;shilgan sana, bo&apos;lim nomi, heshteglar, ko&apos;rishlar soni
@@ -80,7 +85,7 @@ export default function AboutPage() {
         />
       </Section>
 
-      <Section number="2" title="Kategoriyalar va Heshteglar">
+      <Section id="kategoriyalar" number="2" title="Kategoriyalar va Heshteglar">
         <p>
           Iqtiboslarni <strong>bo&apos;limlar (kategoriyalar)</strong> va <strong>heshteglar</strong> orqali
           tartiblash mumkin:
