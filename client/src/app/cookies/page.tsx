@@ -17,7 +17,7 @@ export default function CookiesPage() {
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">1. Cookie nima?</h2>
         <p className="text-slate-600 dark:text-slate-300">
-          Cookie — bu sizning qurilmangizga (kompyuter, telefon, planshet) sayt tashrif buyurganda saqlanadigan kichik matnli fayllardir. ular saytga sizni eslab qolish, sessiyani saqlash va afzalliklarni ta'minlash imkonini beradi.
+          Cookie — bu sizning qurilmangizga (kompyuter, telefon, planshet) sayt tashrif buyurganda saqlanadigan kichik matnli fayllardir. ular saytga sizni eslab qolish, sessiyani saqlash va afzalliklarni ta&apos;minlash imkonini beradi.
         </p>
       </section>
 
@@ -25,16 +25,16 @@ export default function CookiesPage() {
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">2. Qanday cookielardan foydalanamiz</h2>
         <ul className="list-disc pl-6 space-y-3 text-slate-600 dark:text-slate-300">
           <li>
-            <strong>Authentication (autentifikatsiya) cookie:</strong> JWT token localStorage da saqlanib, siz saytga qaytganda avtomatik kirishni ta'minlaydi. Bu cookie xavfsizlik uchun httpOnly emas (client-side), lekin xavfsiz token o'zida shaxsiy ma'lumot o'z ichiga olmaydi.
+            <strong>Authentication (autentifikatsiya) cookie:</strong> JWT token localStorage da saqlanib, siz saytga qaytganda avtomatik kirishni ta&apos;minlaydi. Bu cookie xavfsizlik uchun httpOnly emas (client-side), lekin xavfsiz token o&apos;zida shaxsiy ma&apos;lumot o&apos;z ichiga olmaydi.
           </li>
           <li>
-            <strong>Theme (mavzu) cookie:</strong> Tanlangan mavzu (light/dark) localStorage da saqlanib, keyingi tashriflarda avtomatik qo'llaniladi.
+            <strong>Theme (mavzu) cookie:</strong> Tanlangan mavzu (light/dark) localStorage da saqlanib, keyingi tashriflarda avtomatik qo&apos;llaniladi.
           </li>
           <li>
-            <strong>Test mode banner dismissal:</strong> Test rejimi bannerini yopganingizda, tanlovingiz localStorage da saqlanib, keyingi tashriflarda banner ko'rinmaydi.
+            <strong>Test mode banner dismissal:</strong> Test rejimi bannerini yopganingizda, tanlovingiz localStorage da saqlanib, keyingi tashriflarda banner ko&apos;rinmaydi.
           </li>
           <li>
-            <strong>Cookie consent (rozilik):</strong> Cookie bannerini qabul qilinganda, tanlovingiz localStorage da saqlanib, banner yana ko'rinmaydi.
+            <strong>Cookie consent (rozilik):</strong> Cookie bannerini qabul qilinganda, tanlovingiz localStorage da saqlanib, banner yana ko&apos;rinmaydi.
           </li>
         </ul>
       </section>
@@ -42,7 +42,7 @@ export default function CookiesPage() {
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">3. Uchinchi tomon cookielari</h2>
         <p className="text-slate-600 dark:text-slate-300">
-          Hozirda sayt <strong>uchinchi tomon cookielaridan (Google Analytics, reklama tarmoqlari, kuzatuv tizimlari) foydalanmaydi</strong>. Kelajakda shunday xizmatlar qo'shilganda, bu bo'lim yangilanadi va sizdan alohida rozilik so'raladi.
+          Hozirda sayt <strong>uchinchi tomon cookielaridan (Google Analytics, reklama tarmoqlari, kuzatuv tizimlari) foydalanmaydi</strong>. Kelajakda shunday xizmatlar qo&apos;shilganda, bu bo&apos;lim yangilanadi va sizdan alohida rozilik so&apos;raladi.
         </p>
       </section>
 
@@ -52,28 +52,28 @@ export default function CookiesPage() {
           Siz brauzer sozlamalaridan cookielarni boshqarishingiz mumkin:
         </p>
         <ul className="list-disc pl-6 space-y-2 text-slate-600 dark:text-slate-300">
-          <li>Barcha cookielarni o'chirish (brauzer sozlamalaridan).</li>
-          <li>Cookie qabul qilishni cheklash yoki butunlay o'chirish.</li>
-          <li>Saytdagi "Cookie roziligi" ni bekor qilish (localStorage dan <code>cookieConsent</code> kalitini o'chirish).</li>
-          <li>Test rejimi bannerini yana ko'rsatish uchun <code>testModeBannerDismissed</code> ni o'chiring.</li>
+          <li>Barcha cookielarni o&apos;chirish (brauzer sozlamalaridan).</li>
+          <li>Cookie qabul qilishni cheklash yoki butunlay o&apos;chirish.</li>
+          <li>Saytdagi &quot;Cookie roziligi&quot; ni bekor qilish (localStorage dan <code>cookieConsent</code> kalitini o&apos;chirish).</li>
+          <li>Test rejimi bannerini yana ko&apos;rsatish uchun <code>testModeBannerDismissed</code> ni o&apos;chiring.</li>
         </ul>
         <p className="text-slate-600 dark:text-slate-300">
-          Eslatma: Authentication cookie o'chirilganda, siz saytdan chiqib ketasiz va qayta kirish kerak bo'ladi.
+          Eslatma: Authentication cookie o&apos;chirilganda, siz saytdan chiqib ketasiz va qayta kirish kerak bo&apos;ladi.
         </p>
       </section>
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">4. Cookie muddati</h2>
         <ul className="list-disc pl-6 space-y-2 text-slate-600 dark:text-slate-300">
-          <li>Authentication token — 30 kun (so'ng avtomatik yangilanadi).</li>
-          <li>Theme, banner dismissal, cookie consent — cheksiz (siz o'chirmaguncha).</li>
+          <li>Authentication token — 30 kun (so&apos;ng avtomatik yangilanadi).</li>
+          <li>Theme, banner dismissal, cookie consent — cheksiz (siz o&apos;chirmaguncha).</li>
         </ul>
       </section>
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">5. Aloqa</h2>
         <p className="text-slate-600 dark:text-slate-300">
-          Cookie qoidalari bo'yicha savollar: <a href="mailto:mirabbostolqinjonov@gmail.com" className="text-blue-600 hover:underline">mirabbostolqinjonov@gmail.com</a>
+          Cookie qoidalari bo&apos;yicha savollar: <a href="mailto:mirabbostolqinjonov@gmail.com" className="text-blue-600 hover:underline">mirabbostolqinjonov@gmail.com</a>
         </p>
       </section>
 
