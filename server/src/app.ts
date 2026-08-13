@@ -14,6 +14,7 @@ import { quotesRouter } from "./routes/quotes.js";
 import { usersRouter } from "./routes/users.js";
 import { categoriesRouter, tagsRouter } from "./routes/catalog.js";
 import { contentRouter } from "./routes/content.js";
+import { siteRouter } from "./routes/site.js";
 import { telegramRouter } from "./routes/telegram.js";
 import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
@@ -117,6 +118,7 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   app.use("/api/categories", categoriesRouter);
   app.use("/api/tags", tagsRouter);
   app.use("/api/content", contentRouter);
+  app.use("/api", siteRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/telegram", telegramRouter);
 

@@ -18,6 +18,7 @@ import {
 } from "../lib/tokens.js";
 import { sendVerificationEmail, sendPasswordResetEmail } from "../lib/email.js";
 import { getBotUsername, sendAdminNotification } from "../lib/telegram.js";
+import { recordActivity } from "../lib/activity.js";
 import {
   validateBody,
   registerSchema,
@@ -98,6 +99,7 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
   // Best-effort: keep the admin informed about new registrations.
   const handle = [user.nickname, user.name].filter(Boolean).join(" / ") || user.email;
   void sendAdminNotification(`🆕 Yangi foydalanuvchi ro'yxatdan o'tdi\n\n${user.email}${handle !== user.email ? `\n${handle}` : ""}`);
+  void recordActivity({ userId: user.id, action: "REGISTER", detail: user.email });
   res.status(201).json({ token: signAuthToken(user.id), user: toUser(user) });
 });
 
@@ -120,6 +122,7 @@ authRouter.post("/login", validateBody(loginSchema), async (_req, res) => {
   const current = promote
     ? await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } })
     : user;
+  void recordActivity({ userId: current.id, action: "LOGIN", detail: current.email });
   res.json({ token: signAuthToken(user.id), user: toUser(current) });
 });
 

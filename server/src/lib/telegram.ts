@@ -135,10 +135,11 @@ export async function sendTelegramMessage(
   chatId: number | string,
   text: string,
   replyMarkup?: ReplyKeyboard
-): Promise<void> {
+): Promise<boolean> {
   const body: Record<string, unknown> = { chat_id: chatId, text };
   if (replyMarkup) body.reply_markup = replyMarkup;
-  await apiCall("sendMessage", body);
+  const json = await apiCall<TelegramResult<{ message_id: number }>>("sendMessage", body);
+  return json?.ok === true;
 }
 
 /** Fires a plain notification to the admin chat (no buttons). */

@@ -187,6 +187,62 @@ export const contentUpdateSchema = z.object({
 });
 export type ContentUpdate = z.infer<typeof contentUpdateSchema>;
 
+// ---------------------------------------------------------------------------
+// Admin modules (announcements, feedback, settings, seo, backup)
+// ---------------------------------------------------------------------------
+
+export const announcementCreateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  message: z.string().trim().min(1).max(4000),
+  channel: z.enum(["ALL", "SITE", "TELEGRAM", "EMAIL"]).default("ALL"),
+  status: z.enum(["ACTIVE", "ARCHIVED"]).default("ACTIVE"),
+});
+export type AnnouncementCreate = z.infer<typeof announcementCreateSchema>;
+
+export const feedbackReplySchema = z.object({
+  status: z.enum(["OPEN", "IN_PROGRESS", "RESOLVED"]).default("RESOLVED"),
+  adminReply: z.string().trim().max(2000).optional(),
+});
+export type FeedbackReply = z.infer<typeof feedbackReplySchema>;
+
+export const publicFeedbackSchema = z.object({
+  category: z.enum(["COMPLAINT", "SUGGESTION", "REPORT", "OTHER"]).default("OTHER"),
+  text: z.string().trim().min(1).max(2000),
+  quoteId: z.string().min(1).max(64).optional(),
+});
+export type PublicFeedback = z.infer<typeof publicFeedbackSchema>;
+
+export const settingsUpdateSchema = z.object({
+  settings: z.array(
+    z.object({
+      key: z.string().trim().min(1).max(120),
+      value: z.string().trim().max(4000),
+      label: z.string().trim().max(200),
+      group: z.enum(["general", "seo"]).default("general"),
+    })
+  ),
+});
+export type SettingsUpdate = z.infer<typeof settingsUpdateSchema>;
+
+export const seoRuleSchema = z.object({
+  page: z.string().trim().min(1).max(200),
+  title: z.string().trim().max(200).optional(),
+  description: z.string().trim().max(400).optional(),
+  keywords: z.string().trim().max(400).optional(),
+});
+export type SeoRuleInput = z.infer<typeof seoRuleSchema>;
+
+export const backupCreateSchema = z.object({
+  label: z.string().trim().min(1).max(200),
+});
+export type BackupCreate = z.infer<typeof backupCreateSchema>;
+
+export const telegramBanSchema = z.object({
+  telegramId: z.string().trim().min(1).max(128),
+  reason: z.string().max(500).optional(),
+});
+export type TelegramBan = z.infer<typeof telegramBanSchema>;
+
 /**
  * Parses unknown socket/request data against a schema. Returns `null` when the
  * input does not match so callers can drop the event/request silently.

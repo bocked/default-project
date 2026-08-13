@@ -8,7 +8,8 @@ import { onlineCount } from "./api.js";
 import { bus } from "../lib/bus.js";
 import { config } from "../config.js";
 import { adminLimiter } from "../lib/rateLimit.js";
-import { editModerationMessage } from "../lib/telegram.js";
+import { editModerationMessage, sendTelegramMessage, telegramEnabled } from "../lib/telegram.js";
+import { sendEmail } from "../lib/email.js";
 import { listContent, getContent } from "../lib/content.js";
 import { clientIp } from "../lib/ip.js";
 import { normalizeTagName, slugify } from "../lib/categories.js";
@@ -23,6 +24,12 @@ import {
   tagUpdateSchema,
   categoryUpdateSchema,
   contentUpdateSchema,
+  announcementCreateSchema,
+  feedbackReplySchema,
+  settingsUpdateSchema,
+  seoRuleSchema,
+  backupCreateSchema,
+  telegramBanSchema,
   type AdminQuoteReject,
   type QuoteEdit,
   type BulkQuotes,
@@ -31,6 +38,12 @@ import {
   type TagUpdate,
   type CategoryUpdate,
   type ContentUpdate,
+  type AnnouncementCreate,
+  type FeedbackReply,
+  type SettingsUpdate,
+  type SeoRuleInput,
+  type BackupCreate,
+  type TelegramBan,
 } from "../schemas.js";
 
 export const adminRouter = Router();
@@ -929,3 +942,612 @@ adminRouter.delete("/bans/:ip", async (req, res) => {
     res.status(404).json({ error: "Ban not found" });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Top quotes (analytics widget)
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/stats/top-quotes?days=30&limit=10 - most read & most liked quotes.
+adminRouter.get("/stats/top-quotes", async (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
+    const since = new Date(Date.now() - days * DAY);
+    const where: Prisma.QuoteWhereInput = { status: "APPROVED", deletedAt: null, createdAt: { gte: since } };
+    const [mostRead, mostLiked] = await Promise.all([
+      prisma.quote.findMany({
+        where,
+        include: { category: { select: { id: true, name: true, slug: true } } },
+        orderBy: { views: "desc" },
+        take: limit,
+      }),
+      prisma.quote.findMany({
+        where,
+        include: { _count: { select: { likes: true } }, category: { select: { id: true, name: true, slug: true } } },
+        orderBy: { likes: { _count: "desc" } },
+        take: limit,
+      }),
+    ]);
+    res.json({
+      mostRead: mostRead.map((q) => ({ id: q.id, text: q.text.slice(0, 120), displayAuthor: q.displayAuthor, views: q.views, category: q.category })),
+      mostLiked: mostLiked.map((q) => ({ id: q.id, text: q.text.slice(0, 120), displayAuthor: q.displayAuthor, likeCount: q._count.likes, category: q.category })),
+    });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Announcements / broadcast
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/announcements - list all announcements.
+adminRouter.get("/announcements", async (req, res) => {
+  try {
+    const status = typeof req.query.status === "string" && ["ACTIVE", "ARCHIVED"].includes(req.query.status.toUpperCase())
+      ? req.query.status.toUpperCase()
+      : undefined;
+    const announcements = await prisma.announcement.findMany({
+      where: status ? { status } : {},
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    res.json({ announcements });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// POST /api/admin/announcements - create + broadcast to users over the chosen channel.
+adminRouter.post("/announcements", validateBody(announcementCreateSchema), async (req, res) => {
+  try {
+    const body = res.locals.body as AnnouncementCreate;
+    const announcement = await prisma.announcement.create({
+      data: {
+        title: body.title,
+        message: body.message,
+        channel: body.channel,
+        status: body.status,
+        createdById: adminId(req),
+      },
+    });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "announcement.create",
+      targetType: "announcement",
+      targetId: announcement.id,
+      detail: body.title,
+      ip: clientIp(req.headers),
+    });
+    if (announcement.status === "ACTIVE" && (body.channel === "ALL" || body.channel === "TELEGRAM")) {
+      void broadcastTelegram(announcement.title, announcement.message);
+    }
+    if (announcement.status === "ACTIVE" && (body.channel === "ALL" || body.channel === "EMAIL")) {
+      void broadcastEmail(announcement.title, announcement.message);
+    }
+    res.status(201).json({ announcement });
+  } catch {
+    res.status(500).json({ error: "E'lon yaratilmadi" });
+  }
+});
+
+// PATCH /api/admin/announcements/:id - archive/reactivate.
+adminRouter.patch("/announcements/:id", async (req, res) => {
+  try {
+    const status = typeof req.body?.status === "string" && ["ACTIVE", "ARCHIVED"].includes(req.body.status.toUpperCase())
+      ? req.body.status.toUpperCase()
+      : undefined;
+    if (!status) {
+      res.status(400).json({ error: "status faqat ACTIVE yoki ARCHIVED bo'lishi mumkin" });
+      return;
+    }
+    const announcement = await prisma.announcement.update({
+      where: { id: req.params.id },
+      data: { status },
+    });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: `announcement.${status.toLowerCase()}`,
+      targetType: "announcement",
+      targetId: announcement.id,
+      detail: announcement.title,
+      ip: clientIp(req.headers),
+    });
+    res.json({ announcement });
+  } catch {
+    res.status(404).json({ error: "E'lon topilmadi" });
+  }
+});
+
+// DELETE /api/admin/announcements/:id - permanently remove.
+adminRouter.delete("/announcements/:id", async (req, res) => {
+  try {
+    const announcement = await prisma.announcement.findUnique({ where: { id: req.params.id } });
+    if (!announcement) {
+      res.status(404).json({ error: "E'lon topilmadi" });
+      return;
+    }
+    await prisma.announcement.delete({ where: { id: announcement.id } });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "announcement.delete",
+      targetType: "announcement",
+      targetId: announcement.id,
+      detail: announcement.title,
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "E'lon o'chirilmadi" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Feedback / reports
+// ---------------------------------------------------------------------------
+
+const feedbackInclude = {
+  user: { select: { id: true, email: true, name: true, nickname: true, telegramId: true } },
+} as const;
+
+// GET /api/admin/feedback?status=&category= - all feedback with user info.
+adminRouter.get("/feedback", async (req, res) => {
+  try {
+    const status = typeof req.query.status === "string" && ["OPEN", "IN_PROGRESS", "RESOLVED"].includes(req.query.status.toUpperCase())
+      ? req.query.status.toUpperCase()
+      : undefined;
+    const category = typeof req.query.category === "string" && ["COMPLAINT", "SUGGESTION", "REPORT", "OTHER"].includes(req.query.category.toUpperCase())
+      ? req.query.category.toUpperCase()
+      : undefined;
+    const feedback = await prisma.feedback.findMany({
+      where: { ...(status ? { status } : {}), ...(category ? { category } : {}) },
+      include: feedbackInclude,
+      orderBy: { createdAt: "desc" },
+      take: 300,
+    });
+    res.json({ feedback });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// PATCH /api/admin/feedback/:id - reply / change status.
+adminRouter.patch("/feedback/:id", validateBody(feedbackReplySchema), async (req, res) => {
+  try {
+    const body = res.locals.body as FeedbackReply;
+    const item = await prisma.feedback.findUnique({ where: { id: req.params.id } });
+    if (!item) {
+      res.status(404).json({ error: "Shikoyat topilmadi" });
+      return;
+    }
+    const data: Record<string, unknown> = { status: body.status };
+    if (body.adminReply !== undefined && body.adminReply.length > 0) {
+      data.adminReply = body.adminReply;
+      data.repliedAt = new Date();
+    }
+    const feedback = await prisma.feedback.update({ where: { id: item.id }, data, include: feedbackInclude });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "feedback.reply",
+      targetType: "feedback",
+      targetId: feedback.id,
+      detail: feedback.text.slice(0, 60),
+      ip: clientIp(req.headers),
+    });
+    res.json({ feedback });
+  } catch {
+    res.status(500).json({ error: "Javob saqlanmadi" });
+  }
+});
+
+// DELETE /api/admin/feedback/:id - permanently remove a feedback entry.
+adminRouter.delete("/feedback/:id", async (req, res) => {
+  try {
+    const item = await prisma.feedback.findUnique({ where: { id: req.params.id } });
+    if (!item) {
+      res.status(404).json({ error: "Shikoyat topilmadi" });
+      return;
+    }
+    await prisma.feedback.delete({ where: { id: item.id } });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "feedback.delete",
+      targetType: "feedback",
+      targetId: item.id,
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Shikoyat o'chirilmadi" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Site settings (general + SEO)
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/settings - all site settings grouped.
+adminRouter.get("/settings", async (_req, res) => {
+  try {
+    const settings = await prisma.siteSetting.findMany({ orderBy: [{ group: "asc" }, { key: "asc" }] });
+    res.json({ settings });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// PUT /api/admin/settings - upsert settings in bulk.
+adminRouter.put("/settings", validateBody(settingsUpdateSchema), async (req, res) => {
+  try {
+    const body = res.locals.body as SettingsUpdate;
+    await prisma.$transaction(
+      body.settings.map((s) =>
+        prisma.siteSetting.upsert({
+          where: { key: s.key },
+          update: { value: s.value, label: s.label, group: s.group },
+          create: { key: s.key, value: s.value, label: s.label, group: s.group },
+        })
+      )
+    );
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "settings.update",
+      detail: `${body.settings.length} ta sozlama saqlandi`,
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Sozlamalar saqlanmadi" });
+  }
+});
+
+// GET /api/admin/seo - all SEO rules.
+adminRouter.get("/seo", async (_req, res) => {
+  try {
+    const rules = await prisma.seoRule.findMany({ orderBy: { page: "asc" } });
+    res.json({ rules });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// PUT /api/admin/seo - upsert a SEO rule for a page.
+adminRouter.put("/seo", validateBody(seoRuleSchema), async (req, res) => {
+  try {
+    const body = res.locals.body as SeoRuleInput;
+    const rule = await prisma.seoRule.upsert({
+      where: { page: body.page },
+      update: {
+        ...(body.title !== undefined ? { title: body.title } : {}),
+        ...(body.description !== undefined ? { description: body.description } : {}),
+        ...(body.keywords !== undefined ? { keywords: body.keywords } : {}),
+      },
+      create: { page: body.page, title: body.title ?? null, description: body.description ?? null, keywords: body.keywords ?? null },
+    });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "seo.update",
+      targetType: "seo",
+      targetId: body.page,
+      ip: clientIp(req.headers),
+    });
+    res.json({ rule });
+  } catch {
+    res.status(500).json({ error: "SEO qoidasi saqlanmadi" });
+  }
+});
+
+// DELETE /api/admin/seo/:id - remove a SEO rule.
+adminRouter.delete("/seo/:id", async (req, res) => {
+  try {
+    await prisma.seoRule.delete({ where: { id: req.params.id } });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "seo.delete",
+      targetType: "seo",
+      targetId: req.params.id,
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(404).json({ error: "SEO qoidasi topilmadi" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Activity tracker
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/activity?userId=&action=&q=&limit= - per-user activity feed.
+adminRouter.get("/activity", async (req, res) => {
+  try {
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+    const userId = typeof req.query.userId === "string" ? req.query.userId.trim() : "";
+    const action = typeof req.query.action === "string" ? req.query.action.trim().toUpperCase() : "";
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const where: Prisma.UserActivityWhereInput = {};
+    if (userId) where.userId = userId;
+    if (action) where.action = action;
+    if (q) where.user = { OR: [{ email: { contains: q, mode: "insensitive" } }, { nickname: { contains: q, mode: "insensitive" } }] };
+    const [activities, total] = await Promise.all([
+      prisma.userActivity.findMany({
+        where,
+        include: { user: { select: { id: true, email: true, name: true, nickname: true } } },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      }),
+      prisma.userActivity.count({ where }),
+    ]);
+    res.json({ activities, total });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Backups
+// ---------------------------------------------------------------------------
+
+async function backupSnapshot(): Promise<Record<string, unknown>> {
+  const [users, quotes, categories, tags, content, settings, seo, announcements, feedback] = await Promise.all([
+    prisma.user.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.quote.findMany({ include: { tags: { select: { id: true } } }, orderBy: { createdAt: "asc" } }),
+    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    prisma.tag.findMany({ orderBy: { name: "asc" } }),
+    prisma.contentBlock.findMany({ orderBy: { key: "asc" } }),
+    prisma.siteSetting.findMany({ orderBy: { key: "asc" } }),
+    prisma.seoRule.findMany({ orderBy: { page: "asc" } }),
+    prisma.announcement.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.feedback.findMany({ orderBy: { createdAt: "asc" } }),
+  ]);
+  return { createdAt: new Date().toISOString(), version: 1, users, quotes, categories, tags, content, settings, seo, announcements, feedback };
+}
+
+// GET /api/admin/backups - list created backups.
+adminRouter.get("/backups", async (_req, res) => {
+  try {
+    const backups = await prisma.backup.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
+    res.json({
+      backups: backups.map((b) => ({ id: b.id, label: b.label, size: b.size, createdAt: b.createdAt })),
+    });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// POST /api/admin/backups - create a JSON snapshot.
+adminRouter.post("/backups", validateBody(backupCreateSchema), async (req, res) => {
+  try {
+    const body = res.locals.body as BackupCreate;
+    const data = JSON.stringify(await backupSnapshot());
+    const backup = await prisma.backup.create({
+      data: { label: body.label, data, size: Buffer.byteLength(data, "utf8"), createdById: adminId(req) },
+    });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "backup.create",
+      targetType: "backup",
+      targetId: backup.id,
+      detail: body.label,
+      ip: clientIp(req.headers),
+    });
+    res.status(201).json({ backup: { id: backup.id, label: backup.label, size: backup.size, createdAt: backup.createdAt } });
+  } catch {
+    res.status(500).json({ error: "Zaxira yaratilmadi" });
+  }
+});
+
+// GET /api/admin/backups/:id - download the raw JSON snapshot.
+adminRouter.get("/backups/:id", async (req, res) => {
+  try {
+    const backup = await prisma.backup.findUnique({ where: { id: req.params.id } });
+    if (!backup) {
+      res.status(404).json({ error: "Zaxira topilmadi" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", `attachment; filename="backup-${backup.id}.json"`);
+    res.send(backup.data);
+  } catch {
+    res.status(500).json({ error: "Zaxira yuklab olinmadi" });
+  }
+});
+
+// POST /api/admin/backups/:id/restore - restore a snapshot (non-destructive upsert).
+adminRouter.post("/backups/:id/restore", async (req, res) => {
+  try {
+    const backup = await prisma.backup.findUnique({ where: { id: req.params.id } });
+    if (!backup) {
+      res.status(404).json({ error: "Zaxira topilmadi" });
+      return;
+    }
+    const snapshot = JSON.parse(backup.data) as Record<string, any>;
+    const counts: Record<string, number> = {};
+    if (Array.isArray(snapshot.categories)) {
+      for (const c of snapshot.categories) {
+        await prisma.category.upsert({ where: { slug: c.slug }, update: { name: c.name }, create: { name: c.name, slug: c.slug } });
+      }
+      counts.categories = snapshot.categories.length;
+    }
+    if (Array.isArray(snapshot.tags)) {
+      for (const t of snapshot.tags) {
+        await prisma.tag.upsert({ where: { slug: t.slug }, update: { name: t.name }, create: { name: t.name, slug: t.slug } });
+      }
+      counts.tags = snapshot.tags.length;
+    }
+    if (Array.isArray(snapshot.content)) {
+      for (const b of snapshot.content) {
+        await prisma.contentBlock.upsert({
+          where: { key: b.key },
+          update: { value: b.value, title: b.title },
+          create: { key: b.key, value: b.value, title: b.title },
+        });
+      }
+      counts.content = snapshot.content.length;
+    }
+    if (Array.isArray(snapshot.settings)) {
+      for (const s of snapshot.settings) {
+        await prisma.siteSetting.upsert({
+          where: { key: s.key },
+          update: { value: s.value, label: s.label, group: s.group },
+          create: { key: s.key, value: s.value, label: s.label, group: s.group },
+        });
+      }
+      counts.settings = snapshot.settings.length;
+    }
+    if (Array.isArray(snapshot.seo)) {
+      for (const r of snapshot.seo) {
+        await prisma.seoRule.upsert({
+          where: { page: r.page },
+          update: { title: r.title, description: r.description, keywords: r.keywords },
+          create: { page: r.page, title: r.title, description: r.description, keywords: r.keywords },
+        });
+      }
+      counts.seo = snapshot.seo.length;
+    }
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "backup.restore",
+      targetType: "backup",
+      targetId: backup.id,
+      detail: backup.label,
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true, restored: counts });
+  } catch {
+    res.status(500).json({ error: "Zaxira tiklanmadi" });
+  }
+});
+
+// DELETE /api/admin/backups/:id - remove a backup.
+adminRouter.delete("/backups/:id", async (req, res) => {
+  try {
+    await prisma.backup.delete({ where: { id: req.params.id } });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "backup.delete",
+      targetType: "backup",
+      targetId: req.params.id,
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(404).json({ error: "Zaxira topilmadi" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Telegram-ID blacklist (user account level)
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/bans/telegram - users currently blocked via the Telegram blacklist.
+adminRouter.get("/bans/telegram", async (req, res) => {
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const where: Prisma.UserWhereInput = { blocked: true, telegramId: { not: null } };
+    if (q) where.OR = [{ telegramId: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }];
+    const users = await prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        email: true,
+        nickname: true,
+        name: true,
+        telegramId: true,
+        blockedAt: true,
+        createdAt: true,
+      },
+      orderBy: { blockedAt: "desc" },
+      take: 300,
+    });
+    res.json({ users });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// POST /api/admin/bans/telegram - block the account(s) linked to a Telegram ID.
+adminRouter.post("/bans/telegram", validateBody(telegramBanSchema), async (_req, res) => {
+  try {
+    const body = res.locals.body as TelegramBan;
+    const result = await prisma.user.updateMany({
+      where: { telegramId: body.telegramId },
+      data: { blocked: true, blockedAt: new Date() },
+    });
+    if (result.count === 0) {
+      res.status(404).json({ error: "Bunday Telegram ID'li foydalanuvchi topilmadi" });
+      return;
+    }
+    await bus.publish("admin:user-block", { telegramId: body.telegramId });
+    addLog("ban", `Telegram ID ${body.telegramId} blocked (${result.count} hisob)`);
+    res.json({ ok: true, count: result.count });
+  } catch {
+    res.status(500).json({ error: "Bloklash amalga oshmadi" });
+  }
+});
+
+// DELETE /api/admin/bans/telegram/:userId - unblock an account.
+adminRouter.delete("/bans/telegram/:userId", async (req, res) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.params.userId },
+      data: { blocked: false, blockedAt: null },
+    });
+    addLog("info", `User ${req.params.userId} unblocked`);
+    res.json({ ok: true });
+  } catch {
+    res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Broadcast helpers
+// ---------------------------------------------------------------------------
+
+async function broadcastTelegram(title: string, message: string): Promise<number> {
+  if (!telegramEnabled()) return 0;
+  const users = await prisma.user.findMany({
+    where: { telegramId: { not: null }, deletedAt: null, blocked: false },
+    select: { telegramId: true },
+  });
+  const text = `📢 ${title}\n\n${message}`;
+  let sent = 0;
+  for (const u of users) {
+    if (u.telegramId) {
+      const ok = await sendTelegramMessage(u.telegramId, text);
+      if (ok) sent += 1;
+    }
+  }
+  addLog("info", `Telegram e'lon: ${title} -> ${sent}/${users.length} foydalanuvchi`);
+  return sent;
+}
+
+async function broadcastEmail(title: string, message: string): Promise<number> {
+  const users = await prisma.user.findMany({
+    where: { deletedAt: null, blocked: false },
+    select: { email: true },
+  });
+  const text = `${title}\n\n${message}`;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+    <h2 style="color:#0f172a">${title}</h2>
+    <p style="color:#334155;line-height:1.6;white-space:pre-wrap">${message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>
+  </div>`;
+  let sent = 0;
+  for (const u of users) {
+    const ok = await sendEmail({ to: u.email, subject: `Iqtibosim — ${title}`, text, html });
+    if (ok) sent += 1;
+  }
+  addLog("info", `Email e'lon: ${title} -> ${sent}/${users.length} foydalanuvchi`);
+  return sent;
+}

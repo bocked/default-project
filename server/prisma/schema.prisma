@@ -54,35 +54,38 @@ model ContentBlock {
 }
 
 model User {
-  id                          String    @id @default(uuid())
-  email                       String    @unique
+  id                          String          @id @default(uuid())
+  email                       String          @unique
   passwordHash                String
   name                        String? // real name (private, admin-only)
   nickname                    String?
-  role                        UserRole  @default(USER)
-  emailVerified               Boolean   @default(false)
-  emailVerificationToken      String?   @unique
+  role                        UserRole        @default(USER)
+  emailVerified               Boolean         @default(false)
+  emailVerificationToken      String?         @unique
   emailVerificationExpiresAt  DateTime?
-  resetPasswordToken          String?   @unique
+  resetPasswordToken          String?         @unique
   resetPasswordExpiresAt      DateTime?
   // Telegram phone verification (private, admin-only).
-  telegramId                  String?   @unique
+  telegramId                  String?         @unique
   phoneNumber                 String?
-  phoneVerified               Boolean   @default(false)
+  phoneVerified               Boolean         @default(false)
   // Pending Telegram verification session: hashed /start token bound to the
   // chat, and the hashed 6-digit code sent to that chat.
-  telegramVerifyToken         String?   @unique
+  telegramVerifyToken         String?         @unique
   telegramVerifyExpiresAt     DateTime?
   telegramVerifyChatId        String?
   telegramVerifyCode          String?
   telegramVerifyCodeExpiresAt DateTime?
-  createdAt                   DateTime  @default(now())
-  updatedAt                   DateTime  @updatedAt
+  createdAt                   DateTime        @default(now())
+  updatedAt                   DateTime        @updatedAt
   // Moderation controls (admin panel).
-  blocked                     Boolean   @default(false)
+  blocked                     Boolean         @default(false)
   blockedAt                   DateTime?
   deletedAt                   DateTime?
   quotes                      Quote[]
+  feedback                    Feedback[]
+  activities                  UserActivity[]
+  likes                       QuoteLike[]
 
   @@index([createdAt])
   @@index([role, createdAt(sort: Desc)])
@@ -116,6 +119,7 @@ model Quote {
   awaitingRejection   Boolean     @default(false)
   telegramMessageId   Int? // id of the Telegram moderation message
   telegramUrl         String? // optional t.me/<channel>/<id> post embedded on the site
+  views               Int         @default(0) // public feed views (analytics)
   userId              String
   categoryId          String
   createdAt           DateTime    @default(now())
@@ -124,6 +128,7 @@ model Quote {
   user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   category            Category    @relation(fields: [categoryId], references: [id])
   tags                Tag[]
+  likes               QuoteLike[]
 
   @@index([status, createdAt(sort: Desc)])
   @@index([status, categoryId])
@@ -131,4 +136,99 @@ model Quote {
   @@index([userId, createdAt(sort: Desc)])
   @@index([telegramMessageId])
   @@index([deletedAt, status])
+}
+
+model QuoteLike {
+  id        String   @id @default(uuid())
+  userId    String
+  quoteId   String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, quoteId])
+  @@index([quoteId, createdAt(sort: Desc)])
+}
+
+model Announcement {
+  id          String    @id @default(uuid())
+  title       String
+  message     String
+  // SITE banner only, TELEGRAM broadcast, EMAIL broadcast, or ALL.
+  channel     String    @default("ALL")
+  // ACTIVE (visible/sent) or ARCHIVED (hidden).
+  status      String    @default("ACTIVE")
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model Feedback {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  // COMPLAINT | SUGGESTION | REPORT | OTHER
+  category   String   @default("OTHER")
+  text       String
+  quoteId    String?
+  // OPEN | IN_PROGRESS | RESOLVED
+  status     String   @default("OPEN")
+  adminReply String?
+  repliedAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model SiteSetting {
+  key       String   @id
+  value     String
+  label     String
+  // general | seo
+  group     String   @default("general")
+  updatedAt DateTime @updatedAt
+
+  @@index([group])
+}
+
+model SeoRule {
+  id          String    @id @default(uuid())
+  // home | category:<slug> | tag:<slug> | quote:<id>
+  page        String    @unique
+  title       String?
+  description String?
+  keywords    String?
+  updatedAt   DateTime  @updatedAt
+
+  @@index([page])
+}
+
+model UserActivity {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // REGISTER | LOGIN | QUOTE_CREATE | QUOTE_LIKE | QUOTE_COMMENT | PROFILE_UPDATE
+  action    String
+  detail    String?
+  targetId  String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+}
+
+model Backup {
+  id          String   @id @default(uuid())
+  label       String
+  // JSON snapshot of core tables.
+  data        String
+  size        Int
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
 }

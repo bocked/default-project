@@ -6,6 +6,7 @@ import { quoteCreateLimiter } from "../lib/rateLimit.js";
 import { normalizeTagName, slugify } from "../lib/categories.js";
 import { sendModerationMessage } from "../lib/telegram.js";
 import { addLog } from "../lib/logstore.js";
+import { recordActivity } from "../lib/activity.js";
 import { validateBody, quoteCreateSchema, type QuoteCreate } from "../schemas.js";
 
 export const quotesRouter = Router();
@@ -13,6 +14,7 @@ export const quotesRouter = Router();
 const quoteInclude = {
   category: { select: { id: true, name: true, slug: true } },
   tags: { select: { id: true, name: true, slug: true } },
+  _count: { select: { likes: true } },
 } satisfies Prisma.QuoteInclude;
 
 interface PublicQuote {
@@ -22,11 +24,22 @@ interface PublicQuote {
   anonymous: boolean;
   telegramUrl: string | null;
   createdAt: Date;
+  views: number;
+  likeCount: number;
+  likedByMe: boolean;
   category: { id: string; name: string; slug: string };
   tags: { id: string; name: string; slug: string }[];
 }
 
-function toPublicQuote(q: any): PublicQuote {
+function toPublicQuote(q: any, userId?: string): PublicQuote {
+  const likeCount = Array.isArray(q._count) ? 0 : (q._count?.likes ?? 0);
+  const likedByMe = userId
+    ? Array.isArray(q.likes)
+      ? q.likes.length > 0
+      : Array.isArray(q.likedByMe)
+        ? q.likedByMe.length > 0
+        : false
+    : false;
   return {
     id: q.id,
     text: q.text,
@@ -34,6 +47,9 @@ function toPublicQuote(q: any): PublicQuote {
     anonymous: q.anonymous,
     telegramUrl: q.telegramUrl ?? null,
     createdAt: q.createdAt,
+    views: q.views ?? 0,
+    likeCount,
+    likedByMe,
     category: q.category,
     tags: q.tags,
   };
@@ -78,7 +94,33 @@ quotesRouter.get("/", async (req, res) => {
       }),
       prisma.quote.count({ where }),
     ]);
-    res.json({ quotes: quotes.map(toPublicQuote), total, page, limit });
+
+    // Best-effort view counter so "most read" analytics works.
+    const ids = quotes.map((quote) => quote.id);
+    if (ids.length > 0) {
+      void prisma.quote
+        .updateMany({ where: { id: { in: ids } }, data: { views: { increment: 1 } } })
+        .catch(() => {});
+    }
+
+    const userId = (req as import("express").Request & { user?: { id: string } }).user?.id;
+    const liked = userId
+      ? new Set(
+          (
+            await prisma.quoteLike.findMany({
+              where: { userId, quoteId: { in: ids } },
+              select: { quoteId: true },
+            })
+          ).map((l) => l.quoteId)
+        )
+      : new Set<string>();
+
+    res.json({
+      quotes: quotes.map((quote) => toPublicQuote({ ...quote, likedByMe: liked.has(quote.id) }, userId)),
+      total,
+      page,
+      limit,
+    });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }
@@ -98,7 +140,7 @@ quotesRouter.get("/search", async (req, res) => {
       orderBy: { createdAt: "desc" },
       take: 50,
     });
-    res.json({ quotes: quotes.map(toPublicQuote), total: quotes.length });
+    res.json({ quotes: quotes.map((quote) => toPublicQuote(quote)), total: quotes.length });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }
@@ -165,8 +207,43 @@ quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireVerified, validat
       await prisma.quote.update({ where: { id: quote.id }, data: { telegramMessageId: messageId } });
     }
     addLog("info", `Yangi iqtibos: ${quote.text.slice(0, 40)}... (${req.user!.email})`);
+    void recordActivity({ userId: req.user!.id, action: "QUOTE_CREATE", detail: quote.text.slice(0, 80), targetId: quote.id });
     res.status(201).json({ quote });
   } catch {
     res.status(500).json({ error: "Iqtibos saqlanmadi" });
+  }
+});
+
+// POST /api/quotes/:id/like - like an approved quote (idempotent).
+quotesRouter.post("/:id/like", requireAuth, async (req, res) => {
+  try {
+    const quote = await prisma.quote.findFirst({
+      where: { id: req.params.id, status: "APPROVED", deletedAt: null },
+    });
+    if (!quote) {
+      res.status(404).json({ error: "Iqtibos topilmadi" });
+      return;
+    }
+    await prisma.quoteLike.upsert({
+      where: { userId_quoteId: { userId: req.user!.id, quoteId: quote.id } },
+      update: {},
+      create: { userId: req.user!.id, quoteId: quote.id },
+    });
+    void recordActivity({ userId: req.user!.id, action: "QUOTE_LIKE", detail: quote.text.slice(0, 80), targetId: quote.id });
+    res.json({ ok: true, liked: true });
+  } catch {
+    res.status(500).json({ error: "Layk saqlanmadi" });
+  }
+});
+
+// DELETE /api/quotes/:id/like - unlike a quote (idempotent).
+quotesRouter.delete("/:id/like", requireAuth, async (req, res) => {
+  try {
+    await prisma.quoteLike.deleteMany({
+      where: { userId: req.user!.id, quoteId: req.params.id },
+    });
+    res.json({ ok: true, liked: false });
+  } catch {
+    res.status(500).json({ error: "Layk o'chirilmadi" });
   }
 });
