@@ -195,10 +195,17 @@ describe("E2E: admin modules (announcements, feedback, settings, seo, activity, 
     const userB = await makeUser(`${unique("likeb")}@example.com`);
     const q1 = await makeApprovedQuote(userA, "Ko'p o'qiladigan iqtibos.");
 
-    // Viewing the public feed increments the counter.
+    // Viewing the public feed increments the counter. The increment is a
+    // best-effort async write, so poll briefly for it to commit.
     await request(base, "GET", "/api/quotes");
     await request(base, "GET", "/api/quotes");
-    expect((await prisma.quote.findUniqueOrThrow({ where: { id: q1 } })).views).toBeGreaterThanOrEqual(2);
+    let views = 0;
+    for (let i = 0; i < 20; i++) {
+      views = (await prisma.quote.findUniqueOrThrow({ where: { id: q1 } })).views;
+      if (views >= 2) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(views).toBeGreaterThanOrEqual(2);
 
     // Like from a logged-in user.
     const regB = await request(base, "POST", "/api/auth/login", {
