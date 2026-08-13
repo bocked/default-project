@@ -38,6 +38,9 @@ export interface Quote {
   status?: QuoteStatus;
   rejectionReason?: string | null;
   createdAt: string;
+  views?: number;
+  likeCount?: number;
+  likedByMe?: boolean;
   category: { id: string; name: string; slug: string };
   tags: Array<{ id: string; name: string; slug: string }>;
 }
@@ -150,4 +153,93 @@ export interface AdminStats {
   users: number;
   deletedQuotes: number;
   blockedUsers: number;
+}
+
+export interface AdminAnnouncement {
+  id: string;
+  title: string;
+  message: string;
+  channel: string;
+  status: string;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminFeedback {
+  id: string;
+  userId: string | null;
+  category: string;
+  text: string;
+  quoteId: string | null;
+  status: string;
+  adminReply: string | null;
+  repliedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    nickname: string | null;
+    telegramId: string | null;
+  } | null;
+}
+
+export interface SiteSetting {
+  key: string;
+  value: string;
+  label: string;
+  group: string;
+  updatedAt: string;
+}
+
+export interface SeoRule {
+  id: string;
+  page: string;
+  title: string | null;
+  description: string | null;
+  keywords: string | null;
+  updatedAt: string;
+}
+
+export interface AdminActivityEntry {
+  id: string;
+  userId: string;
+  action: string;
+  detail: string | null;
+  targetId: string | null;
+  createdAt: string;
+  user: { id: string; email: string; name: string | null; nickname: string | null } | null;
+}
+
+export interface BackupRecord {
+  id: string;
+  label: string;
+  size: number;
+  createdAt: string;
+}
+
+export interface TopQuote {
+  id: string;
+  text: string;
+  displayAuthor: string;
+  views?: number;
+  likeCount?: number;
+  category: { id: string; name: string; slug: string };
+}
+
+export interface TopQuotes {
+  mostRead: TopQuote[];
+  mostLiked: TopQuote[];
+}
+
+export interface TelegramBanUser {
+  id: string;
+  email: string;
+  nickname: string | null;
+  name: string | null;
+  telegramId: string | null;
+  blockedAt: string | null;
+  createdAt: string;
 }

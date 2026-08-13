@@ -9,12 +9,13 @@ import {
   EmptyState,
   PageTitle,
 } from "@/components/admin-ui";
-import type { ActivityPoint, AdminLogEntry, AdminStats } from "@/lib/types";
+import type { ActivityPoint, AdminLogEntry, AdminStats, TopQuotes } from "@/lib/types";
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [activity, setActivity] = useState<ActivityPoint[]>([]);
   const [logs, setLogs] = useState<AdminLogEntry[]>([]);
+  const [topQuotes, setTopQuotes] = useState<TopQuotes | null>(null);
 
   useEffect(() => {
     void api<AdminStats>("/api/admin/stats").then(setStats).catch(() => setStats(null));
@@ -24,6 +25,9 @@ export default function AdminDashboard() {
     void api<{ logs: AdminLogEntry[] }>("/api/admin/logs?limit=8")
       .then((d) => setLogs(d.logs))
       .catch(() => setLogs([]));
+    void api<TopQuotes>("/api/admin/stats/top-quotes?days=30&limit=5")
+      .then(setTopQuotes)
+      .catch(() => setTopQuotes(null));
   }, []);
 
   const cards = [
@@ -114,12 +118,12 @@ export default function AdminDashboard() {
 
         <AdminCard className="lg:col-span-3">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-            So&apos;nggi 14 kunlik faollik
+            Top iqtiboslar (30 kun)
           </h2>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            Kunlik ro&apos;yxatdan o&apos;tishlar va iqtiboslar.
+            Eng ko&apos;p o&apos;qilgan va yoqqan iqtiboslar.
           </p>
-          <ActivityChart data={activity} />
+          <TopQuotesList data={topQuotes} />
         </AdminCard>
 
         <AdminCard className="lg:col-span-2">
@@ -153,6 +157,54 @@ export default function AdminDashboard() {
             ))}
           </div>
         </AdminCard>
+      </div>
+    </div>
+  );
+}
+
+function TopQuotesList({ data }: { data: TopQuotes | null }) {
+  if (!data || (data.mostRead.length === 0 && data.mostLiked.length === 0)) {
+    return <EmptyState text="Hozircha ma'lumot yo'q." />;
+  }
+  return (
+    <div className="mt-3 grid gap-4 sm:grid-cols-2">
+      <div>
+        <p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">Eng ko&apos;p o&apos;qilgan</p>
+        <div className="space-y-2">
+          {data.mostRead.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500">Ma&apos;lumot yo&apos;q</p>}
+          {data.mostRead.map((q, i) => (
+            <div key={q.id} className="flex items-start gap-2 text-xs">
+              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded bg-blue-100 font-bold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
+                {i + 1}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-slate-700 dark:text-slate-200">{q.text}</p>
+                <p className="mt-0.5 text-slate-400 dark:text-slate-500">
+                  {q.views ?? 0} ko&apos;rish · {q.displayAuthor}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">Eng ko&apos;p yoqqan</p>
+        <div className="space-y-2">
+          {data.mostLiked.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500">Ma&apos;lumot yo&apos;q</p>}
+          {data.mostLiked.map((q, i) => (
+            <div key={q.id} className="flex items-start gap-2 text-xs">
+              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded bg-rose-100 font-bold text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">
+                {i + 1}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-slate-700 dark:text-slate-200">{q.text}</p>
+                <p className="mt-0.5 text-slate-400 dark:text-slate-500">
+                  {q.likeCount ?? 0} layk · {q.displayAuthor}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -37,7 +37,8 @@ export default function AdminCategoriesPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    const t = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(t);
   }, [load]);
 
   async function create(): Promise<void> {
@@ -197,7 +198,7 @@ export default function AdminCategoriesPage() {
                           Tahrirlash
                         </AdminButton>
                         <AdminButton variant="danger" disabled={busy} onClick={() => remove(cat)}>
-                          O'chirish
+                          O&apos;chirish
                         </AdminButton>
                       </>
                     )}
