@@ -1,0 +1,2 @@
+# Keep shell scripts LF on every checkout so they run correctly on Linux/VPS
+*.sh text eol=lf

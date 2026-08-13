@@ -1,0 +1,137 @@
+# ============================================================================
+#  Iqtibosim backend - production Docker stack
+#
+#  Serves ONLY the API (frontend stays on Cloudflare Pages).
+#  Services: postgres, redis, app (Express), nginx (reverse proxy + TLS),
+#            certbot (Let's Encrypt webroot + auto-renew), migrate (one-off).
+#
+#  First-time provisioning:  sudo bash deploy/setup-docker-vps.sh
+#  Manual bring-up:          docker compose -f docker-compose.prod.yml up -d
+#  Migrations:               docker compose -f docker-compose.prod.yml \
+#                              --profile migrate run --rm migrate
+#
+#  Secrets come from server/.env (created by the setup script). DATABASE_URL
+#  and REDIS_URL are forced to the docker services via `environment`.
+# ============================================================================
+
+name: canvas-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: canvas-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-canvas}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-canvas}
+      POSTGRES_DB: ${PG_DB:-canvas}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-canvas} -d ${PG_DB:-canvas}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [canvas-net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: canvas-redis
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [canvas-net]
+
+  # One-off service: applies pending Prisma migrations. Built from the `build`
+  # stage so the prisma CLI (a devDependency) is available.
+  migrate:
+    image: canvas-server:migrate
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      target: build
+    env_file: ./server/.env
+    environment:
+      DATABASE_URL: postgresql://${PG_USER:-canvas}:${PG_PASSWORD:-canvas}@postgres:5432/${PG_DB:-canvas}?schema=public
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [canvas-net]
+    profiles: ["migrate"]
+
+  app:
+    image: canvas-server:latest
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: canvas-app
+    restart: unless-stopped
+    env_file: ./server/.env
+    environment:
+      DATABASE_URL: postgresql://${PG_USER:-canvas}:${PG_PASSWORD:-canvas}@postgres:5432/${PG_DB:-canvas}?schema=public
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [canvas-net]
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: canvas-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    entrypoint: ["/bin/sh", "/etc/nginx/entrypoint.sh"]
+    environment:
+      DOMAIN: ${DOMAIN:-api.yerlikoglon.uz}
+      APP_HOST: app
+      APP_PORT: "4000"
+    volumes:
+      - ./deploy/docker/nginx/conf-templates:/etc/nginx/conf-templates:ro
+      - ./deploy/docker/nginx/entrypoint.sh:/etc/nginx/entrypoint.sh:ro
+      - ./deploy/docker/certbot/www:/var/www/certbot
+      - ./deploy/docker/certbot/conf:/etc/letsencrypt
+    depends_on:
+      - app
+    networks: [canvas-net]
+
+  certbot:
+    image: certbot/certbot
+    container_name: canvas-certbot
+    restart: unless-stopped
+    volumes:
+      - ./deploy/docker/certbot/www:/var/www/certbot
+      - ./deploy/docker/certbot/conf:/etc/letsencrypt
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'
+    networks: [canvas-net]
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+
+networks:
+  canvas-net:
+    driver: bridge

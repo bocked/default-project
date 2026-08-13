@@ -20,3 +20,6 @@ client/.wrangler/
 .DS_Store
 *.log
 npm-debug.log*
+
+# docker production runtime data (Let's Encrypt certs are sensitive)
+deploy/docker/certbot/

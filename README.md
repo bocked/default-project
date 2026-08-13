@@ -123,3 +123,10 @@ Barcha REST endpointlar va Socket.IO eventlar: [`docs/API.md`](docs/API.md).
 `deploy/` papkasida tayyor konfiguratsiyalar: `nginx.conf`,
 `ecosystem.config.cjs` (PM2), `setup-vps.sh` (avtomatik skript) va
 `DEPLOY.md` (bosqichma-bosqich yo'riqnoma). VPS: `95.46.96.12`.
+
+## Backend'ni VPS'ga deploy (Docker + Nginx + SSL — tavsiya etilgan)
+
+To'liq Docker'lashtirilgan yo'l: `docker-compose.prod.yml` (postgres, redis,
+app, nginx, certbot), `server/Dockerfile`, `deploy/setup-docker-vps.sh` va
+`deploy/DOCKER_DEPLOY.md` (bosqichma-bosqich yo'riqnoma). Frontend
+Cloudflare Pages'da qoladi; bu stack faqat API'ni xizmat qiladi.
