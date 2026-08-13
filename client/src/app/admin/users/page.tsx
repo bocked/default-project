@@ -199,7 +199,7 @@ export default function AdminUsersPage() {
                         href={`/user?id=${u.id}`}
                         className="font-medium text-slate-900 hover:text-blue-600 hover:underline dark:text-white dark:hover:text-blue-400"
                       >
-                        {u.email}
+                        {u.email ?? u.telegramUsername ?? u.telegramId ?? "Telegram foydalanuvchisi"}
                       </Link>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
                         {[u.name, u.nickname ? `@${u.nickname}` : null].filter(Boolean).join(" · ") ||

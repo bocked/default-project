@@ -18,9 +18,13 @@ interface AuthContextValue {
   register: (input: RegisterInput) => Promise<User>;
   logout: () => void;
   refresh: () => Promise<User | null>;
+  applyTelegramLogin: (sessionId: string, opts?: { timeoutMs?: number; intervalMs?: number }) => Promise<User>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const QUICK_POLL_INTERVAL = 2000;
+const QUICK_POLL_TIMEOUT = 120_000;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -87,7 +91,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  return <AuthContext.Provider value={{ user, loading, login, register, logout, refresh }}>{children}</AuthContext.Provider>;
+  /** Polls a Telegram one-tap login session until the bot confirms the /start
+   *  link was opened, then swaps in the returned token and user. */
+  const applyTelegramLogin = useCallback(
+    async (sessionId: string, opts?: { timeoutMs?: number; intervalMs?: number }): Promise<User> => {
+      const timeoutMs = opts?.timeoutMs ?? QUICK_POLL_TIMEOUT;
+      const intervalMs = opts?.intervalMs ?? QUICK_POLL_INTERVAL;
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const res = await api<{
+          status: "PENDING" | "COMPLETE" | "EXPIRED" | "ERROR";
+          token?: string;
+          user?: User;
+          error?: string;
+        }>("/api/auth/telegram/quick/status", {
+          method: "POST",
+          body: { sessionId },
+        });
+        if (res.status === "COMPLETE" && res.token && res.user) {
+          tokenStore.set(res.token);
+          setUser(res.user);
+          return res.user;
+        }
+        if (res.status === "EXPIRED") {
+          throw new Error("Havola muddati o'tgan. Qayta urinib ko'ring.");
+        }
+        if (res.status === "ERROR") {
+          throw new Error(res.error ?? "Kirish tasdiqlanmadi.");
+        }
+        await new Promise((r) => setTimeout(r, intervalMs));
+      }
+      throw new Error("Kutish muddati tugadi. Telegramda havolani ochganingizni tekshiring.");
+    },
+    []
+  );
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refresh, applyTelegramLogin }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth(): AuthContextValue {

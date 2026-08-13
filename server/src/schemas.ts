@@ -105,6 +105,20 @@ export const telegramVerifySchema = z.object({
 });
 export type TelegramVerify = z.infer<typeof telegramVerifySchema>;
 
+export const telegramQuickSessionSchema = z.object({
+  sessionId: z.string().trim().min(32).max(64),
+});
+export type TelegramQuickSession = z.infer<typeof telegramQuickSessionSchema>;
+
+/** Completes a Telegram quick-login account into a full registration. */
+export const upgradeAccountSchema = z.object({
+  email,
+  password: z.string().min(8).max(72),
+  name: z.string().trim().max(100).optional(),
+  nickname: z.string().trim().max(50).optional(),
+});
+export type UpgradeAccount = z.infer<typeof upgradeAccountSchema>;
+
 // ---------------------------------------------------------------------------
 // Quotes
 // ---------------------------------------------------------------------------

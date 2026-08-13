@@ -434,6 +434,7 @@ function userQuery(query: Record<string, unknown>) {
     { nickname: { contains: q, mode: "insensitive" } },
     { phoneNumber: { contains: q, mode: "insensitive" } },
     { telegramId: { contains: q, mode: "insensitive" } },
+    { telegramUsername: { contains: q, mode: "insensitive" } },
   ];
   return where;
 }
@@ -454,6 +455,7 @@ adminRouter.get("/users", async (req, res) => {
           emailVerified: true,
           phoneVerified: true,
           telegramId: true,
+          telegramUsername: true,
           phoneNumber: true,
           blocked: true,
           blockedAt: true,
@@ -1535,7 +1537,7 @@ async function broadcastTelegram(title: string, message: string): Promise<number
 
 async function broadcastEmail(title: string, message: string): Promise<number> {
   const users = await prisma.user.findMany({
-    where: { deletedAt: null, blocked: false },
+    where: { deletedAt: null, blocked: false, email: { not: null } },
     select: { email: true },
   });
   const text = `${title}\n\n${message}`;
@@ -1545,6 +1547,7 @@ async function broadcastEmail(title: string, message: string): Promise<number> {
   </div>`;
   let sent = 0;
   for (const u of users) {
+    if (!u.email) continue;
     const ok = await sendEmail({ to: u.email, subject: `Iqtibosim — ${title}`, text, html });
     if (ok) sent += 1;
   }

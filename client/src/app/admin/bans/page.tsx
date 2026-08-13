@@ -256,7 +256,7 @@ export default function AdminBansPage() {
                     <Badge tone="rose">Bloklangan</Badge>
                   </p>
                   <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                    {u.nickname || u.name || u.email}
+                    {u.nickname || u.name || u.email || "Telegram foydalanuvchisi"}
                   </p>
                 </div>
                 <AdminButton variant="ghost" disabled={busy} onClick={() => void unbanTelegram(u.id)}>

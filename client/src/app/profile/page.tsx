@@ -38,7 +38,7 @@ export default function ProfilePage() {
   }, [user]);
 
   async function resendVerification(): Promise<void> {
-    if (!user) return;
+    if (!user?.email) return;
     setResending(true);
     setResendMessage(null);
     try {
@@ -118,11 +118,15 @@ export default function ProfilePage() {
       <section>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mening profilim</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          {user.email} · {pendingCount} ta iqtibos moderatsiyada
+          {user.email ?? user.telegramUsername ?? "Telegram foydalanuvchisi"} · {pendingCount} ta iqtibos moderatsiyada
         </p>
       </section>
 
-      {!user.emailVerified && (
+      {user.quickLogin ? (
+        <UpgradeForm user={user} onSaved={refresh} />
+      ) : (
+        <>
+          {!user.emailVerified && user.email && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/30">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -227,7 +231,9 @@ export default function ProfilePage() {
             {tgMessage && <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-300">{tgMessage}</p>}
           </div>
         </div>
-      )}
+        )}
+      </>
+    )}
 
       <ProfileSettings key={user.id} user={user} onSaved={refresh} />
 
@@ -260,8 +266,7 @@ function ProfileSettings({
 }: {
   user: User;
   onSaved: () => Promise<User | null>;
-}) {
-  const [name, setName] = useState(user.name ?? "");
+}) {  const [name, setName] = useState(user.name ?? "");
   const [nickname, setNickname] = useState(user.nickname ?? "");
   const [profileSaved, setProfileSaved] = useState(false);
 
@@ -306,6 +311,101 @@ function ProfileSettings({
             Saqlash
           </button>
           {profileSaved && <span className="ml-3 text-sm text-emerald-600 dark:text-emerald-400">Saqlandi ✓</span>}
+        </div>
+      </form>
+    </section>
+  );
+}
+
+/** Completes a Telegram quick-login account into a full registration. Quick
+ *  users may like quotes but cannot post until they upgrade and verify. */
+function UpgradeForm({ user, onSaved }: { user: User; onSaved: () => Promise<User | null> }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState(user.name ?? "");
+  const [nickname, setNickname] = useState(user.nickname ?? "");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function upgrade(event: React.FormEvent): Promise<void> {
+    event.preventDefault();
+    setSaving(true);
+    setMessage(null);
+    setError(null);
+    try {
+      await api<{ token: string; user: User }>("/api/auth/upgrade", {
+        method: "POST",
+        body: { email, password, name, nickname },
+      });
+      await onSaved();
+      setMessage("Profil to'liq ro'yxatdan o'tkazildi. Emailni tasdiqlash havolasini tekshiring.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Saqlashda xatolik yuz berdi");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm dark:border-blue-500/30 dark:bg-blue-950/30">
+      <h2 className="text-sm font-semibold text-blue-900 dark:text-blue-300">
+        Ro&apos;yxatdan o&apos;tishni yakunlang
+      </h2>
+      <p className="mt-1 text-xs text-blue-700 dark:text-blue-400">
+        Telegram orqali tezkor kirishda iqtiboslarni yoqtirishingiz mumkin. Iqtibos joylash va to&apos;liq huquqlar
+        uchun email va parol qo&apos;shing, so&apos;ngra emailingizni tasdiqlang.
+      </p>
+      <form onSubmit={upgrade} className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-blue-900 dark:text-blue-300">Email</label>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-blue-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-blue-900 dark:text-blue-300">Parol</label>
+          <input
+            type="password"
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-blue-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-blue-900 dark:text-blue-300">
+            Haqiqiy ism (faqat adminlarga ko&apos;rinadi)
+          </label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-blue-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-blue-900 dark:text-blue-300">Nickname (sahifada ko&apos;rinadi)</label>
+          <input
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-blue-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50 dark:hover:bg-blue-500"
+          >
+            {saving ? "Saqlanmoqda..." : "Ro&apos;yxatdan o&apos;tishni yakunlash"}
+          </button>
+          {message && <span className="ml-3 text-sm text-emerald-600 dark:text-emerald-400">{message}</span>}
+          {error && <span className="ml-3 text-sm text-rose-600 dark:text-rose-400">{error}</span>}
         </div>
       </form>
     </section>

@@ -97,7 +97,7 @@ export default function AdminTrashPage() {
                     &ldquo;{quote.text}&rdquo;
                   </blockquote>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Muallif: {quote.displayAuthor} · Egasi: {quote.user.email}
+                    Muallif: {quote.displayAuthor} · Egasi: {quote.user.email ?? quote.user.telegramId ?? "Telegram foydalanuvchisi"}
                   </p>
                 </div>
                 <AdminButton variant="success" disabled={busy} onClick={() => void restoreQuote(quote.id)}>
@@ -119,7 +119,7 @@ export default function AdminTrashPage() {
             <AdminCard key={u.id}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate font-medium text-slate-900 dark:text-white">{u.email}</p>
+                  <p className="truncate font-medium text-slate-900 dark:text-white">{u.email ?? u.telegramId ?? "Telegram foydalanuvchisi"}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {[u.name, u.nickname ? `@${u.nickname}` : null].filter(Boolean).join(" · ") || "Ism kiritilmagan"}
                   </p>

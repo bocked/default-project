@@ -15,6 +15,9 @@ import {
   hashTelegramVerifyToken,
   hashTelegramVerifyCode,
   telegramVerifyExpiry,
+  generateQuickLoginSessionId,
+  hashQuickLoginSessionId,
+  quickLoginSessionExpiry,
 } from "../lib/tokens.js";
 import { sendVerificationEmail, sendPasswordResetEmail } from "../lib/email.js";
 import { getBotUsername, sendAdminNotification } from "../lib/telegram.js";
@@ -29,6 +32,8 @@ import {
   resetPasswordSchema,
   updateProfileSchema,
   telegramVerifySchema,
+  telegramQuickSessionSchema,
+  upgradeAccountSchema,
   type Register,
   type Login,
   type VerifyEmail,
@@ -37,18 +42,24 @@ import {
   type ResetPassword,
   type UpdateProfile,
   type TelegramVerify,
+  type TelegramQuickSession,
+  type UpgradeAccount,
 } from "../schemas.js";
 
 export const authRouter = Router();
 
 interface SafeUser {
   id: string;
-  email: string;
+  email: string | null;
   name: string | null;
   nickname: string | null;
   role: string;
   emailVerified: boolean;
   phoneVerified: boolean;
+  quickLogin: boolean;
+  telegramUsername: string | null;
+  telegramFirstName: string | null;
+  telegramLastName: string | null;
   createdAt: Date;
 }
 
@@ -61,6 +72,10 @@ function toUser(user: SafeUser): SafeUser {
     role: user.role,
     emailVerified: user.emailVerified,
     phoneVerified: user.phoneVerified,
+    quickLogin: user.quickLogin,
+    telegramUsername: user.telegramUsername,
+    telegramFirstName: user.telegramFirstName,
+    telegramLastName: user.telegramLastName,
     createdAt: user.createdAt,
   };
 }
@@ -95,11 +110,11 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
       role: config.adminEmails.includes(body.email.toLowerCase()) ? "ADMIN" : "USER",
     },
   });
-  await issueVerification(user.email);
+  await issueVerification(user.email!);
   // Best-effort: keep the admin informed about new registrations.
-  const handle = [user.nickname, user.name].filter(Boolean).join(" / ") || user.email;
+  const handle = [user.nickname, user.name].filter(Boolean).join(" / ") || user.email!;
   void sendAdminNotification(`🆕 Yangi foydalanuvchi ro'yxatdan o'tdi\n\n${user.email}${handle !== user.email ? `\n${handle}` : ""}`);
-  void recordActivity({ userId: user.id, action: "REGISTER", detail: user.email });
+  void recordActivity({ userId: user.id, action: "REGISTER", detail: user.email! });
   res.status(201).json({ token: signAuthToken(user.id), user: toUser(user) });
 });
 
@@ -107,7 +122,7 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
 authRouter.post("/login", validateBody(loginSchema), async (_req, res) => {
   const body = res.locals.body as Login;
   const user = await prisma.user.findUnique({ where: { email: body.email } });
-  if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
+  if (!user || !user.passwordHash || !(await verifyPassword(body.password, user.passwordHash))) {
     res.status(401).json({ error: "Email yoki parol noto'g'ri" });
     return;
   }
@@ -118,11 +133,11 @@ authRouter.post("/login", validateBody(loginSchema), async (_req, res) => {
   // Promote admin emails lazily so the account gets ADMIN even if it was
   // created before the email was listed (or by the register endpoint itself).
   const promote =
-    user.role !== "ADMIN" && config.adminEmails.includes(user.email.toLowerCase());
+    user.role !== "ADMIN" && user.email !== null && config.adminEmails.includes(user.email.toLowerCase());
   const current = promote
     ? await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } })
     : user;
-  void recordActivity({ userId: current.id, action: "LOGIN", detail: current.email });
+  void recordActivity({ userId: current.id, action: "LOGIN", detail: current.email ?? current.telegramUsername ?? "telegram" });
   res.json({ token: signAuthToken(user.id), user: toUser(current) });
 });
 
@@ -146,7 +161,7 @@ authRouter.post("/verify-email", validateBody(verifyEmailSchema), async (_req, r
 authRouter.post("/resend-verification", validateBody(resendVerificationSchema), async (_req, res) => {
   const body = res.locals.body as ResendVerification;
   const user = await prisma.user.findUnique({ where: { email: body.email } });
-  if (user && !user.emailVerified) {
+  if (user && !user.emailVerified && user.email) {
     await issueVerification(user.email);
   }
   res.json({ ok: true });
@@ -157,7 +172,7 @@ authRouter.post("/resend-verification", validateBody(resendVerificationSchema), 
 authRouter.post("/forgot-password", validateBody(forgotPasswordSchema), async (_req, res) => {
   const body = res.locals.body as ForgotPassword;
   const user = await prisma.user.findUnique({ where: { email: body.email } });
-  if (user) {
+  if (user && user.email) {
     const token = generatePasswordResetToken();
     await prisma.user.update({
       where: { email: user.email },
@@ -255,4 +270,106 @@ authRouter.post("/telegram/verify", requireAuth, validateBody(telegramVerifySche
     },
   });
   res.json({ ok: true, user: toUser(updated) });
+});
+
+// ---------------------------------------------------------------------------
+// Telegram one-tap login ("tezkor kirish"): like-only until full registration.
+// ---------------------------------------------------------------------------
+
+// POST /api/auth/telegram/quick/session - start a quick-login session.
+authRouter.post("/telegram/quick/session", async (_req, res) => {
+  try {
+    const botUsername = await getBotUsername();
+    if (!botUsername) {
+      res.status(500).json({ error: "Telegram bot sozlanmagan" });
+      return;
+    }
+    const sessionId = generateQuickLoginSessionId();
+    await prisma.telegramQuickSession.create({
+      data: {
+        tokenHash: hashQuickLoginSessionId(sessionId),
+        expiresAt: quickLoginSessionExpiry(),
+      },
+    });
+    res.json({
+      botUsername,
+      sessionId,
+      start: `quick_${sessionId}`,
+      expiresAt: quickLoginSessionExpiry().toISOString(),
+    });
+  } catch {
+    res.status(500).json({ error: "Sessiya yaratilmadi" });
+  }
+});
+
+// POST /api/auth/telegram/quick/status - poll the session until the bot
+// confirms the /start quick_<id>. Always answers 200 so the client can poll.
+authRouter.post("/telegram/quick/status", validateBody(telegramQuickSessionSchema), async (_req, res) => {
+  const body = res.locals.body as TelegramQuickSession;
+  const session = await prisma.telegramQuickSession.findUnique({
+    where: { tokenHash: hashQuickLoginSessionId(body.sessionId) },
+  });
+  if (!session) {
+    res.json({ status: "EXPIRED" });
+    return;
+  }
+  if (session.expiresAt < new Date() || session.status === "EXPIRED") {
+    if (session.status !== "EXPIRED") {
+      await prisma.telegramQuickSession.update({ where: { id: session.id }, data: { status: "EXPIRED" } });
+    }
+    res.json({ status: "EXPIRED" });
+    return;
+  }
+  if (session.status === "PENDING") {
+    res.json({ status: "PENDING" });
+    return;
+  }
+  if (session.status === "ERROR") {
+    res.json({ status: "ERROR", error: session.error ?? "Kirish tasdiqlanmadi" });
+    return;
+  }
+  if (session.status === "COMPLETE" && session.userId) {
+    const user = await prisma.user.findUnique({ where: { id: session.userId } });
+    if (!user || user.blocked) {
+      res.json({ status: "ERROR", error: "Hisob bloklangan" });
+      return;
+    }
+    // One token per completion: consume the session so it cannot be re-polled.
+    await prisma.telegramQuickSession.delete({ where: { id: session.id } });
+    void recordActivity({ userId: user.id, action: "LOGIN", detail: user.email ?? user.telegramUsername ?? "telegram" });
+    res.json({ status: "COMPLETE", token: signAuthToken(user.id), user: toUser(user) });
+    return;
+  }
+  res.json({ status: "PENDING" });
+});
+
+// POST /api/auth/upgrade - complete a Telegram quick-login account into a full
+// registration (sets email + password). After email verification the account
+// can submit quotes like any other user.
+authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), async (_req, res) => {
+  const body = res.locals.body as UpgradeAccount;
+  const user = _req.user!;
+  if (!user.quickLogin) {
+    res.status(400).json({ error: "Bu hisob allaqachon to'liq ro'yxatdan o'tgan" });
+    return;
+  }
+  const existing = await prisma.user.findUnique({ where: { email: body.email } });
+  if (existing && existing.id !== user.id) {
+    res.status(409).json({ error: "Bu email allaqachon ro'yxatdan o'tgan" });
+    return;
+  }
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      email: body.email,
+      passwordHash: await hashPassword(body.password),
+      quickLogin: false,
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.nickname !== undefined ? { nickname: body.nickname } : {}),
+      role: config.adminEmails.includes(body.email.toLowerCase()) ? "ADMIN" : user.role,
+    },
+  });
+  await issueVerification(updated.email!);
+  void recordActivity({ userId: updated.id, action: "REGISTER", detail: updated.email ?? "" });
+  res.json({ token: signAuthToken(updated.id), user: toUser(updated) });
 });

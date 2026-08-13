@@ -55,8 +55,10 @@ model ContentBlock {
 
 model User {
   id                          String          @id @default(uuid())
-  email                       String          @unique
-  passwordHash                String
+  // Nullable for Telegram quick-login accounts that have not completed
+  // registration yet (they get an email + passwordHash on upgrade).
+  email                       String?         @unique
+  passwordHash                String?
   name                        String? // real name (private, admin-only)
   nickname                    String?
   role                        UserRole        @default(USER)
@@ -69,6 +71,14 @@ model User {
   telegramId                  String?         @unique
   phoneNumber                 String?
   phoneVerified               Boolean         @default(false)
+  // Telegram quick-login profile (private, admin-only).
+  telegramUsername            String?
+  telegramFirstName           String?
+  telegramLastName            String?
+  // True for accounts created via the one-tap Telegram login that have not
+  // completed a full registration (email + password). They may like quotes
+  // but cannot post new ones until they upgrade.
+  quickLogin                  Boolean         @default(false)
   // Pending Telegram verification session: hashed /start token bound to the
   // chat, and the hashed 6-digit code sent to that chat.
   telegramVerifyToken         String?         @unique
@@ -231,4 +241,21 @@ model Backup {
   createdAt   DateTime @default(now())
 
   @@index([createdAt(sort: Desc)])
+}
+
+model TelegramQuickSession {
+  id          String    @id @default(uuid())
+  // SHA-256 digest of the opaque `quick_<sessionId>` payload.
+  tokenHash   String    @unique
+  // Telegram chat that completed the /start quick_ link.
+  chatId      String?
+  // PENDING | COMPLETE | EXPIRED | ERROR
+  status      String    @default("PENDING")
+  userId      String?
+  error       String?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([status, createdAt])
 }

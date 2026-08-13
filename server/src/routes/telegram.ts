@@ -15,6 +15,7 @@ import {
   generateTelegramVerifyCode,
   hashTelegramVerifyCode,
   telegramCodeExpiry,
+  hashQuickLoginSessionId,
 } from "../lib/tokens.js";
 
 export const telegramRouter = Router();
@@ -142,6 +143,12 @@ async function handleStart(msg: Record<string, any>): Promise<void> {
   const text = String(msg.text ?? "");
   if (chatId === undefined) return;
 
+  // One-tap login from t.me/<bot>?start=quick_<sessionId>.
+  if (text.match(/^\/start\s+quick_([0-9a-f]+)$/i)) {
+    await handleQuickStart(msg, chatId, text.match(/^\/start\s+quick_([0-9a-f]+)$/i)![1]);
+    return;
+  }
+
   const match = text.match(/^\/start\s+verify_([0-9a-f]+)$/i);
   if (!match) {
     // Telegram drops oversized/malformed deep-link payloads, so a user can end
@@ -168,6 +175,66 @@ async function handleStart(msg: Record<string, any>): Promise<void> {
     data: { telegramVerifyChatId: String(chatId) },
   });
   await requestContactMessage(chatId, "Telefon raqamingizni yuborish uchun quyidagi tugmani bosing:");
+}
+
+// ---------------------------------------------------------------------------
+// One-tap quick login: /start quick_<sessionId>.
+// ---------------------------------------------------------------------------
+
+async function handleQuickStart(msg: Record<string, any>, chatId: number, sessionId: string): Promise<void> {
+  const session = await prisma.telegramQuickSession.findUnique({
+    where: { tokenHash: hashQuickLoginSessionId(sessionId) },
+  });
+  if (!session) {
+    await sendTelegramMessage(chatId, "Havola yaroqsiz. Saytda «Telegram orqali tezkor kirish» tugmasini qayta bosib ko'ring.");
+    return;
+  }
+  if (session.expiresAt < new Date() || session.status === "EXPIRED") {
+    if (session.status !== "EXPIRED") {
+      await prisma.telegramQuickSession.update({ where: { id: session.id }, data: { status: "EXPIRED" } });
+    }
+    await sendTelegramMessage(chatId, "Havola muddati o'tgan. Saytda «Telegram orqali tezkor kirish» tugmasini qayta bosib ko'ring.");
+    return;
+  }
+  if (session.status !== "PENDING") {
+    await sendTelegramMessage(chatId, "Bu havola allaqachon ishlatilgan. Saytda qayta urinib ko'ring.");
+    return;
+  }
+
+  const from = msg.from ?? {};
+  const telegramId = String(chatId);
+  const firstName = String(from.first_name ?? "").slice(0, 100) || null;
+  const lastName = String(from.last_name ?? "").slice(0, 100) || null;
+  const username = String(from.username ?? "").slice(0, 64) || null;
+
+  // Reuse an existing profile linked to this Telegram account so repeated
+  // logins keep the same identity; otherwise create a like-only quick account.
+  let user = await prisma.user.findUnique({ where: { telegramId } });
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        email: null,
+        passwordHash: null,
+        nickname: username ?? firstName,
+        telegramId,
+        telegramUsername: username,
+        telegramFirstName: firstName,
+        telegramLastName: lastName,
+        quickLogin: true,
+      },
+    });
+  }
+
+  await prisma.telegramQuickSession.update({
+    where: { id: session.id },
+    data: { status: "COMPLETE", userId: user.id, chatId: String(chatId), completedAt: new Date() },
+  });
+
+  const suffix = user.quickLogin
+    ? "\n\nEslatma: to'liq huquqlar (iqtibos joylash) uchun saytda profil sahifasida ro'yxatdan o'tishni yakunlang."
+    : "";
+  await sendTelegramMessage(chatId, `✅ Kirish tasdiqlandi, ${user.nickname ?? user.telegramUsername ?? "foydalanuvchi"}! Saytga qayting — sahifa avtomatik yangilanadi.${suffix}`);
+  addLog("info", `Tezkor Telegram kirish: ${user.id} (${user.email ?? user.telegramUsername ?? telegramId})`);
 }
 
 async function handleContact(msg: Record<string, any>): Promise<void> {

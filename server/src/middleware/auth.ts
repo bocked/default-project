@@ -45,3 +45,30 @@ export function requireVerified(req: Request, res: Response, next: NextFunction)
   }
   next();
 }
+
+/** Gate for actions that require a fully registered profile (e.g. posting
+ *  quotes). Telegram quick-login accounts (no email/password yet) must upgrade
+ *  first, then pass the same email/phone verification as everyone else.
+ *  Admins are trusted and never gated. */
+export function requireFullUser(req: Request, res: Response, next: NextFunction): void {
+  if (!req.user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  if (req.user.quickLogin) {
+    res.status(403).json({
+      error: "Iqtibos joylash uchun profilni to'liq ro'yxatdan o'tkazing",
+      code: "UPGRADE_REQUIRED",
+    });
+    return;
+  }
+  if (req.user.role === "ADMIN") {
+    next();
+    return;
+  }
+  if (!req.user.emailVerified && !req.user.phoneVerified) {
+    res.status(403).json({ error: "Profil tasdiqlanmagan", code: "NOT_VERIFIED" });
+    return;
+  }
+  next();
+}

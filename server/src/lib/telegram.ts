@@ -46,7 +46,7 @@ export function moderationKeyboard(quoteId: string): TelegramKeyboard {
 
 export interface ModerationContext {
   quote: Quote;
-  author: Pick<User, "email" | "name" | "nickname">;
+  author: Pick<User, "email" | "name" | "nickname" | "telegramUsername">;
   category: Category;
   tags: Tag[];
 }
@@ -56,14 +56,14 @@ export interface ModerationContext {
 export function moderationText(ctx: ModerationContext): string {
   const { quote, author, category, tags } = ctx;
   const tagLine = tags.length > 0 ? `#${tags.map((t) => t.name).join(" #")}` : "—";
-  const realName = [author.name, author.nickname].filter(Boolean).join(" / ") || author.email;
+  const realName = [author.name, author.nickname].filter(Boolean).join(" / ") || author.email || "Telegram foydalanuvchisi";
   return [
     "🆕 Yangi iqtibos (kutmoqda)",
     "",
     quote.text,
     "",
     `👤 Nashr etiladigan muallif: ${quote.anonymous ? "Anonim" : quote.displayAuthor}`,
-    `🔒 Haqiqiy egasi: ${author.email}${realName !== author.email ? ` (${realName})` : ""}`,
+    `🔒 Haqiqiy egasi: ${author.email ?? author.telegramUsername ?? "Telegram foydalanuvchisi"}${realName !== (author.email ?? author.telegramUsername ?? "Telegram foydalanuvchisi") ? ` (${realName})` : ""}`,
     `🗂 Bo'lim: ${category.name}`,
     `🏷 Heshteglar: ${tagLine}`,
   ].join("\n");

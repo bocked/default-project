@@ -1,8 +1,10 @@
 import { Router } from "express";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth, requireVerified } from "../middleware/auth.js";
-import { quoteCreateLimiter } from "../lib/rateLimit.js";
+import { requireAuth, requireFullUser } from "../middleware/auth.js";
+import { quoteCreateLimiter, likeLimiter } from "../lib/rateLimit.js";
+import { clientIp } from "../lib/ip.js";
+import { isBotUserAgent, viewDedupe } from "../lib/views.js";
 import { normalizeTagName, slugify } from "../lib/categories.js";
 import { sendModerationMessage } from "../lib/telegram.js";
 import { addLog } from "../lib/logstore.js";
@@ -95,15 +97,22 @@ quotesRouter.get("/", async (req, res) => {
       prisma.quote.count({ where }),
     ]);
 
-    // Best-effort view counter so "most read" analytics works.
     const ids = quotes.map((quote) => quote.id);
-    if (ids.length > 0) {
-      void prisma.quote
-        .updateMany({ where: { id: { in: ids } }, data: { views: { increment: 1 } } })
-        .catch(() => {});
+    const userId = (req as import("express").Request & { user?: { id: string } }).user?.id;
+
+    // Real, human, deduplicated view counting: one view per visitor per quote
+    // per 24h. Bots, refreshes and repeat fetches never inflate the counter.
+    if (ids.length > 0 && !isBotUserAgent(req.headers["user-agent"])) {
+      const visitor = userId ? `u:${userId}` : `ip:${clientIp(req.headers)}`;
+      const fresh = ids.filter((id) => viewDedupe.shouldCount(`${visitor}:${id}`));
+      if (fresh.length > 0) {
+        void prisma.quote
+          .updateMany({ where: { id: { in: fresh } }, data: { views: { increment: 1 } } })
+          .catch(() => {});
+      }
+      viewDedupe.prune();
     }
 
-    const userId = (req as import("express").Request & { user?: { id: string } }).user?.id;
     const liked = userId
       ? new Set(
           (
@@ -160,8 +169,9 @@ quotesRouter.get("/mine", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/quotes - submit a new quote (stored as PENDING)
-quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireVerified, validateBody(quoteCreateSchema), async (req, res) => {
+// POST /api/quotes - submit a new quote (stored as PENDING). Quick-login
+// (Telegram-only) accounts are blocked until they complete a full registration.
+quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireFullUser, validateBody(quoteCreateSchema), async (req, res) => {
   const body = res.locals.body as QuoteCreate;
   try {
     const category = await prisma.category.findUnique({ where: { slug: body.categorySlug } });
@@ -206,7 +216,7 @@ quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireVerified, validat
     if (messageId !== null) {
       await prisma.quote.update({ where: { id: quote.id }, data: { telegramMessageId: messageId } });
     }
-    addLog("info", `Yangi iqtibos: ${quote.text.slice(0, 40)}... (${req.user!.email})`);
+    addLog("info", `Yangi iqtibos: ${quote.text.slice(0, 40)}... (${req.user!.email ?? req.user!.id})`);
     void recordActivity({ userId: req.user!.id, action: "QUOTE_CREATE", detail: quote.text.slice(0, 80), targetId: quote.id });
     res.status(201).json({ quote });
   } catch {
@@ -214,8 +224,8 @@ quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireVerified, validat
   }
 });
 
-// POST /api/quotes/:id/like - like an approved quote (idempotent).
-quotesRouter.post("/:id/like", requireAuth, async (req, res) => {
+// POST /api/quotes/:id/like - like an approved quote (idempotent, unique per user).
+quotesRouter.post("/:id/like", likeLimiter, requireAuth, async (req, res) => {
   try {
     const quote = await prisma.quote.findFirst({
       where: { id: req.params.id, status: "APPROVED", deletedAt: null },
@@ -237,7 +247,7 @@ quotesRouter.post("/:id/like", requireAuth, async (req, res) => {
 });
 
 // DELETE /api/quotes/:id/like - unlike a quote (idempotent).
-quotesRouter.delete("/:id/like", requireAuth, async (req, res) => {
+quotesRouter.delete("/:id/like", likeLimiter, requireAuth, async (req, res) => {
   try {
     await prisma.quoteLike.deleteMany({
       where: { userId: req.user!.id, quoteId: req.params.id },

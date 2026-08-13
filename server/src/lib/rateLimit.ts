@@ -41,3 +41,13 @@ export const quoteCreateLimiter = rateLimit({
   ...standard,
   message: { error: "Too many requests" },
 });
+
+/** Guard on quote like/unlike (per hour, per IP) so botnets or aggressive
+ *  automation cannot mass-like quotes. Likes themselves stay unique per user. */
+export const likeLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 120,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});

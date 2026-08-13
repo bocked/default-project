@@ -139,7 +139,7 @@ export default function AdminFeedbackPage() {
                 <Badge tone={cat.tone}>{cat.label}</Badge>
                 <Badge tone={st.tone}>{st.label}</Badge>
                 <span className="text-xs text-slate-400 dark:text-slate-500">
-                  {item.user ? item.user.nickname || item.user.name || item.user.email : "Foydalanuvchi o'chirilgan"}
+                  {item.user ? item.user.nickname || item.user.name || item.user.email || item.user.telegramId || "Telegram foydalanuvchisi" : "Foydalanuvchi o'chirilgan"}
                 </span>
                 <span className="text-xs text-slate-400 dark:text-slate-500">
                   {new Date(item.createdAt).toLocaleString("uz-UZ")}

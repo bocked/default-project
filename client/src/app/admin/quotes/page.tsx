@@ -288,7 +288,7 @@ export default function AdminQuotesPage() {
                         href={`/user?id=${quote.user.id}`}
                         className="font-medium text-slate-700 hover:text-blue-600 hover:underline dark:text-slate-300 dark:hover:text-blue-400"
                       >
-                        {quote.user.email}
+                        {quote.user.email ?? quote.user.telegramId ?? "Telegram foydalanuvchisi"}
                       </Link>
                     </span>
                   </div>

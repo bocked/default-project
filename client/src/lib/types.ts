@@ -4,12 +4,16 @@ export interface ServerConfig {
 
 export interface User {
   id: string;
-  email: string;
+  email: string | null;
   name: string | null;
   nickname: string | null;
   role: string;
   emailVerified: boolean;
   phoneVerified: boolean;
+  quickLogin?: boolean;
+  telegramUsername?: string | null;
+  telegramFirstName?: string | null;
+  telegramLastName?: string | null;
   createdAt: string;
 }
 
@@ -69,13 +73,14 @@ export interface PublicUserProfileData {
 
 export interface AdminUser {
   id: string;
-  email: string;
+  email: string | null;
   name: string | null;
   nickname: string | null;
   role: string;
   emailVerified: boolean;
   phoneVerified: boolean;
   telegramId: string | null;
+  telegramUsername: string | null;
   phoneNumber: string | null;
   blocked: boolean;
   blockedAt: string | null;
@@ -97,7 +102,7 @@ export interface AdminQuote {
   tags: Tag[];
   user: {
     id: string;
-    email: string;
+    email: string | null;
     name: string | null;
     nickname: string | null;
     telegramId: string | null;
@@ -179,7 +184,7 @@ export interface AdminFeedback {
   updatedAt: string;
   user: {
     id: string;
-    email: string;
+    email: string | null;
     name: string | null;
     nickname: string | null;
     telegramId: string | null;
@@ -210,7 +215,7 @@ export interface AdminActivityEntry {
   detail: string | null;
   targetId: string | null;
   createdAt: string;
-  user: { id: string; email: string; name: string | null; nickname: string | null } | null;
+  user: { id: string; email: string | null; name: string | null; nickname: string | null } | null;
 }
 
 export interface BackupRecord {
@@ -236,7 +241,7 @@ export interface TopQuotes {
 
 export interface TelegramBanUser {
   id: string;
-  email: string;
+  email: string | null;
   nickname: string | null;
   name: string | null;
   telegramId: string | null;

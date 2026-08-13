@@ -8,6 +8,9 @@ import {
   hashTelegramVerifyToken,
   generateTelegramVerifyCode,
   hashTelegramVerifyCode,
+  generateQuickLoginSessionId,
+  hashQuickLoginSessionId,
+  quickLoginSessionExpiry,
 } from "../tokens.js";
 
 describe("auth tokens (JWT)", () => {
@@ -60,5 +63,28 @@ describe("telegram verification tokens", () => {
     const code = generateTelegramVerifyCode();
     expect(code).toMatch(/^\d{6}$/);
     expect(hashTelegramVerifyCode(code)).not.toBe(code);
+  });
+});
+
+describe("telegram quick-login sessions", () => {
+  it("generates a 32-char hex id that fits the deep link", () => {
+    const id = generateQuickLoginSessionId();
+    expect(id).toMatch(/^[0-9a-f]{32}$/);
+    // `quick_` prefix + id must fit `?start=` (max 64 chars).
+    expect(`quick_${id}`.length).toBeLessThanOrEqual(64);
+  });
+
+  it("stores only the sha256 digest and is deterministic", () => {
+    const id = generateQuickLoginSessionId();
+    const digest = hashQuickLoginSessionId(id);
+    expect(digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashQuickLoginSessionId(id)).toBe(digest);
+  });
+
+  it("expires after 10 minutes", () => {
+    const expiry = quickLoginSessionExpiry().getTime();
+    const now = Date.now();
+    expect(expiry - now).toBeGreaterThan(9 * 60 * 1000);
+    expect(expiry - now).toBeLessThanOrEqual(10 * 60 * 1000);
   });
 });

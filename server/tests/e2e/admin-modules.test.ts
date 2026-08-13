@@ -190,22 +190,54 @@ describe("E2E: admin modules (announcements, feedback, settings, seo, activity, 
     expect(del.status).toBe(200);
   });
 
-  it("tracks quote views and supports like/unlike with top-quotes analytics", async () => {
+  it("tracks unique human views and ignores bots/repeats; supports like/unlike", async () => {
     const userA = await makeUser(`${unique("likea")}@example.com`);
     const userB = await makeUser(`${unique("likeb")}@example.com`);
     const q1 = await makeApprovedQuote(userA, "Ko'p o'qiladigan iqtibos.");
 
-    // Viewing the public feed increments the counter. The increment is a
-    // best-effort async write, so poll briefly for it to commit.
-    await request(base, "GET", "/api/quotes");
-    await request(base, "GET", "/api/quotes");
-    let views = 0;
+    const browser = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    // A real human visitor (distinct IP) is counted once.
+    const first = await request(base, "GET", "/api/quotes", {
+      headers: { "User-Agent": browser, "X-Forwarded-For": "1.2.3.4" },
+    });
+    expect(first.status).toBe(200);
     for (let i = 0; i < 20; i++) {
-      views = (await prisma.quote.findUniqueOrThrow({ where: { id: q1 } })).views;
-      if (views >= 2) break;
-      await new Promise((r) => setTimeout(r, 100));
+      if ((await prisma.quote.findUniqueOrThrow({ where: { id: q1 } })).views >= 1) break;
+      await sleep(100);
     }
-    expect(views).toBeGreaterThanOrEqual(2);
+    expect((await prisma.quote.findUniqueOrThrow({ where: { id: q1 } })).views).toBe(1);
+
+    // Refreshing / re-fetching from the same visitor must NOT inflate views.
+    await request(base, "GET", "/api/quotes", {
+      headers: { "User-Agent": browser, "X-Forwarded-For": "1.2.3.4" },
+    });
+    await request(base, "GET", "/api/quotes", {
+      headers: { "User-Agent": browser, "X-Forwarded-For": "1.2.3.4" },
+    });
+    await sleep(300);
+    expect((await prisma.quote.findUniqueOrThrow({ where: { id: q1 } })).views).toBe(1);
+
+    // A second real visitor (different IP) is counted.
+    await request(base, "GET", "/api/quotes", {
+      headers: { "User-Agent": browser, "X-Forwarded-For": "5.6.7.8" },
+    });
+    for (let i = 0; i < 20; i++) {
+      if ((await prisma.quote.findUniqueOrThrow({ where: { id: q1 } })).views >= 2) break;
+      await sleep(100);
+    }
+    expect((await prisma.quote.findUniqueOrThrow({ where: { id: q1 } })).views).toBe(2);
+
+    // Crawler hits never count, even from a fresh IP.
+    await request(base, "GET", "/api/quotes", {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        "X-Forwarded-For": "9.9.9.9",
+      },
+    });
+    await sleep(300);
+    expect((await prisma.quote.findUniqueOrThrow({ where: { id: q1 } })).views).toBe(2);
 
     // Like from a logged-in user.
     const regB = await request(base, "POST", "/api/auth/login", {

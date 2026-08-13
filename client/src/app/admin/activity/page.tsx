@@ -105,7 +105,7 @@ export default function AdminActivityPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={meta.tone}>{meta.label}</Badge>
                   <span className="text-sm font-medium text-slate-900 dark:text-white">
-                    {a.user ? a.user.nickname || a.user.name || a.user.email : "Noma'lum"}
+                    {a.user ? a.user.nickname || a.user.name || a.user.email || "Telegram foydalanuvchisi" : "Noma'lum"}
                   </span>
                   {a.detail && (
                     <span className="truncate text-xs text-slate-500 dark:text-slate-400">{a.detail}</span>

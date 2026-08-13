@@ -92,3 +92,22 @@ export function telegramVerifyExpiry(): Date {
 export function telegramCodeExpiry(): Date {
   return new Date(Date.now() + 5 * 60 * 1000);
 }
+
+// ---------------------------------------------------------------------------
+// Telegram quick-login sessions
+// ---------------------------------------------------------------------------
+
+/** Opaque one-tap login payload embedded in `t.me/<bot>?start=quick_<id>`.
+ *  Stays well under Telegram's 64-character deep-link limit. */
+export function generateQuickLoginSessionId(): string {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+export function hashQuickLoginSessionId(sessionId: string): string {
+  return crypto.createHash("sha256").update(sessionId).digest("hex");
+}
+
+/** Quick-login session lifetime. */
+export function quickLoginSessionExpiry(): Date {
+  return new Date(Date.now() + 10 * 60 * 1000);
+}
