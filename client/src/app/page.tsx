@@ -79,6 +79,11 @@ function HomeInner() {
   }
 
   const remaining = total - quotes.length;
+  const activeFilter = Boolean(q || category || tag);
+
+  function clearFilters(): void {
+    router.push("/", { scroll: false });
+  }
 
   return (
     <div className="space-y-6">
@@ -94,7 +99,17 @@ function HomeInner() {
             : total === 0
               ? "0 ta iqtibos"
               : `${quotes.length} / ${total} ta iqtibos`}
+          {activeFilter ? " (filtrlangan)" : ""}
         </span>
+        {activeFilter && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
+          >
+            Filtrni tozalash
+          </button>
+        )}
       </div>
 
       {error && (
