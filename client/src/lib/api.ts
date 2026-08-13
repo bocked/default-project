@@ -33,6 +33,9 @@ interface ApiOptions {
   token?: string;
 }
 
+/** Hard cap for every request so the UI never hangs on a stuck connection. */
+const REQUEST_TIMEOUT_MS = 15000;
+
 /** Typed fetch wrapper for the Iqtibosim API. Sends the stored JWT by default. */
 export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
@@ -40,16 +43,23 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   const token = options.token ?? tokenStore.get();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${config.url}${path}`, {
-    method: options.method ?? "GET",
-    headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${config.url}${path}`, {
+      method: options.method ?? "GET",
+      headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
+    });
 
-  const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!res.ok) {
-    const message = typeof data?.error === "string" ? data.error : `So'rov bajarilmadi (${res.status})`;
-    throw new ApiError(message, res.status, typeof data?.code === "string" ? data.code : undefined);
+    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!res.ok) {
+      const message = typeof data?.error === "string" ? data.error : `So'rov bajarilmadi (${res.status})`;
+      throw new ApiError(message, res.status, typeof data?.code === "string" ? data.code : undefined);
+    }
+    return data as T;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return data as T;
 }

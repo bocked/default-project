@@ -1,10 +1,13 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { QuoteCard } from "@/components/QuoteCard";
 import type { PaginatedQuotes, Quote } from "@/lib/types";
+
+/** If a request takes longer than this, show an error fallback instead of hanging. */
+const LOADING_TIMEOUT_MS = 12000;
 
 export default function Home() {
   return (
@@ -22,6 +25,7 @@ function HomeInner() {
   const [content, setContent] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   // Search, category and tag filters are owned by the NavBar dropdowns and
   // travel through the URL (?q=, ?category=, ?tag=); this page only renders
@@ -36,25 +40,55 @@ function HomeInner() {
     content["hero.subtitle"] ??
     "Dono fikrlarni o'qing va o'zingiznikini qo'shing. Har bir iqtibos moderatsiyadan o'tadi.";
 
-  const fetchQuotes = useCallback(async (nextPage: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (q) params.set("q", q);
-      if (category) params.set("category", category);
-      if (tag) params.set("tag", tag);
-      params.set("page", String(nextPage));
-      const qs = params.toString();
-      const data = await api<PaginatedQuotes>(`/api/quotes${qs ? `?${qs}` : ""}`);
-      setQuotes((prev) => (nextPage === 1 ? data.quotes : [...prev, ...data.quotes]));
-      setTotal(data.total);
-    } catch {
-      setError("Iqtiboslarni yuklab bo'lmadi");
-    } finally {
-      setLoading(false);
-    }
+  // When filters change, drop the old (possibly filtered) list immediately so
+  // stale quotes never linger while the new request is in flight.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setQuotes([]);
+      setTotal(0);
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [q, category, tag]);
+
+  const fetchQuotes = useCallback(
+    async (nextPage: number) => {
+      const requestId = ++requestIdRef.current;
+      setLoading(true);
+      setError(null);
+
+      const watchdog = window.setTimeout(() => {
+        if (requestId === requestIdRef.current) {
+          setError("Serverdan javob kelishida muammo yuz berdi. Qayta urinib ko'ring.");
+          setLoading(false);
+        }
+      }, LOADING_TIMEOUT_MS);
+
+      try {
+        const params = new URLSearchParams();
+        if (q) params.set("q", q);
+        if (category) params.set("category", category);
+        if (tag) params.set("tag", tag);
+        params.set("page", String(nextPage));
+        const qs = params.toString();
+        const data = await api<PaginatedQuotes>(`/api/quotes${qs ? `?${qs}` : ""}`);
+        // Ignore stale responses (e.g. a slower filtered request that resolves
+        // after the URL was cleared) so the list always matches the URL.
+        if (requestId !== requestIdRef.current) return;
+        setError(null);
+        if (nextPage === 1) setQuotes(data.quotes);
+        else setQuotes((prev) => [...prev, ...data.quotes]);
+        setTotal(data.total);
+      } catch {
+        if (requestId === requestIdRef.current) {
+          setError("Iqtiboslarni yuklab bo'lmadi");
+        }
+      } finally {
+        window.clearTimeout(watchdog);
+        if (requestId === requestIdRef.current) setLoading(false);
+      }
+    },
+    [q, category, tag]
+  );
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -69,6 +103,10 @@ function HomeInner() {
       .catch(() => setContent({}));
   }, []);
 
+  function clearFilters(): void {
+    router.push("/", { scroll: false });
+  }
+
   function loadMore(): void {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
@@ -80,10 +118,6 @@ function HomeInner() {
 
   const remaining = total - quotes.length;
   const activeFilter = Boolean(q || category || tag);
-
-  function clearFilters(): void {
-    router.push("/", { scroll: false });
-  }
 
   return (
     <div className="space-y-6">
