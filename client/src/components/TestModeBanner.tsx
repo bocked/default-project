@@ -16,40 +16,20 @@ function isTestMode(): boolean {
 }
 
 export function TestModeBanner() {
-  const [show, setShow] = useState(true);
   const [testMode, setTestMode] = useState(false);
 
   useEffect(() => {
     window.setTimeout(() => {
       setTestMode(isTestMode() || process.env.NEXT_PUBLIC_TEST_MODE === "1");
-      const dismissed = localStorage.getItem("testModeBannerDismissed");
-      if (dismissed === "true") {
-        setShow(false);
-      }
     }, 0);
   }, []);
 
-  if (!testMode || !show) return null;
-
-  function handleDismiss() {
-    setShow(false);
-    localStorage.setItem("testModeBannerDismissed", "true");
-  }
+  if (!testMode) return null;
 
   return (
-    <div className="flex items-center justify-between gap-3 bg-amber-500 px-4 py-2 text-center text-sm font-semibold tracking-wide text-amber-950">
-      <div className="flex items-center gap-2">
-        <span aria-hidden="true">⚠️</span>
-        <span>Test rejimi (Beta version) — sayt sinov rejimida ishlayapti, xatoliklar yuzaga kelishi mumkin</span>
-      </div>
-      <button
-        type="button"
-        onClick={handleDismiss}
-        className="flex-shrink-0 rounded px-2 py-0.5 text-xs font-medium text-amber-950 hover:bg-amber-300 transition"
-        aria-label="Yopish"
-      >
-        ✕
-      </button>
+    <div className="flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-center text-sm font-semibold tracking-wide text-amber-950">
+      <span aria-hidden="true">⚠️</span>
+      <span>Test rejimi (Beta version) — sayt sinov rejimida ishlayapti, xatoliklar yuzaga kelishi mumkin</span>
     </div>
   );
 }

@@ -55,7 +55,6 @@ export default function CookiesPage() {
           <li>Barcha cookielarni o&apos;chirish (brauzer sozlamalaridan).</li>
           <li>Cookie qabul qilishni cheklash yoki butunlay o&apos;chirish.</li>
           <li>Saytdagi &quot;Cookie roziligi&quot; ni bekor qilish (localStorage dan <code>cookieConsent</code> kalitini o&apos;chirish).</li>
-          <li>Test rejimi bannerini yana ko&apos;rsatish uchun <code>testModeBannerDismissed</code> ni o&apos;chiring.</li>
         </ul>
         <p className="text-slate-600 dark:text-slate-300">
           Eslatma: Authentication cookie o&apos;chirilganda, siz saytdan chiqib ketasiz va qayta kirish kerak bo&apos;ladi.
@@ -66,7 +65,7 @@ export default function CookiesPage() {
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">4. Cookie muddati</h2>
         <ul className="list-disc pl-6 space-y-2 text-slate-600 dark:text-slate-300">
           <li>Authentication token — 30 kun (so&apos;ng avtomatik yangilanadi).</li>
-          <li>Theme, banner dismissal, cookie consent — cheksiz (siz o&apos;chirmaguncha).</li>
+          <li>Theme va cookie consent — cheksiz (siz o&apos;chirmaguncha).</li>
         </ul>
       </section>
 
