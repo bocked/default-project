@@ -152,18 +152,29 @@ describe("E2E: admin modules (announcements, feedback, settings, seo, activity, 
     expect(reg.status).toBe(201);
     const userId = reg.json.user.id;
 
-    const feed = await request(base, "GET", `/api/admin/activity?userId=${userId}`, { token: ADMIN });
-    expect(feed.status).toBe(200);
-    expect(feed.json.activities.some((a: any) => a.action === "REGISTER")).toBe(true);
+    let registered = false;
+    for (let i = 0; i < 40 && !registered; i++) {
+      const feed = await request(base, "GET", `/api/admin/activity?userId=${userId}`, { token: ADMIN });
+      expect(feed.status).toBe(200);
+      registered = feed.json.activities.some((a: any) => a.action === "REGISTER");
+      if (!registered) await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(registered).toBe(true);
 
-    // Login records a LOGIN activity.
+    // Login records a LOGIN activity. Activity writes are fire-and-forget, so
+    // poll briefly until the feed catches up instead of racing the insert.
     const login = await request(base, "POST", "/api/auth/login", {
       body: { email, password: "s3cret-password" },
     });
     expect(login.status).toBe(200);
 
-    const feed2 = await request(base, "GET", `/api/admin/activity?userId=${userId}`, { token: ADMIN });
-    expect(feed2.json.activities.some((a: any) => a.action === "LOGIN")).toBe(true);
+    let loggedIn = false;
+    for (let i = 0; i < 40 && !loggedIn; i++) {
+      const feed2 = await request(base, "GET", `/api/admin/activity?userId=${userId}`, { token: ADMIN });
+      loggedIn = feed2.json.activities.some((a: any) => a.action === "LOGIN");
+      if (!loggedIn) await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(loggedIn).toBe(true);
   });
 
   it("creates, downloads and restores backups", async () => {
