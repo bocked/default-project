@@ -47,7 +47,10 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
   async function captureArt(): Promise<void> {
     const node = artRef.current;
     if (!node) return;
-    const dataUrl = await toPng(node, { pixelRatio: 2, cacheBust: true });
+    const options = { backgroundColor: "#ffffff", pixelRatio: 2, cacheBust: true };
+    await document.fonts.ready;
+    await toPng(node, options);
+    const dataUrl = await toPng(node, options);
     const blob = await (await fetch(dataUrl)).blob();
     const file = new File([blob], `iqtibos-${quote.id}.png`, { type: "image/png" });
     if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
