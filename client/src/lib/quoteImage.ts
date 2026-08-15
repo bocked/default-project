@@ -13,28 +13,34 @@ const COLORS = {
   watermark: "#94a3b8",
 } as const;
 
-// Square 1080x1080 card: fills the canvas with a small margin, so the output
-// is tight (no extra white) and social-ready (square ratio). Only the quote
-// text, the category chip and the yerlikoglon.uz logo are drawn.
+// Square 1080x1080 share card. The card fills the canvas with a small margin,
+// so there is no extra white space. Layout top to bottom: brand row (Iqtibosim
+// on the left, yerlikoglon.uz wordmark logo on the right), category chip just
+// above the centered quote text, and the domain at the very bottom center.
 const SIZE = 1080;
 const MARGIN = 48;
 const CARD = SIZE - MARGIN * 2;
 const RADIUS = 40;
 
-const PAD_X = 88;
-const PAD_Y_TOP = 96;
-const PAD_Y_BOTTOM = 88;
-const CONTENT_W = CARD - PAD_X * 2;
+const PAD = 72;
+const CONTENT_W = CARD - PAD * 2;
 
-const CHIP_H = 56;
-const CHIP_FONT = `600 20px ${SANS}`;
-const LOGO_H = 30;
-const LOGO_FONT = `600 16px ${SANS}`;
-const GAP_QUOTE_CHIP = 44;
-const GAP_CHIP_LOGO = 30;
+const HEADER_H = 46;
+const BRAND_GLYPH_FONT = `700 26px ${SERIF}`;
+const BRAND_TEXT_FONT = `700 26px ${SERIF}`;
+const LOGO_MAIN_FONT = `700 24px ${SANS}`;
+const LOGO_DOT_FONT = `600 22px ${SANS}`;
 
-const QUOTE_REGION = CARD - PAD_Y_TOP - PAD_Y_BOTTOM - CHIP_H - LOGO_H - GAP_QUOTE_CHIP - GAP_CHIP_LOGO;
-const QUOTE_SIZES = [56, 52, 48, 44, 40, 36, 32, 28, 24, 22, 20];
+const GAP_HEADER_CHIP = 48;
+const CHIP_H = 44;
+const CHIP_FONT = `600 18px ${SANS}`;
+const GAP_CHIP_QUOTE = 26;
+
+const URL_LH = 24;
+const URL_FONT = `600 15px ${SANS}`;
+const URL_GAP = 48;
+
+const QUOTE_SIZES = [72, 68, 64, 60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 22, 20];
 
 function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   ctx.beginPath();
@@ -110,13 +116,22 @@ export async function renderQuoteImage(quote: Quote): Promise<Blob> {
   if (!ctx) throw new Error("Canvas 2D not supported");
   ctx.scale(scale, scale);
 
-  // Pick the largest quote font whose wrapped lines fit the quote region.
+  const centerX = SIZE / 2;
+
+  // Vertical layout.
+  const topY = PAD + HEADER_H + GAP_HEADER_CHIP;
+  const urlTop = SIZE - PAD - URL_LH;
+  const middleHeight = urlTop - URL_GAP - topY;
+  const quoteMaxHeight = middleHeight - CHIP_H - GAP_CHIP_QUOTE;
+
+  // Pick the largest quote font whose wrapped lines fit, then spread short
+  // quotes across the available height so the card stays balanced.
   let quoteFont = 20;
   let quoteLines: string[] = [];
   for (const size of QUOTE_SIZES) {
     ctx.font = `normal ${size}px ${SERIF}`;
     const lines = wrapText(ctx, quote.text, CONTENT_W);
-    if (lines.length * size * 1.5 <= QUOTE_REGION) {
+    if (lines.length * size * 1.5 <= quoteMaxHeight) {
       quoteFont = size;
       quoteLines = lines;
       break;
@@ -127,7 +142,12 @@ export async function renderQuoteImage(quote: Quote): Promise<Blob> {
     ctx.font = `normal ${quoteFont}px ${SERIF}`;
     quoteLines = wrapText(ctx, quote.text, CONTENT_W);
   }
-  const quoteLineHeight = quoteFont * 1.5;
+  const baseLineHeight = quoteFont * 1.5;
+  const spreadLineHeight = Math.min(quoteMaxHeight / quoteLines.length, quoteFont * 2);
+  const quoteLineHeight = Math.max(baseLineHeight, spreadLineHeight);
+
+  const groupHeight = CHIP_H + GAP_CHIP_QUOTE + quoteLines.length * quoteLineHeight;
+  const groupTop = topY + Math.round((middleHeight - groupHeight) / 2);
 
   // Card shadow (only around the card; the canvas outside stays transparent).
   ctx.save();
@@ -144,15 +164,54 @@ export async function renderQuoteImage(quote: Quote): Promise<Blob> {
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  const centerX = SIZE / 2;
+  // Brand row: quote-glyph box + "Iqtibosim" on the left.
+  const headerMidY = PAD + HEADER_H / 2;
+  roundedRect(ctx, PAD, PAD, HEADER_H, HEADER_H, 12);
+  ctx.fillStyle = COLORS.blue;
+  ctx.fill();
+  ctx.font = BRAND_GLYPH_FONT;
+  ctx.fillStyle = COLORS.white;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("\u201C", PAD + HEADER_H / 2, headerMidY + 1);
+
+  ctx.font = BRAND_TEXT_FONT;
+  ctx.fillStyle = COLORS.ink;
+  ctx.textAlign = "left";
+  ctx.fillText("Iqtibosim", PAD + HEADER_H + 14, headerMidY + 1);
+
+  // Wordmark logo on the right: "yerlikoglon" + ".uz".
+  const logoMain = "yerlikoglon";
+  const logoDot = ".uz";
+  ctx.font = LOGO_DOT_FONT;
+  const dotWidth = ctx.measureText(logoDot).width;
+  const rightEdge = SIZE - PAD;
+  ctx.font = LOGO_DOT_FONT;
+  ctx.fillStyle = COLORS.watermark;
+  ctx.textAlign = "right";
+  ctx.fillText(logoDot, rightEdge, headerMidY + 1);
+  ctx.font = LOGO_MAIN_FONT;
+  ctx.fillStyle = COLORS.ink;
+  ctx.fillText(logoMain, rightEdge - dotWidth - 1, headerMidY + 1);
+
+  // Category chip, centered just above the quote.
+  ctx.font = CHIP_FONT;
+  const categoryText = quote.category.name;
+  const chipWidth = ctx.measureText(categoryText).width + 44;
+  roundedRect(ctx, centerX - chipWidth / 2, groupTop, chipWidth, CHIP_H, CHIP_H / 2);
+  ctx.fillStyle = COLORS.pillBg;
+  ctx.fill();
+  ctx.fillStyle = COLORS.pillText;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(categoryText, centerX, groupTop + CHIP_H / 2);
 
   // Quote text, centered, blue quotation marks on the first and last line.
-  const quoteHeight = quoteLines.length * quoteLineHeight;
-  const quoteY = PAD_Y_TOP + Math.round((QUOTE_REGION - quoteHeight) / 2);
+  const quoteTop = groupTop + CHIP_H + GAP_CHIP_QUOTE;
   ctx.font = `normal ${quoteFont}px ${SERIF}`;
   ctx.textBaseline = "top";
   ctx.textAlign = "left";
-  let y = quoteY;
+  let y = quoteTop;
   for (let i = 0; i < quoteLines.length; i++) {
     const line = quoteLines[i];
     const openWidth = i === 0 ? ctx.measureText("\u201C").width : 0;
@@ -174,25 +233,18 @@ export async function renderQuoteImage(quote: Quote): Promise<Blob> {
     y += quoteLineHeight;
   }
 
-  // Category chip, centered below the quote.
-  const chipY = PAD_Y_TOP + QUOTE_REGION + GAP_QUOTE_CHIP;
-  ctx.font = CHIP_FONT;
-  const categoryText = quote.category.name;
-  const chipWidth = ctx.measureText(categoryText).width + 48;
-  roundedRect(ctx, centerX - chipWidth / 2, chipY, chipWidth, CHIP_H, CHIP_H / 2);
-  ctx.fillStyle = COLORS.pillBg;
-  ctx.fill();
-  ctx.fillStyle = COLORS.pillText;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(categoryText, centerX, chipY + CHIP_H / 2);
-
-  // yerlikoglon.uz logo, centered at the bottom.
-  const logoY = chipY + CHIP_H + GAP_CHIP_LOGO;
-  ctx.font = LOGO_FONT;
+  // Domain, minimal, centered at the very bottom.
+  ctx.font = URL_FONT;
   ctx.fillStyle = COLORS.watermark;
+  ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  ctx.fillText("yerlikoglon.uz", centerX, logoY);
+  if ("letterSpacing" in ctx) {
+    (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = "1.5px";
+  }
+  ctx.fillText("yerlikoglon.uz", centerX, urlTop);
+  if ("letterSpacing" in ctx) {
+    (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = "0px";
+  }
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encoding failed"))), "image/png");
