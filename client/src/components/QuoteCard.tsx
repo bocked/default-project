@@ -1,14 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { toPng } from "html-to-image";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Quote } from "@/lib/types";
+import { renderQuoteImage } from "@/lib/quoteImage";
 import { StatusBadge } from "./StatusBadge";
 import { TelegramPost } from "./TelegramPost";
-import { QuoteArt } from "./QuoteArt";
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("uz-UZ", { day: "numeric", month: "long", year: "numeric" });
@@ -19,9 +18,7 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
   const [liked, setLiked] = useState(Boolean(quote.likedByMe));
   const [likeCount, setLikeCount] = useState(quote.likeCount ?? 0);
   const [busy, setBusy] = useState(false);
-  const [artVisible, setArtVisible] = useState(false);
   const [busyArt, setBusyArt] = useState(false);
-  const artRef = useRef<HTMLDivElement | null>(null);
 
   async function toggleLike(): Promise<void> {
     if (!user) {
@@ -44,40 +41,27 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
     }
   }
 
-  async function captureArt(): Promise<void> {
-    const node = artRef.current;
-    if (!node) return;
-    const options = { backgroundColor: "#ffffff", pixelRatio: 2, cacheBust: true };
-    await document.fonts.ready;
-    await toPng(node, options);
-    const dataUrl = await toPng(node, options);
-    const blob = await (await fetch(dataUrl)).blob();
-    const file = new File([blob], `iqtibos-${quote.id}.png`, { type: "image/png" });
-    if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: "Iqtibos" });
-    } else {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `iqtibos-${quote.id}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
-  }
-
   async function shareAsImage(): Promise<void> {
     if (busyArt) return;
     setBusyArt(true);
-    setArtVisible(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 60));
-      await captureArt();
+      const blob = await renderQuoteImage(quote);
+      const file = new File([blob], `iqtibos-${quote.id}.png`, { type: "image/png" });
+      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Iqtibos" });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `iqtibos-${quote.id}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
     } catch {
       // user cancelled the native share sheet or rendering failed: ignore
     } finally {
-      setArtVisible(false);
       setBusyArt(false);
     }
   }
@@ -176,12 +160,6 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
           {quote.status === "REJECTED" && quote.rejectionReason && (
             <span className="text-xs text-slate-500 dark:text-slate-400">Sabab: {quote.rejectionReason}</span>
           )}
-        </div>
-      )}
-
-      {artVisible && (
-        <div aria-hidden="true" className="pointer-events-none fixed left-[-9999px] top-0 z-50" ref={artRef}>
-          <QuoteArt quote={quote} />
         </div>
       )}
     </figure>
