@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
+import { toPng } from "html-to-image";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Quote } from "@/lib/types";
 import { StatusBadge } from "./StatusBadge";
 import { TelegramPost } from "./TelegramPost";
+import { QuoteArt } from "./QuoteArt";
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("uz-UZ", { day: "numeric", month: "long", year: "numeric" });
@@ -17,6 +19,9 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
   const [liked, setLiked] = useState(Boolean(quote.likedByMe));
   const [likeCount, setLikeCount] = useState(quote.likeCount ?? 0);
   const [busy, setBusy] = useState(false);
+  const [artVisible, setArtVisible] = useState(false);
+  const [busyArt, setBusyArt] = useState(false);
+  const artRef = useRef<HTMLDivElement | null>(null);
 
   async function toggleLike(): Promise<void> {
     if (!user) {
@@ -36,6 +41,41 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
       // non-fatal: keep current state
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function captureArt(): Promise<void> {
+    const node = artRef.current;
+    if (!node) return;
+    const dataUrl = await toPng(node, { pixelRatio: 2, cacheBust: true });
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], `iqtibos-${quote.id}.png`, { type: "image/png" });
+    if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: "Iqtibos" });
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `iqtibos-${quote.id}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function shareAsImage(): Promise<void> {
+    if (busyArt) return;
+    setBusyArt(true);
+    setArtVisible(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      await captureArt();
+    } catch {
+      // user cancelled the native share sheet or rendering failed: ignore
+    } finally {
+      setArtVisible(false);
+      setBusyArt(false);
     }
   }
 
@@ -107,6 +147,21 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
           </svg>
           {quote.views ?? 0}
         </span>
+
+        <button
+          type="button"
+          disabled={busyArt}
+          onClick={() => void shareAsImage()}
+          title="Rasm sifatida ulashish yoki yuklab olish"
+          aria-label="Rasm sifatida ulashish"
+          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-200 disabled:opacity-60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0L8 8m4-4l4 4" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" />
+          </svg>
+          <span>{busyArt ? "..." : "Rasm"}</span>
+        </button>
       </div>
 
       {showStatus && quote.status && (
@@ -115,6 +170,12 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
           {quote.status === "REJECTED" && quote.rejectionReason && (
             <span className="text-xs text-slate-500 dark:text-slate-400">Sabab: {quote.rejectionReason}</span>
           )}
+        </div>
+      )}
+
+      {artVisible && (
+        <div aria-hidden="true" className="pointer-events-none fixed left-[-9999px] top-0 z-50" ref={artRef}>
+          <QuoteArt quote={quote} />
         </div>
       )}
     </figure>
