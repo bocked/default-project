@@ -128,11 +128,13 @@ function HomeInner() {
 
       <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
         <span>
-          {loading && quotes.length === 0
-            ? "Yuklanmoqda..."
-            : total === 0
-              ? "0 ta iqtibos"
-              : `${quotes.length} / ${total} ta iqtibos`}
+          {error && quotes.length === 0
+            ? ""
+            : loading && quotes.length === 0
+              ? "Yuklanmoqda..."
+              : total === 0
+                ? "0 ta iqtibos"
+                : `${quotes.length} / ${total} ta iqtibos`}
           {activeFilter ? " (filtrlangan)" : ""}
         </span>
         {activeFilter && (
@@ -147,7 +149,19 @@ function HomeInner() {
       </div>
 
       {error && (
-        <p className="rounded-xl bg-rose-50 p-4 text-sm text-rose-600 dark:bg-rose-950/40 dark:text-rose-300">{error}</p>
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-900/50 dark:bg-rose-950/40">
+          <p className="text-sm font-medium text-rose-700 dark:text-rose-300">{error}</p>
+          <p className="mt-1 text-xs text-rose-500 dark:text-rose-400">
+            Server vaqtincha javob bermasligi mumkin. Qayta urinib ko&apos;ring yoki birozdan keyin kiring.
+          </p>
+          <button
+            type="button"
+            onClick={() => void fetchQuotes(page)}
+            className="mt-3 rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 dark:hover:bg-rose-500"
+          >
+            Qayta urinish
+          </button>
+        </div>
       )}
 
       {!loading && quotes.length === 0 && !error && (

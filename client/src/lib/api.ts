@@ -46,12 +46,21 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const res = await fetch(`${config.url}${path}`, {
-      method: options.method ?? "GET",
-      headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${config.url}${path}`, {
+        method: options.method ?? "GET",
+        headers,
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+      });
+    } catch (err) {
+      const name = (err as { name?: string } | null)?.name ?? "";
+      if (name === "AbortError") {
+        throw new ApiError("Serverdan javob kelmadi. Iltimos, qayta urinib ko'ring.", 0, "TIMEOUT");
+      }
+      throw new ApiError("Tarmoq aloqasi uzildi. Internet ulanishini tekshiring.", 0, "NETWORK");
+    }
 
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok) {
