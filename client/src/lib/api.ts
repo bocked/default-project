@@ -36,39 +36,69 @@ interface ApiOptions {
 /** Hard cap for every request so the UI never hangs on a stuck connection. */
 const REQUEST_TIMEOUT_MS = 15000;
 
+/** Network/timeout errors (status === 0) are retried with exponential backoff. */
+const MAX_RETRIES = 3;
+const RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Typed fetch wrapper for the Iqtibosim API. Sends the stored JWT by default. */
 export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (options.body !== undefined) headers["Content-Type"] = "application/json";
-  const token = options.token ?? tokenStore.get();
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  let lastError: ApiError | null = null;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    let res: Response;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await sleep(RETRY_DELAYS_MS[attempt - 1]);
+    }
+
+    const headers: Record<string, string> = {};
+    if (options.body !== undefined) headers["Content-Type"] = "application/json";
+    const token = options.token ?? tokenStore.get();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      res = await fetch(`${config.url}${path}`, {
-        method: options.method ?? "GET",
-        headers,
-        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-        signal: controller.signal,
-      });
-    } catch (err) {
-      const name = (err as { name?: string } | null)?.name ?? "";
-      if (name === "AbortError") {
-        throw new ApiError("Serverdan javob kelmadi. Iltimos, qayta urinib ko'ring.", 0, "TIMEOUT");
+      let res: Response;
+      try {
+        res = await fetch(`${config.url}${path}`, {
+          method: options.method ?? "GET",
+          headers,
+          body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+          signal: controller.signal,
+        });
+      } catch (err) {
+        const name = (err as { name?: string } | null)?.name ?? "";
+        if (name === "AbortError") {
+          lastError = new ApiError("Serverdan javob kelmadi. Iltimos, qayta urinib ko'ring.", 0, "TIMEOUT");
+        } else {
+          lastError = new ApiError("Tarmoq aloqasi uzildi. Internet ulanishini tekshiring.", 0, "NETWORK");
+        }
+        continue; // retry
+      } finally {
+        clearTimeout(timeoutId);
       }
-      throw new ApiError("Tarmoq aloqasi uzildi. Internet ulanishini tekshiring.", 0, "NETWORK");
-    }
 
-    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!res.ok) {
-      const message = typeof data?.error === "string" ? data.error : `So'rov bajarilmadi (${res.status})`;
-      throw new ApiError(message, res.status, typeof data?.code === "string" ? data.code : undefined);
+      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!res.ok) {
+        const message = typeof data?.error === "string" ? data.error : `So'rov bajarilmadi (${res.status})`;
+        throw new ApiError(message, res.status, typeof data?.code === "string" ? data.code : undefined);
+      }
+      return data as T;
+    } catch (err) {
+      if (err instanceof ApiError) {
+        // Network/timeout errors are retried; HTTP errors (4xx/5xx) are not.
+        if (err.status === 0 && attempt < MAX_RETRIES) {
+          lastError = err;
+          continue;
+        }
+        throw err;
+      }
+      throw err;
     }
-    return data as T;
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  throw lastError ?? new ApiError("Xatolik yuz berdi.", 0, "UNKNOWN");
 }
