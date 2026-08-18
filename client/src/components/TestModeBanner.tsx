@@ -27,9 +27,10 @@ export function TestModeBanner() {
   if (!testMode) return null;
 
   return (
-    <div className="flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-center text-sm font-semibold tracking-wide text-amber-950">
+    <div className="flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-center text-xs font-semibold tracking-wide text-amber-950 sm:text-sm">
       <span aria-hidden="true">⚠️</span>
-      <span>Test rejimi (Beta version) — sayt sinov rejimida ishlayapti, xatoliklar yuzaga kelishi mumkin</span>
+      <span className="hidden sm:inline">Test rejimi (Beta version) — sayt sinov rejimida ishlayapti, xatoliklar yuzaga kelishi mumkin</span>
+      <span className="sm:hidden">Test rejimi — sayt sinovda</span>
     </div>
   );
 }

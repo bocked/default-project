@@ -67,8 +67,8 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
   }
 
   return (
-    <figure className="animate-slide-up rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none">
-      <blockquote className="font-serif text-lg leading-relaxed text-slate-800 dark:text-slate-100">
+    <figure className="animate-slide-up rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none sm:p-5">
+      <blockquote className="font-serif text-base leading-relaxed text-slate-800 dark:text-slate-100 md:text-lg">
         <span className="mr-1 text-blue-600 dark:text-blue-400">&ldquo;</span>
         {quote.text}
         <span className="ml-1 text-blue-600 dark:text-blue-400">&rdquo;</span>
@@ -76,10 +76,10 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
 
       {quote.telegramUrl && <TelegramPost url={quote.telegramUrl} />}
 
-      <figcaption className="mt-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="font-medium text-slate-700 dark:text-slate-300">{quote.displayAuthor}</span>
-          <span className="text-xs text-slate-400 dark:text-slate-500">{formatDate(quote.createdAt)}</span>
+      <figcaption className="mt-4 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-sm">
+          <span className="truncate font-medium text-slate-700 dark:text-slate-300">{quote.displayAuthor}</span>
+          <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{formatDate(quote.createdAt)}</span>
         </div>
         <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
           {quote.category.name}
@@ -101,13 +101,13 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
         </div>
       )}
 
-      <div className="mt-3 flex items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 dark:border-slate-800 sm:gap-3">
         <button
           type="button"
           disabled={busy}
           onClick={() => void toggleLike()}
           aria-pressed={liked}
-          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition disabled:opacity-60 ${
+          className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition disabled:opacity-60 ${
             liked
               ? "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400"
               : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
@@ -123,7 +123,7 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
           <span>{likeCount}</span>
         </button>
 
-        <span className="inline-flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
+        <span className="inline-flex min-h-[40px] items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             <path
@@ -141,7 +141,7 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
           onClick={() => void shareAsImage()}
           title="Rasm sifatida ulashish yoki yuklab olish"
           aria-label="Rasm sifatida ulashish"
-          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-200 disabled:opacity-60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+          className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-200 disabled:opacity-60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
         >
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="18" cy="5" r="3" />

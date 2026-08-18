@@ -10,10 +10,10 @@ import { TestModeBanner } from "./TestModeBanner";
 import type { Category, Tag } from "@/lib/types";
 
 const navLink =
-  "rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white";
+  "rounded-lg px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white";
 
 const dropdownButton = (active: boolean) =>
-  `flex items-center gap-1 rounded-lg px-3 py-1.5 transition ${
+  `flex items-center gap-1 rounded-lg px-3 py-2 text-sm transition ${
     active
       ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white"
       : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
@@ -25,10 +25,12 @@ const panel =
 export function NavBar() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   function handleLogout(): void {
     logout();
     router.push("/");
+    setMobileOpen(false);
   }
 
   return (
@@ -41,7 +43,9 @@ export function NavBar() {
           </span>
           Iqtibosim
         </Link>
-        <nav className="flex items-center gap-1 text-sm">
+
+        {/* Desktop nav */}
+        <nav className="hidden items-center gap-1 text-sm sm:flex">
           <ThemeToggle />
           <Link href="/" className={navLink}>
             Bosh sahifa
@@ -54,28 +58,81 @@ export function NavBar() {
             Profil
           </Link>
           {user?.role === "ADMIN" && (
-            <Link href="/admin" className="rounded-lg px-3 py-1.5 text-amber-700 transition hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-950">
+            <Link href="/admin" className="rounded-lg px-3 py-2 text-sm text-amber-700 transition hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-950">
               Admin
             </Link>
           )}
           {user ? (
-            <button
-              type="button"
-              onClick={handleLogout}
-              className={navLink}
-            >
+            <button type="button" onClick={handleLogout} className={navLink}>
               Chiqish
             </button>
           ) : (
             <Link
               href="/login"
-              className="ml-1 rounded-lg bg-blue-600 px-3.5 py-1.5 font-medium text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
+              className="ml-1 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
             >
               Kirish
             </Link>
           )}
         </nav>
+
+        {/* Mobile: theme toggle + hamburger */}
+        <div className="flex items-center gap-1 sm:hidden">
+          <ThemeToggle />
+          <button
+            type="button"
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-label="Menyu"
+            className="grid h-9 w-9 place-items-center rounded-lg text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            {mobileOpen ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-5 w-5">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-5 w-5">
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            )}
+          </button>
+        </div>
       </div>
+
+      {/* Mobile menu dropdown */}
+      {mobileOpen && (
+        <nav className="border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950 sm:hidden">
+          <div className="flex flex-col gap-1">
+            <Link href="/" className={navLink} onClick={() => setMobileOpen(false)}>
+              Bosh sahifa
+            </Link>
+            <MobileFilterDropdowns onClose={() => setMobileOpen(false)} />
+            <Link href="/about" className={navLink} onClick={() => setMobileOpen(false)}>
+              Sayt haqida
+            </Link>
+            <Link href="/profile" className={navLink} onClick={() => setMobileOpen(false)}>
+              Profil
+            </Link>
+            {user?.role === "ADMIN" && (
+              <Link href="/admin" className="rounded-lg px-3 py-2 text-sm text-amber-700 transition hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-950" onClick={() => setMobileOpen(false)}>
+                Admin
+              </Link>
+            )}
+            {user ? (
+              <button type="button" onClick={handleLogout} className={`${navLink} text-left`}>
+                Chiqish
+              </button>
+            ) : (
+              <Link
+                href="/login"
+                className="mt-1 rounded-lg bg-blue-600 px-3.5 py-2.5 text-center text-sm font-medium text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
+                onClick={() => setMobileOpen(false)}
+              >
+                Kirish
+              </Link>
+            )}
+          </div>
+        </nav>
+      )}
     </header>
   );
 }
@@ -107,6 +164,33 @@ function FilterDropdowns() {
     <div ref={rootRef} className="flex items-center gap-1">
       <SearchDropdown open={open === "search"} onToggle={() => setOpen(open === "search" ? null : "search")} />
       <FiltersDropdown open={open === "filters"} onToggle={() => setOpen(open === "filters" ? null : "filters")} />
+    </div>
+  );
+}
+
+function MobileFilterDropdowns({ onClose }: { onClose: () => void }) {
+  const [open, setOpen] = useState<OpenMenu>(null);
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex gap-1">
+        <button type="button" onClick={() => setOpen(open === "search" ? null : "search")} className={dropdownButton(open === "search")}>
+          Qidiruv
+        </button>
+        <button type="button" onClick={() => setOpen(open === "filters" ? null : "filters")} className={dropdownButton(open === "filters")}>
+          Filtrlar
+        </button>
+      </div>
+      {open === "search" && (
+        <Suspense fallback={null}>
+          <SearchPanel onClose={() => { onClose(); }} />
+        </Suspense>
+      )}
+      {open === "filters" && (
+        <Suspense fallback={null}>
+          <FiltersPanel onClose={() => { onClose(); }} />
+        </Suspense>
+      )}
     </div>
   );
 }
@@ -178,18 +262,18 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className={`${panel} w-80`}>
+    <div className={`${panel} w-72 sm:w-80`}>
       <form onSubmit={onSubmit} className="flex gap-2">
         <input
           autoFocus
           value={text}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Iqtibos, muallif yoki heshteg..."
-          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:border-blue-500"
+          className="min-h-[44px] w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:border-blue-500"
         />
         <button
           type="submit"
-          className="shrink-0 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
+          className="min-h-[44px] shrink-0 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
         >
           Qidirish
         </button>
@@ -201,7 +285,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
 function FiltersDropdown({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
     <div className="relative">
-      <DropdownTrigger label="Kategoriyalar va Heshteglar" open={open} onToggle={onToggle} />
+      <DropdownTrigger label="Filtrlar" open={open} onToggle={onToggle} />
       {open && (
         <Suspense fallback={null}>
           <FiltersPanel onClose={onToggle} />
@@ -253,7 +337,7 @@ function FiltersPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className={`${panel} w-80`}>
+    <div className={`${panel} w-72 sm:w-80`}>
       <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
         Kategoriyalar
       </p>
@@ -287,7 +371,7 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+      className={`min-h-[36px] rounded-full border px-3 py-1 text-xs font-medium transition ${
         active
           ? "border-blue-600 bg-blue-600 text-white"
           : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"

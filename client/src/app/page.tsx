@@ -149,8 +149,8 @@ function HomeInner() {
       {showGame && <ServerGame onReady={handleGameReady} />}
 
       <section className="pt-2 text-center">
-        <h1 className="font-serif text-4xl font-bold text-slate-900 dark:text-white">{heroTitle}</h1>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{heroSubtitle}</p>
+        <h1 className="font-serif text-3xl font-bold text-slate-900 dark:text-white md:text-4xl">{heroTitle}</h1>
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">{heroSubtitle}</p>
       </section>
 
       <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
@@ -176,7 +176,7 @@ function HomeInner() {
       </div>
 
       {error && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-900/50 dark:bg-rose-950/40">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-center dark:border-rose-900/50 dark:bg-rose-950/40 sm:p-6">
           <p className="text-sm font-medium text-rose-700 dark:text-rose-300">{error}</p>
           <p className="mt-1 text-xs text-rose-500 dark:text-rose-400">
             Server vaqtincha javob bermasligi mumkin. Qayta urinib ko&apos;ring yoki birozdan keyin kiring.
@@ -184,7 +184,7 @@ function HomeInner() {
           <button
             type="button"
             onClick={() => void fetchQuotes(page)}
-            className="mt-3 rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 dark:hover:bg-rose-500"
+            className="mt-3 min-h-[44px] rounded-xl bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700 dark:hover:bg-rose-500"
           >
             Qayta urinish
           </button>
@@ -209,7 +209,7 @@ function HomeInner() {
             type="button"
             onClick={loadMore}
             disabled={loading}
-            className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-400 hover:text-blue-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-500 dark:hover:text-blue-400"
+            className="min-h-[44px] rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-400 hover:text-blue-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-500 dark:hover:text-blue-400"
           >
             {loading ? "Yuklanmoqda..." : `Ko'proq ko'rsatish (yana ${remaining} ta)`}
           </button>

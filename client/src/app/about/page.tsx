@@ -21,7 +21,7 @@ function Section({
   return (
     <section
       id={id}
-      className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none"
+      className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none sm:p-6"
     >
       <div className="flex items-center gap-3">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-blue-600 text-sm font-bold text-white">
@@ -52,9 +52,9 @@ function FeatureList({ items }: { items: Array<{ title: string; text: string }> 
 
 export default function AboutPage() {
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-4 py-12">
+    <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:py-12">
       <header className="text-center">
-        <h1 className="font-serif text-3xl font-bold text-slate-900 dark:text-white">Sayt haqida</h1>
+        <h1 className="font-serif text-2xl font-bold text-slate-900 dark:text-white sm:text-3xl">Sayt haqida</h1>
         <p className="mx-auto mt-3 max-w-xl text-sm text-slate-500 dark:text-slate-400">
           Iqtibosim — dono fikrlarni to&apos;playdigan, bo&apos;limlar va heshteglar bo&apos;yicha saralanadigan,
           har bir iqtibos moderatsiyadan o&apos;tadigan iqtiboslar sayti.

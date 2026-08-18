@@ -26,7 +26,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
       <WwwUzTracker />
       <AnnouncementsBanner />
       <NavBar />
-      <main className={`mx-auto w-full flex-1 px-4 py-6 ${isAdmin ? "max-w-6xl" : "max-w-3xl"}`}>
+      <main className={`mx-auto w-full flex-1 px-4 py-4 sm:py-6 ${isAdmin ? "max-w-6xl" : "max-w-3xl"}`}>
         {children}
       </main>
       <footer className="border-t border-slate-200 py-4 text-center text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
