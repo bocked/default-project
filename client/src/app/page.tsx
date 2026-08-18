@@ -4,10 +4,13 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { QuoteCard } from "@/components/QuoteCard";
+import { ServerGame } from "@/components/ServerGame";
 import type { PaginatedQuotes, Quote } from "@/lib/types";
 
 /** If a request takes longer than this, show an error fallback instead of hanging. */
 const LOADING_TIMEOUT_MS = 12000;
+/** After this many ms of initial loading (no quotes yet), show the mini-game. */
+const GAME_DELAY_MS = 4000;
 
 export default function Home() {
   return (
@@ -25,6 +28,7 @@ function HomeInner() {
   const [content, setContent] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showGame, setShowGame] = useState(false);
   const requestIdRef = useRef(0);
 
   // Search, category and tag filters are owned by the NavBar dropdowns and
@@ -97,6 +101,27 @@ function HomeInner() {
     return () => window.clearTimeout(id);
   }, [fetchQuotes, page]);
 
+  // Show the mini-game after GAME_DELAY_MS of initial loading (no quotes yet).
+  useEffect(() => {
+    if (!loading || quotes.length > 0) return;
+    const id = window.setTimeout(() => setShowGame(true), GAME_DELAY_MS);
+    return () => window.clearTimeout(id);
+  }, [loading, quotes.length]);
+
+  // Also show the game immediately when an error is set (server failed).
+  useEffect(() => {
+    if (!error) return;
+    const id = window.setTimeout(() => setShowGame(true), 0);
+    return () => window.clearTimeout(id);
+  }, [error]);
+
+  // When the health-check in ServerGame succeeds, hide the game and re-fetch.
+  const handleGameReady = useCallback(() => {
+    setShowGame(false);
+    setError(null);
+    void fetchQuotes(page);
+  }, [fetchQuotes, page]);
+
   useEffect(() => {
     void api<{ content: Record<string, string> }>("/api/content")
       .then((data) => setContent(data.content))
@@ -121,6 +146,8 @@ function HomeInner() {
 
   return (
     <div className="space-y-6">
+      {showGame && <ServerGame onReady={handleGameReady} />}
+
       <section className="pt-2 text-center">
         <h1 className="font-serif text-4xl font-bold text-slate-900 dark:text-white">{heroTitle}</h1>
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{heroSubtitle}</p>
