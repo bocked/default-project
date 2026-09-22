@@ -4,8 +4,10 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { QuoteCard } from "@/components/QuoteCard";
+import { QuoteCardSkeleton } from "@/components/QuoteCardSkeleton";
+import { QuoteOfDay } from "@/components/QuoteOfDay";
 import { ServerGame } from "@/components/ServerGame";
-import type { PaginatedQuotes, Quote } from "@/lib/types";
+import type { PaginatedQuotes, Quote, SortKey } from "@/lib/types";
 
 /** If a request takes longer than this, show an error fallback instead of hanging. */
 const LOADING_TIMEOUT_MS = 12000;
@@ -37,6 +39,7 @@ function HomeInner() {
   const q = searchParams.get("q")?.trim() ?? "";
   const category = searchParams.get("category") ?? "";
   const tag = searchParams.get("tag") ?? "";
+  const sort = (searchParams.get("sort") as SortKey) || "newest";
   const page = Math.max(1, Number(searchParams.get("page") ?? 1));
 
   const heroTitle = content["hero.title"] ?? "Iqtibosim";
@@ -52,7 +55,7 @@ function HomeInner() {
       setTotal(0);
     }, 0);
     return () => window.clearTimeout(id);
-  }, [q, category, tag]);
+  }, [q, category, tag, sort]);
 
   const fetchQuotes = useCallback(
     async (nextPage: number) => {
@@ -72,6 +75,7 @@ function HomeInner() {
         if (q) params.set("q", q);
         if (category) params.set("category", category);
         if (tag) params.set("tag", tag);
+        if (sort !== "newest") params.set("sort", sort);
         params.set("page", String(nextPage));
         const qs = params.toString();
         const data = await api<PaginatedQuotes>(`/api/quotes${qs ? `?${qs}` : ""}`);
@@ -91,7 +95,7 @@ function HomeInner() {
         if (requestId === requestIdRef.current) setLoading(false);
       }
     },
-    [q, category, tag]
+    [q, category, tag, sort]
   );
 
   useEffect(() => {
@@ -137,6 +141,7 @@ function HomeInner() {
     if (q) params.set("q", q);
     if (category) params.set("category", category);
     if (tag) params.set("tag", tag);
+    if (sort !== "newest") params.set("sort", sort);
     params.set("page", String(page + 1));
     router.push(`/?${params.toString()}`, { scroll: false });
   }
@@ -152,6 +157,8 @@ function HomeInner() {
         <h1 className="font-serif text-3xl font-bold text-slate-900 dark:text-white md:text-4xl">{heroTitle}</h1>
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">{heroSubtitle}</p>
       </section>
+
+      {!activeFilter && !error && <QuoteOfDay />}
 
       <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
         <span>
@@ -197,11 +204,21 @@ function HomeInner() {
         </div>
       )}
 
+      {loading && quotes.length === 0 && !error && (
+        <div className="space-y-4" aria-busy="true">
+          <QuoteCardSkeleton />
+          <QuoteCardSkeleton />
+          <QuoteCardSkeleton />
+        </div>
+      )}
+
       <div className="space-y-4">
         {quotes.map((quote) => (
           <QuoteCard key={quote.id} quote={quote} />
         ))}
       </div>
+
+      {loading && quotes.length > 0 && <QuoteCardSkeleton />}
 
       {remaining > 0 && !error && (
         <div className="flex justify-center pt-1">

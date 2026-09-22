@@ -1,9 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { SiteShell } from "@/components/SiteShell";
+import { ToastProvider } from "@/components/ToastProvider";
+import { PwaRegister } from "@/components/PwaRegister";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -24,6 +26,19 @@ const themeInit = `(function(){try{var t=localStorage.getItem('iqtibosim_theme')
 export const metadata: Metadata = {
   title: "Iqtibosim — iqtiboslar to'plami",
   description: "Fikrlarni to'playdigan, bo'limlar va heshteglar bo'yicha saralanadigan iqtiboslar sayti.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Iqtibosim" },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#2563eb",
 };
 
 export default function RootLayout({
@@ -37,9 +52,12 @@ export default function RootLayout({
         <Script id="theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
       <body className="min-h-screen bg-background text-foreground">
-        <AuthProvider>
-          <SiteShell>{children}</SiteShell>
-        </AuthProvider>
+        <PwaRegister />
+        <ToastProvider>
+          <AuthProvider>
+            <SiteShell>{children}</SiteShell>
+          </AuthProvider>
+        </ToastProvider>
       </body>
     </html>
   );

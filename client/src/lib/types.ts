@@ -1,3 +1,5 @@
+export type SortKey = "newest" | "most-liked" | "most-viewed";
+
 export interface ServerConfig {
   url: string;
 }

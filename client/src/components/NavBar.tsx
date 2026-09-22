@@ -7,7 +7,13 @@ import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { ThemeToggle } from "./ThemeToggle";
 import { TestModeBanner } from "./TestModeBanner";
-import type { Category, Tag } from "@/lib/types";
+import type { Category, SortKey, Tag } from "@/lib/types";
+
+const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
+  { key: "newest", label: "Eng yangi" },
+  { key: "most-liked", label: "Mashhur" },
+  { key: "most-viewed", label: "Ko‘p ko‘rilgan" },
+];
 
 const navLink =
   "rounded-lg px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white";
@@ -303,6 +309,7 @@ function FiltersPanel({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   const category = searchParams.get("category") ?? "";
   const tag = searchParams.get("tag") ?? "";
+  const sort = (searchParams.get("sort") as SortKey) || "newest";
 
   useEffect(() => {
     let cancelled = false;
@@ -320,7 +327,7 @@ function FiltersPanel({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  function apply(updates: { category?: string; tag?: string }): void {
+  function apply(updates: { category?: string; tag?: string; sort?: SortKey }): void {
     const params = new URLSearchParams(searchParams.toString());
     if ("category" in updates) {
       if (updates.category) params.set("category", updates.category);
@@ -329,6 +336,10 @@ function FiltersPanel({ onClose }: { onClose: () => void }) {
     if ("tag" in updates) {
       if (updates.tag) params.set("tag", updates.tag);
       else params.delete("tag");
+    }
+    if ("sort" in updates) {
+      if (updates.sort && updates.sort !== "newest") params.set("sort", updates.sort);
+      else params.delete("sort");
     }
     params.delete("page");
     const qs = params.toString();
@@ -339,6 +350,16 @@ function FiltersPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className={`${panel} w-72 sm:w-80`}>
       <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        Saralash
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {SORT_OPTIONS.map((opt) => (
+          <FilterChip key={opt.key} active={sort === opt.key} onClick={() => apply({ sort: opt.key })}>
+            {opt.label}
+          </FilterChip>
+        ))}
+      </div>
+      <p className="mb-1.5 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
         Kategoriyalar
       </p>
       <div className="flex flex-wrap gap-1.5">
