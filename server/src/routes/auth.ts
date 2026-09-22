@@ -23,6 +23,8 @@ import {
 import { sendVerificationEmail, sendPasswordResetEmail } from "../lib/email.js";
 import { getBotUsername, sendAdminNotification } from "../lib/telegram.js";
 import { recordActivity } from "../lib/activity.js";
+import { publishedPolicyVersion } from "../lib/policies.js";
+import { PolicyType } from "@prisma/client";
 import {
   validateBody,
   registerSchema,
@@ -66,6 +68,7 @@ interface SafeUser {
   isPremium: boolean;
   premiumExpiresAt: Date | null;
   customWatermark: string | null;
+  avatarUrl: string | null;
   isSuperApproved: boolean;
   superApprovedAt: Date | null;
   acceptedTermsVersion: string | null;
@@ -84,7 +87,14 @@ function roleForEmail(email: string | null, current: UserRole): UserRole {
   return current;
 }
 
-function toUser(user: Omit<SafeUser, "termsRequired" | "currentTermsVersion">): SafeUser {
+/** Serializes a Prisma user for the client. The terms version is read from the
+ *  published DB policy (falling back to config); `termsRequired` therefore
+ *  turns true whenever a SUPER_ADMIN approves a new TERMS document. */
+async function toUser(
+  user: Omit<SafeUser, "termsRequired" | "currentTermsVersion">,
+  currentTermsVersion?: string,
+): Promise<SafeUser> {
+  const termsVersion = currentTermsVersion ?? (await publishedPolicyVersion(PolicyType.TERMS));
   return {
     id: user.id,
     email: user.email,
@@ -100,11 +110,12 @@ function toUser(user: Omit<SafeUser, "termsRequired" | "currentTermsVersion">): 
     isPremium: user.isPremium,
     premiumExpiresAt: user.premiumExpiresAt,
     customWatermark: user.customWatermark,
+    avatarUrl: user.avatarUrl,
     isSuperApproved: user.isSuperApproved,
     superApprovedAt: user.superApprovedAt,
     acceptedTermsVersion: user.acceptedTermsVersion,
-    termsRequired: user.acceptedTermsVersion !== config.currentTermsVersion,
-    currentTermsVersion: config.currentTermsVersion,
+    termsRequired: user.acceptedTermsVersion !== termsVersion,
+    currentTermsVersion: termsVersion,
     createdAt: user.createdAt,
   };
 }
@@ -130,6 +141,7 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
     res.status(409).json({ error: "Bu email allaqachon ro'yxatdan o'tgan" });
     return;
   }
+  const termsVersion = await publishedPolicyVersion(PolicyType.TERMS);
   const user = await prisma.user.create({
     data: {
       email: body.email,
@@ -137,7 +149,7 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
       name: body.name ?? null,
       nickname: body.nickname ?? null,
       role: roleForEmail(body.email, "USER"),
-      acceptedTermsVersion: config.currentTermsVersion,
+      acceptedTermsVersion: termsVersion,
     },
   });
   await issueVerification(user.email!);
@@ -145,7 +157,7 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
   const handle = [user.nickname, user.name].filter(Boolean).join(" / ") || user.email!;
   void sendAdminNotification(`🆕 Yangi foydalanuvchi ro'yxatdan o'tdi\n\n${user.email}${handle !== user.email ? `\n${handle}` : ""}`);
   void recordActivity({ userId: user.id, action: "REGISTER", detail: user.email! });
-  res.status(201).json({ token: signAuthToken(user.id), user: toUser(user) });
+  res.status(201).json({ token: signAuthToken(user.id), user: await toUser(user, termsVersion) });
 });
 
 // POST /api/auth/login
@@ -168,7 +180,7 @@ authRouter.post("/login", validateBody(loginSchema), async (_req, res) => {
       ? await prisma.user.update({ where: { id: user.id }, data: { role: targetRole } })
       : user;
   void recordActivity({ userId: current.id, action: "LOGIN", detail: current.email ?? current.telegramUsername ?? "telegram" });
-  res.json({ token: signAuthToken(user.id), user: toUser(current) });
+  res.json({ token: signAuthToken(user.id), user: await toUser(current) });
 });
 
 // POST /api/auth/verify-email
@@ -237,8 +249,8 @@ authRouter.post("/reset-password", validateBody(resetPasswordSchema), async (_re
 });
 
 // GET /api/auth/me
-authRouter.get("/me", requireAuth, (req, res) => {
-  res.json({ user: toUser(req.user!) });
+authRouter.get("/me", requireAuth, async (req, res) => {
+  res.json({ user: await toUser(req.user!) });
 });
 
 // POST /api/auth/accept-terms - record consent for the current Terms of Use
@@ -246,7 +258,8 @@ authRouter.get("/me", requireAuth, (req, res) => {
 // older version; the client must call this before letting the user in.
 authRouter.post("/accept-terms", requireAuth, validateBody(acceptTermsSchema), async (req, res) => {
   const body = res.locals.body as AcceptTerms;
-  if (body.version !== config.currentTermsVersion) {
+  const termsVersion = await publishedPolicyVersion(PolicyType.TERMS);
+  if (body.version !== termsVersion) {
     res.status(400).json({
       error: "Qoidalarning eski versiyasi. Yangi shartlarga rozilik bering",
       code: "TERMS_VERSION_MISMATCH",
@@ -255,20 +268,26 @@ authRouter.post("/accept-terms", requireAuth, validateBody(acceptTermsSchema), a
   }
   const updated = await prisma.user.update({
     where: { id: req.user!.id },
-    data: { acceptedTermsVersion: config.currentTermsVersion },
+    data: { acceptedTermsVersion: termsVersion },
   });
-  res.json({ ok: true, user: toUser(updated) });
+  res.json({ ok: true, user: await toUser(updated, termsVersion) });
 });
 
-// PATCH /api/auth/me - update real name / nickname
+// PATCH /api/auth/me - update real name / nickname / avatar
 authRouter.patch("/me", requireAuth, validateBody(updateProfileSchema), async (req, res) => {
   const body = res.locals.body as UpdateProfile;
-  const data: { name?: string | null; nickname?: string | null; customWatermark?: string | null } = {};
+  const data: {
+    name?: string | null;
+    nickname?: string | null;
+    customWatermark?: string | null;
+    avatarUrl?: string | null;
+  } = {};
   if (body.name !== undefined) data.name = body.name;
   if (body.nickname !== undefined) data.nickname = body.nickname;
   if (body.customWatermark !== undefined) data.customWatermark = body.customWatermark;
+  if (body.avatarUrl !== undefined) data.avatarUrl = body.avatarUrl;
   const user = await prisma.user.update({ where: { id: req.user!.id }, data });
-  res.json({ user: toUser(user) });
+  res.json({ user: await toUser(user) });
 });
 
 // POST /api/auth/telegram/session - start phone verification via Telegram.
@@ -319,7 +338,7 @@ authRouter.post("/telegram/verify", requireAuth, validateBody(telegramVerifySche
       telegramVerifyChatId: null,
     },
   });
-  res.json({ ok: true, user: toUser(updated) });
+  res.json({ ok: true, user: await toUser(updated) });
 });
 
 // ---------------------------------------------------------------------------
@@ -387,7 +406,7 @@ authRouter.post("/telegram/quick/status", validateBody(telegramQuickSessionSchem
     // One token per completion: consume the session so it cannot be re-polled.
     await prisma.telegramQuickSession.delete({ where: { id: session.id } });
     void recordActivity({ userId: user.id, action: "LOGIN", detail: user.email ?? user.telegramUsername ?? "telegram" });
-    res.json({ status: "COMPLETE", token: signAuthToken(user.id), user: toUser(user) });
+    res.json({ status: "COMPLETE", token: signAuthToken(user.id), user: await toUser(user) });
     return;
   }
   res.json({ status: "PENDING" });
@@ -408,13 +427,14 @@ authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), asy
     res.status(409).json({ error: "Bu email allaqachon ro'yxatdan o'tgan" });
     return;
   }
+  const termsVersion = await publishedPolicyVersion(PolicyType.TERMS);
   const updated = await prisma.user.update({
     where: { id: user.id },
     data: {
       email: body.email,
       passwordHash: await hashPassword(body.password),
       quickLogin: false,
-      acceptedTermsVersion: config.currentTermsVersion,
+      acceptedTermsVersion: termsVersion,
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.nickname !== undefined ? { nickname: body.nickname } : {}),
       role: roleForEmail(body.email, user.role),
@@ -422,5 +442,5 @@ authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), asy
   });
   await issueVerification(updated.email!);
   void recordActivity({ userId: updated.id, action: "REGISTER", detail: updated.email ?? "" });
-  res.json({ token: signAuthToken(updated.id), user: toUser(updated) });
+  res.json({ token: signAuthToken(updated.id), user: await toUser(updated, termsVersion) });
 });

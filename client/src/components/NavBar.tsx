@@ -60,6 +60,9 @@ export function NavBar() {
           <Link href="/about" className={navLink}>
             Sayt haqida
           </Link>
+          <Link href="/tests" className={navLink}>
+            Testlar
+          </Link>
           <Link href="/profile" className={navLink}>
             Profil
           </Link>
@@ -114,6 +117,9 @@ export function NavBar() {
             <MobileFilterDropdowns onClose={() => setMobileOpen(false)} />
             <Link href="/about" className={navLink} onClick={() => setMobileOpen(false)}>
               Sayt haqida
+            </Link>
+            <Link href="/tests" className={navLink} onClick={() => setMobileOpen(false)}>
+              Testlar
             </Link>
             <Link href="/profile" className={navLink} onClick={() => setMobileOpen(false)}>
               Profil

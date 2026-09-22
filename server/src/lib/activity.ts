@@ -9,7 +9,9 @@ export interface ActivityEntry {
     | "QUOTE_LIKE"
     | "QUOTE_COMMENT"
     | "PROFILE_UPDATE"
-    | "FEEDBACK";
+    | "FEEDBACK"
+    | "QUIZ_CREATE"
+    | "QUIZ_ATTEMPT";
   detail?: string;
   targetId?: string;
 }

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
+import { Avatar } from "@/components/Avatar";
 import { QuoteCard } from "@/components/QuoteCard";
 import type { PublicUserProfileData } from "@/lib/types";
 
@@ -56,13 +57,21 @@ function UserProfile() {
 
   return (
     <div className="space-y-6">
-      <section className="text-center">
-        <h1 className="flex items-center justify-center gap-2 font-serif text-2xl font-bold text-slate-900 dark:text-white">
-          {displayName}
-        </h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          A&apos;zo: {new Date(data.user.createdAt).toLocaleDateString("uz-UZ")} · {data.quotes.length} ta iqtibos
-        </p>
+      <section className="flex flex-col items-center gap-3 text-center">
+        <Avatar
+          url={data.user.avatarUrl}
+          name={data.user.nickname}
+          size={72}
+          className="border border-slate-200 dark:border-slate-700"
+        />
+        <div>
+          <h1 className="flex items-center justify-center gap-2 font-serif text-2xl font-bold text-slate-900 dark:text-white">
+            {displayName}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            A&apos;zo: {new Date(data.user.createdAt).toLocaleDateString("uz-UZ")} · {data.quotes.length} ta iqtibos
+          </p>
+        </div>
       </section>
 
       {data.quotes.length === 0 ? (

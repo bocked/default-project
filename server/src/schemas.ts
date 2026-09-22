@@ -109,6 +109,16 @@ export const updateProfileSchema = z.object({
     .max(50)
     .optional()
     .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+  // Public avatar image URL (https only). Empty clears it.
+  avatarUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v))
+    .refine((v) => v === undefined || v === null || /^https?:\/\//i.test(v), {
+      message: "Avatar havolasi http(s) bilan boshlanishi kerak",
+    }),
 });
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 
@@ -301,6 +311,74 @@ export const telegramBanSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 export type TelegramBan = z.infer<typeof telegramBanSchema>;
+
+// ---------------------------------------------------------------------------
+// Legal policies (TERMS/PRIVACY/COOKIES) + quizzes
+// ---------------------------------------------------------------------------
+
+export const policyTypeSchema = z.enum(["TERMS", "PRIVACY", "COOKIES"]);
+export type PolicyTypeInput = z.infer<typeof policyTypeSchema>;
+
+export const policyDraftCreateSchema = z.object({
+  type: policyTypeSchema,
+  changeSummary: z.string().trim().max(300).optional(),
+});
+export type PolicyDraftCreate = z.infer<typeof policyDraftCreateSchema>;
+
+export const policyEditSchema = z.object({
+  content: z.string().trim().min(1).max(40000),
+  changeSummary: z
+    .string()
+    .trim()
+    .max(300)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+  changeReason: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+});
+export type PolicyEdit = z.infer<typeof policyEditSchema>;
+
+export const policyApproveSchema = z.object({
+  changeReason: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+});
+export type PolicyApprove = z.infer<typeof policyApproveSchema>;
+
+export const quizQuestionSchema = z
+  .object({
+    question: z.string().trim().min(1).max(500),
+    options: z.array(z.string().trim().min(1).max(200)).min(2).max(8),
+    correctIndex: z.number().int().min(0).max(7),
+  })
+  .refine((q) => q.correctIndex < q.options.length, {
+    message: "To'g'ri javob indeksi variantlar sonidan kichik bo'lishi kerak",
+  });
+export type QuizQuestionInput = z.infer<typeof quizQuestionSchema>;
+
+export const quizCreateSchema = z.object({
+  title: z.string().trim().min(3).max(150),
+  description: z.string().trim().max(1000).optional(),
+  questions: z.array(quizQuestionSchema).min(1).max(30),
+});
+export type QuizCreate = z.infer<typeof quizCreateSchema>;
+
+export const quizAnswersSchema = z.object({
+  answers: z.array(z.number().int().min(0).max(7)).min(1).max(30),
+});
+export type QuizAnswers = z.infer<typeof quizAnswersSchema>;
+
+export const quizRejectSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+export type QuizReject = z.infer<typeof quizRejectSchema>;
 
 /**
  * Parses unknown socket/request data against a schema. Returns `null` when the

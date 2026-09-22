@@ -28,6 +28,30 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   next();
 }
 
+/** Attaches `req.user` when a valid Bearer token is presented; otherwise the
+ *  request continues as a guest. Used by public routes that personalize the
+ *  response (quiz detail returns the caller's last attempt, quote detail its
+ *  liked state) without forcing authentication. */
+export async function optionalAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const token = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) {
+    next();
+    return;
+  }
+  const payload = verifyAuthToken(token);
+  if (!payload) {
+    next();
+    return;
+  }
+  const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+  if (!user || user.blocked) {
+    next();
+    return;
+  }
+  req.user = user;
+  next();
+}
+
 /** True for a profile that can post without the email/phone verification:
  *  either verified normally, manually cleared by a SUPER_ADMIN, or VIP. */
 export function profileCanPost(user: {

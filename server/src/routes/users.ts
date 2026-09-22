@@ -21,6 +21,7 @@ usersRouter.get("/:id", async (req, res) => {
         isPremium: true,
         premiumExpiresAt: true,
         createdAt: true,
+        avatarUrl: true,
       },
     });
     if (!user) {
@@ -37,6 +38,7 @@ usersRouter.get("/:id", async (req, res) => {
       user: {
         id: user.id,
         nickname: user.nickname,
+        avatarUrl: user.avatarUrl,
         isPremium: isPremiumActive(user),
         createdAt: user.createdAt,
       },

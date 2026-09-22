@@ -19,6 +19,7 @@ export interface User {
   isPremium?: boolean;
   premiumExpiresAt?: string | null;
   customWatermark?: string | null;
+  avatarUrl?: string | null;
   isSuperApproved?: boolean;
   superApprovedAt?: string | null;
   /** Terms of Use version this account last accepted, and whether the current
@@ -86,6 +87,7 @@ export interface PaginatedQuotes {
 export interface PublicUserProfile {
   id: string;
   nickname: string | null;
+  avatarUrl?: string | null;
   isPremium?: boolean;
   createdAt: string;
 }
@@ -289,4 +291,142 @@ export interface TelegramBanUser {
   telegramId: string | null;
   blockedAt: string | null;
   createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Legal policies (DB-backed, versioned) and Testlar (quizzes)
+// ---------------------------------------------------------------------------
+
+export type PolicyType = "TERMS" | "PRIVACY" | "COOKIES";
+
+export interface PolicyContent {
+  type: PolicyType;
+  version: string;
+  content: string;
+  changeSummary: string | null;
+  publishedAt: string | null;
+}
+
+export interface PolicyResponse {
+  policy: PolicyContent;
+  draft: { id: string; version: string; changeSummary: string | null } | null;
+}
+
+export type QuizStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface QuizQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  /** Hidden from guests / non-attempted users unless revealed. */
+  correctIndex: number | null;
+}
+
+export interface QuizAuthor {
+  id: string;
+  nickname: string | null;
+  avatarUrl: string | null;
+}
+
+export interface Quiz {
+  id: string;
+  title: string;
+  description: string | null;
+  status: QuizStatus;
+  createdAt: string;
+  questionCount: number;
+  attemptCount: number;
+  author: QuizAuthor;
+  questions?: QuizQuestion[];
+}
+
+export interface QuizListResponse {
+  quizzes: Quiz[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface QuizResultPerQuestion {
+  correct: boolean;
+  correctIndex: number;
+  yourAnswer: number;
+}
+
+export interface QuizResultSummary {
+  quizId: string;
+  title: string;
+  quizStatus: QuizStatus;
+  score: number;
+  total: number;
+  answers: QuizResultPerQuestion[];
+  updatedAt: string;
+}
+
+export interface QuizDetailResponse {
+  quiz: Quiz;
+  myResult: {
+    score: number;
+    total: number;
+    answers: QuizResultPerQuestion[];
+    updatedAt: string;
+  } | null;
+}
+
+export interface QuizAttemptResponse {
+  score: number;
+  total: number;
+  perQuestion: QuizResultPerQuestion[];
+  resultId: string;
+}
+
+export interface AdminQuiz {
+  id: string;
+  title: string;
+  description: string | null;
+  status: QuizStatus;
+  rejectionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author: {
+    id: string;
+    email: string | null;
+    nickname: string | null;
+    avatarUrl: string | null;
+  };
+  questionCount: number;
+  resultCount: number;
+  questions?: QuizQuestion[];
+}
+
+export interface AdminQuizListResponse {
+  quizzes: AdminQuiz[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface AdminPolicy {
+  id: string;
+  type: PolicyType;
+  version: string;
+  content: string;
+  isApproved: boolean;
+  changeSummary: string | null;
+  changeReason: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  current: boolean;
+}
+
+export interface AdminPolicyListResponse {
+  policies: AdminPolicy[];
+}
+
+export interface AdminPolicyTypeResponse {
+  type: PolicyType;
+  label: string;
+  published: string;
+  policies: AdminPolicy[];
 }

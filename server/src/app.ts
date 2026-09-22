@@ -11,6 +11,8 @@ import { apiRouter } from "./routes/api.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
 import { quotesRouter } from "./routes/quotes.js";
+import { quizzesRouter } from "./routes/quizzes.js";
+import { policiesRouter } from "./routes/policies.js";
 import { usersRouter } from "./routes/users.js";
 import { categoriesRouter, tagsRouter } from "./routes/catalog.js";
 import { contentRouter } from "./routes/content.js";
@@ -24,6 +26,7 @@ import { logger } from "./lib/logger.js";
 import { apiLimiter, authLimiter } from "./lib/rateLimit.js";
 import { tryEnsureDefaultCategories } from "./lib/categories.js";
 import { tryEnsureDefaultContent } from "./lib/content.js";
+import { tryEnsurePolicyBaseline, tryEnsurePolicyDrafts } from "./lib/policies.js";
 import { initSentry, setupSentryErrorHandler, captureException } from "./lib/sentry.js";
 
 export function originAllowed(origin: string): boolean {
@@ -115,6 +118,8 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
     app.use("/api/auth", authRouter);
   }
   app.use("/api/quotes", quotesRouter);
+  app.use("/api/quizzes", quizzesRouter);
+  app.use("/api/policies", policiesRouter);
   app.use("/api/users", usersRouter);
   app.use("/api/categories", categoriesRouter);
   app.use("/api/tags", tagsRouter);
@@ -182,6 +187,8 @@ export async function startServer(): Promise<void> {
     logger.info("postgres connected");
     await tryEnsureDefaultCategories();
     await tryEnsureDefaultContent();
+    await tryEnsurePolicyBaseline();
+    await tryEnsurePolicyDrafts();
     await promoteAdminEmails();
   } catch (err) {
     logger.warn({ err }, "postgres unreachable, starting anyway");

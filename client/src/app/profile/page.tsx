@@ -2,25 +2,28 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { Avatar } from "@/components/Avatar";
 import { QuoteCard } from "@/components/QuoteCard";
 import { QuoteForm } from "@/components/QuoteForm";
 import { isPremiumActive, formatPremiumExpiry } from "@/lib/premium";
-import type { Category, Quote, User } from "@/lib/types";
+import type { Category, Quote, Quiz, QuizResultSummary, User } from "@/lib/types";
+
+type ProfileTab = "quotes" | "tests" | "liked" | "settings";
+
+const TABS: Array<{ id: ProfileTab; label: string }> = [
+  { id: "quotes", label: "Iqtiboslarim" },
+  { id: "tests", label: "Testlarim" },
+  { id: "liked", label: "Saqlanganlar" },
+  { id: "settings", label: "Sozlamalar" },
+];
 
 export default function ProfilePage() {
   const { user, loading, refresh } = useAuth();
   const router = useRouter();
-
-  const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [resending, setResending] = useState(false);
-  const [resendMessage, setResendMessage] = useState<string | null>(null);
-  const [tgSession, setTgSession] = useState<{ botUsername: string; start: string } | null>(null);
-  const [tgCode, setTgCode] = useState("");
-  const [tgBusy, setTgBusy] = useState(false);
-  const [tgMessage, setTgMessage] = useState<string | null>(null);
+  const [tab, setTab] = useState<ProfileTab>("quotes");
 
   useEffect(() => {
     if (!loading && !user) {
@@ -28,21 +31,309 @@ export default function ProfilePage() {
     }
   }, [loading, user, router]);
 
-  useEffect(() => {
-    if (!user) return;
-    void api<{ quotes: Quote[] }>("/api/quotes/mine")
-      .then((data) => setQuotes(data.quotes))
-      .catch(() => setQuotes([]));
-    void api<{ categories: Category[] }>("/api/categories")
-      .then((data) => setCategories(data.categories))
-      .catch(() => setCategories([]));
-  }, [user]);
-
   // If a SUPER_ADMIN approved this account elsewhere, the cached session is
   // stale until refetched — refresh once on mount so posting unlocks at once.
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  if (loading || !user) {
+    return <p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Yuklanmoqda...</p>;
+  }
+
+  const displayName = user.nickname ? `@${user.nickname}` : user.name ?? "Mening profilim";
+
+  return (
+    <div className="space-y-6">
+      <section className="flex items-center gap-4">
+        <Avatar
+          url={user.avatarUrl}
+          name={user.nickname ?? user.name ?? user.email}
+          size={64}
+          className="border border-slate-200 dark:border-slate-700"
+        />
+        <div className="min-w-0">
+          <h1 className="truncate text-xl font-bold text-slate-900 dark:text-white">{displayName}</h1>
+          <p className="truncate text-sm text-slate-500 dark:text-slate-400">
+            {user.email ?? user.telegramUsername ?? "Telegram foydalanuvchisi"}
+          </p>
+        </div>
+      </section>
+
+      <div className="flex flex-wrap gap-1.5">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
+              tab === t.id
+                ? "border-blue-600 bg-blue-600 text-white"
+                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div key={tab} className="space-y-6">
+        {tab === "quotes" && <QuotesTab user={user} />}
+        {tab === "tests" && <TestsTab />}
+        {tab === "liked" && <LikedTab />}
+        {tab === "settings" && <SettingsTab user={user} onSaved={refresh} />}
+      </div>
+    </div>
+  );
+}
+
+function QuotesTab({ user }: { user: User }) {
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      api<{ quotes: Quote[] }>("/api/quotes/mine").catch(() => ({ quotes: [] as Quote[] })),
+      api<{ categories: Category[] }>("/api/categories").catch(() => ({ categories: [] as Category[] })),
+    ]).then(([q, c]) => {
+      if (cancelled) return;
+      setQuotes(q.quotes);
+      setCategories(c.categories);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const pendingCount = quotes.filter((q) => q.status === "PENDING").length;
+
+  // Mirrors the server's profileCanPost: anyone verified, VIP, manually
+  // approved by a SUPER_ADMIN, or holding an admin role can post.
+  const canPost =
+    user.emailVerified ||
+    user.phoneVerified ||
+    user.isSuperApproved ||
+    user.role === "ADMIN" ||
+    user.role === "SUPER_ADMIN" ||
+    isPremiumActive(user);
+
+  function handleCreated(quote: Quote): void {
+    setQuotes((prev) => [quote, ...prev]);
+  }
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        {pendingCount} ta iqtibos moderatsiyada
+      </p>
+
+      {canPost && categories.length > 0 && <QuoteForm categories={categories} onCreated={handleCreated} />}
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Mening iqtiboslarim</h2>
+          <span className="text-xs text-slate-400 dark:text-slate-500">{quotes.length} ta</span>
+        </div>
+        {quotes.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Hali iqtibos qo&apos;shmagansiz. Iqtiboslarim yorlig&apos;idagi forma orqali birinchi iqtibosingizni yuboring.
+            </p>
+          </div>
+        ) : (
+          quotes.map((quote) => <QuoteCard key={quote.id} quote={quote} showStatus />)
+        )}
+      </section>
+    </div>
+  );
+}
+
+function TestsTab() {
+  const [mine, setMine] = useState<Quiz[]>([]);
+  const [results, setResults] = useState<QuizResultSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      api<{ quizzes: Quiz[] }>("/api/quizzes/mine").catch(() => ({ quizzes: [] as Quiz[] })),
+      api<{ results: QuizResultSummary[] }>("/api/quizzes/mine/results").catch(() => ({ results: [] as QuizResultSummary[] })),
+    ]).then(([m, r]) => {
+      if (cancelled) return;
+      setMine(m.quizzes);
+      setResults(r.results);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) {
+    return <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Yuklanmoqda...</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Mening testlarim</h2>
+        <Link
+          href="/tests/create"
+          className="rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
+        >
+          Yangi test yaratish
+        </Link>
+      </div>
+
+      {mine.length === 0 && results.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Hali testlarisiz yo&apos;q. Yangi test yaratish tugmasini bosing va bilimingizni sinab ko&apos;ring.
+          </p>
+        </div>
+      ) : (
+        <>
+          {mine.length > 0 && (
+            <section className="space-y-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                Yaratgan testlarim
+              </h3>
+              {mine.map((quiz) => (
+                <QuizRow key={quiz.id} quiz={quiz} />
+              ))}
+            </section>
+          )}
+
+          {results.length > 0 && (
+            <section className="space-y-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                Natijalarim
+              </h3>
+              {results.map((r) => (
+                <ResultRow key={`${r.quizId}-${r.updatedAt}`} result={r} />
+              ))}
+            </section>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+const quizStatusStyles: Record<Quiz["status"], { label: string; className: string }> = {
+  PENDING: { label: "Kutilmoqda", className: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300" },
+  APPROVED: { label: "Tasdiqlangan", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" },
+  REJECTED: { label: "Rad etilgan", className: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" },
+};
+
+function QuizRow({ quiz }: { quiz: Quiz }) {
+  const status = quizStatusStyles[quiz.status] ?? quizStatusStyles.PENDING;
+  const body = (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="truncate text-sm font-semibold text-slate-900 dark:text-white">{quiz.title}</h4>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {quiz.questionCount} ta savol · {quiz.attemptCount} ta urinish
+          </p>
+        </div>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${status.className}`}>{status.label}</span>
+      </div>
+      {quiz.status === "REJECTED" && (
+        <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">Sabab: {quiz.description ?? "rad etildi"}</p>
+      )}
+    </div>
+  );
+  return quiz.status === "APPROVED" ? <Link href={`/tests?id=${encodeURIComponent(quiz.id)}`}>{body}</Link> : body;
+}
+
+function ResultRow({ result }: { result: QuizResultSummary }) {
+  const percent = result.total > 0 ? Math.round((result.score / result.total) * 100) : 0;
+  return (
+    <Link
+      href={`/tests?id=${encodeURIComponent(result.quizId)}`}
+      className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/70 dark:hover:border-slate-600 dark:shadow-none"
+    >
+      <span
+        className={`grid h-12 w-12 shrink-0 place-items-center rounded-full text-sm font-bold ${
+          percent >= 60
+            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+            : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+        }`}
+      >
+        {percent}%
+      </span>
+      <div className="min-w-0 flex-1">
+        <h4 className="truncate text-sm font-semibold text-slate-900 dark:text-white">{result.title}</h4>
+        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          {result.score}/{result.total} to&apos;g&apos;ri · {new Date(result.updatedAt).toLocaleDateString("uz-UZ")}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+function LikedTab() {
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api<{ quotes: Quote[] }>("/api/quotes/mine/likes")
+      .then((d) => {
+        if (cancelled) return;
+        setQuotes(d.quotes);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setQuotes([]);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) {
+    return <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Yuklanmoqda...</p>;
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Saqlangan iqtiboslar</h2>
+        <span className="text-xs text-slate-400 dark:text-slate-500">{quotes.length} ta</span>
+      </div>
+      {quotes.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Yoqtirgan iqtiboslaringiz shu yerda saqlanadi. Iqtibos kartochkasidagi yurakcha orqali saqlang.
+          </p>
+        </div>
+      ) : (
+        quotes.map((quote) => <QuoteCard key={quote.id} quote={quote} />)
+      )}
+    </section>
+  );
+}
+
+function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<User | null> }) {
+  const [resending, setResending] = useState(false);
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
+  const [tgSession, setTgSession] = useState<{ botUsername: string; start: string } | null>(null);
+  const [tgCode, setTgCode] = useState("");
+  const [tgBusy, setTgBusy] = useState(false);
+  const [tgMessage, setTgMessage] = useState<string | null>(null);
+
+  const canPost =
+    user.emailVerified ||
+    user.phoneVerified ||
+    user.isSuperApproved ||
+    user.role === "ADMIN" ||
+    user.role === "SUPER_ADMIN" ||
+    isPremiumActive(user);
 
   async function resendVerification(): Promise<void> {
     if (!user?.email) return;
@@ -90,7 +381,7 @@ export default function ProfilePage() {
       });
       setTgCode("");
       setTgSession(null);
-      await refresh();
+      await onSaved();
     } catch (err) {
       setTgMessage(err instanceof Error ? err.message : "Xatolik yuz berdi");
     } finally {
@@ -110,173 +401,125 @@ export default function ProfilePage() {
     }
   }
 
-  function handleCreated(quote: Quote): void {
-    setQuotes((prev) => [quote, ...prev]);
-  }
-
-  if (loading || !user) {
-    return <p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Yuklanmoqda...</p>;
-  }
-
-  const pendingCount = quotes.filter((q) => q.status === "PENDING").length;
-
-  // Mirrors the server's profileCanPost: anyone verified, VIP, manually
-  // approved by a SUPER_ADMIN, or holding an admin role can post.
-  const canPost =
-    user.emailVerified ||
-    user.phoneVerified ||
-    user.isSuperApproved ||
-    user.role === "ADMIN" ||
-    user.role === "SUPER_ADMIN" ||
-    isPremiumActive(user);
-
   return (
     <div className="space-y-6">
-      <section>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mening profilim</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          {user.email ?? user.telegramUsername ?? "Telegram foydalanuvchisi"} · {pendingCount} ta iqtibos moderatsiyada
-        </p>
-      </section>
-
       {user.quickLogin ? (
-        <UpgradeForm user={user} onSaved={refresh} />
+        <UpgradeForm user={user} onSaved={onSaved} />
       ) : (
-        <>
-          {!user.emailVerified && user.email && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/30">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Email hali tasdiqlanmagan</p>
-              <p className="text-xs text-amber-700 dark:text-amber-400">
-                {user.phoneVerified
-                  ? "Profil Telegram orqali faollashtirilgan, email tasdiqlash hali kutilmoqda."
-                  : canPost
-                    ? "Iqtibos joylashingiz mumkin — email/Telegram tasdiqlash profilni to'liq qilish uchun eslatib turadi."
-                    : "Iqtibos qo'shishdan oldin emailingizni tasdiqlang yoki Telegram orqali faollashtiring."}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={resendVerification}
-              disabled={resending}
-              className="rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50 dark:hover:bg-amber-500"
-            >
-              {resending ? "Yuborilmoqda..." : "Tasdiqlash havolasini qayta yuborish"}
-            </button>
-          </div>
-          {resendMessage && <p className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">{resendMessage}</p>}
-
-          <div className="mt-3 border-t border-amber-200 pt-3 dark:border-amber-500/30">
+        !user.emailVerified &&
+        user.email && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/30">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Telegram orqali tasdiqlash</p>
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Email hali tasdiqlanmagan</p>
                 <p className="text-xs text-amber-700 dark:text-amber-400">
-                  Botdan telefon raqamingizni yuborib, undan olingan kod bilan profilni faollashtiring.
+                  {user.phoneVerified
+                    ? "Profil Telegram orqali faollashtirilgan, email tasdiqlash hali kutilmoqda."
+                    : canPost
+                      ? "Iqtibos joylashingiz mumkin — email/Telegram tasdiqlash profilni to'liq qilish uchun eslatib turadi."
+                      : "Iqtibos qo'shishdan oldin emailingizni tasdiqlang yoki Telegram orqali faollashtiring."}
                 </p>
               </div>
-              {!user.phoneVerified && (
-                <button
-                  type="button"
-                  onClick={startTelegramVerify}
-                  disabled={tgBusy}
-                  className="rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50 dark:hover:bg-blue-500"
-                >
-                  {tgBusy ? "Yuborilmoqda..." : "Telegram orqali tasdiqlash"}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={resendVerification}
+                disabled={resending}
+                className="rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50 dark:hover:bg-amber-500"
+              >
+                {resending ? "Yuborilmoqda..." : "Tasdiqlash havolasini qayta yuborish"}
+              </button>
             </div>
+            {resendMessage && <p className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">{resendMessage}</p>}
 
-            {tgSession && tgLink && (
-              <div className="mt-3 space-y-3">
-                <div className="rounded-xl border border-amber-300 bg-amber-100/60 px-3 py-2.5 dark:border-amber-600 dark:bg-amber-900/20">
-                  <p className="mb-1 text-xs font-medium text-amber-800 dark:text-amber-300">
-                    Botda ushbu unikal havola orqali start bosing (yangi havola olish uchun pastdagi tugmani bosing):
+            <div className="mt-3 border-t border-amber-200 pt-3 dark:border-amber-500/30">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Telegram orqali tasdiqlash</p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Botdan telefon raqamingizni yuborib, undan olingan kod bilan profilni faollashtiring.
                   </p>
-                  <a
-                    href={tgLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block break-all text-xs font-semibold text-blue-700 underline dark:text-blue-400"
-                  >
-                    {tgLink}
-                  </a>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={copyTgLink}
-                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
-                    >
-                      Havolani nusxalash
-                    </button>
-                    <button
-                      type="button"
-                      onClick={startTelegramVerify}
-                      disabled={tgBusy}
-                      className="rounded-lg border border-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-600 dark:text-amber-300 dark:hover:bg-amber-900/30"
-                    >
-                      {tgBusy ? "Yuborilmoqda..." : "Yangi unikal havola olish"}
-                    </button>
-                  </div>
                 </div>
-
-                <form onSubmit={submitTelegramCode} className="flex items-end gap-2">
-                  <div className="flex-1">
-                    <label className="mb-1 block text-xs font-medium text-amber-800 dark:text-amber-300">
-                      Botdan olgan 6 xonali kod
-                    </label>
-                    <input
-                      value={tgCode}
-                      onChange={(e) => setTgCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      inputMode="numeric"
-                      pattern="\d{6}"
-                      required
-                      maxLength={6}
-                      placeholder="000000"
-                      className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-amber-600 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
+                {!user.phoneVerified && (
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={startTelegramVerify}
                     disabled={tgBusy}
-                    className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 dark:hover:bg-emerald-500"
+                    className="rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50 dark:hover:bg-blue-500"
                   >
-                    {tgBusy ? "Tekshirilmoqda..." : "Tasdiqlash"}
+                    {tgBusy ? "Yuborilmoqda..." : "Telegram orqali tasdiqlash"}
                   </button>
-                </form>
+                )}
               </div>
-            )}
 
-            {tgMessage && <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-300">{tgMessage}</p>}
+              {tgSession && tgLink && (
+                <div className="mt-3 space-y-3">
+                  <div className="rounded-xl border border-amber-300 bg-amber-100/60 px-3 py-2.5 dark:border-amber-600 dark:bg-amber-900/20">
+                    <p className="mb-1 text-xs font-medium text-amber-800 dark:text-amber-300">
+                      Botda ushbu unikal havola orqali start bosing (yangi havola olish uchun pastdagi tugmani bosing):
+                    </p>
+                    <a
+                      href={tgLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block break-all text-xs font-semibold text-blue-700 underline dark:text-blue-400"
+                    >
+                      {tgLink}
+                    </a>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={copyTgLink}
+                        className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
+                      >
+                        Havolani nusxalash
+                      </button>
+                      <button
+                        type="button"
+                        onClick={startTelegramVerify}
+                        disabled={tgBusy}
+                        className="rounded-lg border border-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-600 dark:text-amber-300 dark:hover:bg-amber-900/30"
+                      >
+                        {tgBusy ? "Yuborilmoqda..." : "Yangi unikal havola olish"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <form onSubmit={submitTelegramCode} className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="mb-1 block text-xs font-medium text-amber-800 dark:text-amber-300">
+                        Botdan olgan 6 xonali kod
+                      </label>
+                      <input
+                        value={tgCode}
+                        onChange={(e) => setTgCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        inputMode="numeric"
+                        pattern="\d{6}"
+                        required
+                        maxLength={6}
+                        placeholder="000000"
+                        className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-amber-600 dark:bg-slate-900 dark:text-slate-100"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={tgBusy}
+                      className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 dark:hover:bg-emerald-500"
+                    >
+                      {tgBusy ? "Tekshirilmoqda..." : "Tasdiqlash"}
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {tgMessage && <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-300">{tgMessage}</p>}
+            </div>
           </div>
-        </div>
-        )}
-      </>
-    )}
-
-      <ProfileSettings key={user.id} user={user} onSaved={refresh} />
-
-      <PremiumCard user={user} onSaved={refresh} />
-
-      {canPost && categories.length > 0 && (
-        <QuoteForm categories={categories} onCreated={handleCreated} />
+        )
       )}
 
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Mening iqtiboslarim</h2>
-          <span className="text-xs text-slate-400 dark:text-slate-500">{quotes.length} ta</span>
-        </div>
-        {quotes.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Hali iqtibos qo&apos;shmagansiz. Yuqoridagi forma orqali birinchi iqtibosingizni yuboring.
-            </p>
-          </div>
-        ) : (
-          quotes.map((quote) => <QuoteCard key={quote.id} quote={quote} showStatus />)
-        )}
-      </section>
+      <ProfileSettings user={user} onSaved={onSaved} />
+
+      <PremiumCard user={user} onSaved={onSaved} />
     </div>
   );
 }
@@ -287,9 +530,11 @@ function ProfileSettings({
 }: {
   user: User;
   onSaved: () => Promise<User | null>;
-}) {  const [name, setName] = useState(user.name ?? "");
+}) {
+  const [name, setName] = useState(user.name ?? "");
   const [nickname, setNickname] = useState(user.nickname ?? "");
   const [customWatermark, setCustomWatermark] = useState(user.customWatermark ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
   const [profileSaved, setProfileSaved] = useState(false);
   const premium = isPremiumActive(user);
 
@@ -297,7 +542,7 @@ function ProfileSettings({
     event.preventDefault();
     await api<{ user: User }>("/api/auth/me", {
       method: "PATCH",
-      body: { name, nickname, ...(premium ? { customWatermark } : {}) },
+      body: { name, nickname, avatarUrl, ...(premium ? { customWatermark } : {}) },
     });
     await onSaved();
     setProfileSaved(true);
@@ -308,6 +553,26 @@ function ProfileSettings({
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none">
       <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Profil sozlamalari</h2>
       <form onSubmit={saveProfile} className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <div className="flex items-center gap-4">
+            <Avatar url={avatarUrl || null} name={nickname || name || user.email} size={56} />
+            <div className="flex-1">
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                Rasm havolasi (URL) — http(s) bilan boshlanishi kerak
+              </label>
+              <input
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                maxLength={500}
+                placeholder="https://example.com/avatar.jpg"
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-900"
+              />
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                Bo&apos;sh qoldirilsa, avatar o&apos;chiriladi va nick dan bosh harflar ko&apos;rinadi.
+              </p>
+            </div>
+          </div>
+        </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
             Haqiqiy ism (faqat adminlarga ko&apos;rinadi)

@@ -4,7 +4,8 @@ import { requireAuth } from "../middleware/auth.js";
 import { recordActivity } from "../lib/activity.js";
 import { trackPageView } from "../lib/analytics.js";
 import { validateBody, publicFeedbackSchema, type PublicFeedback } from "../schemas.js";
-import { config } from "../config.js";
+import { publishedPolicyVersion } from "../lib/policies.js";
+import { PolicyType } from "@prisma/client";
 
 export const siteRouter = Router();
 
@@ -34,7 +35,7 @@ siteRouter.get("/settings", async (_req, res) => {
     });
     res.json({
       settings: Object.fromEntries(settings.map((s) => [s.key, s.value])),
-      termsVersion: config.currentTermsVersion,
+      termsVersion: await publishedPolicyVersion(PolicyType.TERMS),
     });
   } catch {
     res.status(500).json({ error: "Database unavailable" });

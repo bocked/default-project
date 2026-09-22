@@ -16,6 +16,8 @@ import { listContent, getContent } from "../lib/content.js";
 import { clientIp } from "../lib/ip.js";
 import { todayAnalytics, visitorHistory } from "../lib/analytics.js";
 import { normalizeTagName, slugify } from "../lib/categories.js";
+import { adminPoliciesRouter } from "./adminPolicies.js";
+import { adminQuizzesRouter } from "./adminQuizzes.js";
 import {
   validateBody,
   banCreateSchema,
@@ -1827,3 +1829,11 @@ async function broadcastEmail(title: string, message: string): Promise<number> {
   addLog("info", `Email e'lon: ${title} -> ${sent}/${users.length} foydalanuvchi`);
   return sent;
 }
+
+// ---------------------------------------------------------------------------
+// Legal policies & quiz moderation (subrouters mounted here so they inherit
+// `adminLimiter` + `requireAdmin` from the top of this router).
+// ---------------------------------------------------------------------------
+
+adminRouter.use("/policies", adminPoliciesRouter);
+adminRouter.use("/quizzes", adminQuizzesRouter);

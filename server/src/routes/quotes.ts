@@ -241,6 +241,24 @@ quotesRouter.get("/mine", requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/quotes/mine/likes - approved quotes the current user liked
+// (the "Saqlanganlar" tab on the profile).
+quotesRouter.get("/mine/likes", requireAuth, async (req, res) => {
+  try {
+    const likes = await prisma.quoteLike.findMany({
+      where: { userId: req.user!.id, quote: { status: "APPROVED", deletedAt: null } },
+      include: { quote: { include: quoteInclude } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    res.json({
+      quotes: likes.map((l) => toPublicQuote({ ...l.quote, likedByMe: true }, req.user!.id)),
+    });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
 // POST /api/quotes - submit a new quote. Quick-login (Telegram-only) accounts
 // are blocked until they complete a full registration. requireAuth must run
 // before the create limiter so trusted roles can bypass throttling.

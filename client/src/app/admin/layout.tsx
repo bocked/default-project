@@ -8,9 +8,11 @@ import { useAuth } from "@/lib/auth";
 const NAV = [
   { href: "/admin", label: "Boshqaruv paneli", exact: true },
   { href: "/admin/content", label: "Kontent" },
+  { href: "/admin/quizzes", label: "Testlar" },
   { href: "/admin/users", label: "Foydalanuvchilar" },
   { href: "/admin/communication", label: "Muloqot" },
   { href: "/admin/settings", label: "Sozlamalar" },
+  { href: "/admin/policies", label: "Siyosatlar" },
   { href: "/admin/audit", label: "Audit" },
 ];
 
