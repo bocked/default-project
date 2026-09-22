@@ -33,7 +33,8 @@ export const config = {
     .filter(Boolean),
   // Emails whose accounts get the SUPER_ADMIN role — the only role allowed to
   // manually verify users (bypass email/phone verification for posting).
-  superAdminEmails: (process.env.SUPER_ADMIN_EMAILS ?? "mirabbostolqinjonov@gmail.com")
+  // Deliberately empty by default: this role must be enabled via env config.
+  superAdminEmails: (process.env.SUPER_ADMIN_EMAILS ?? "")
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
