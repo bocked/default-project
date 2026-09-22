@@ -199,7 +199,10 @@ function todayKey(): string {
 
 async function fetchQuoteOfTheDay(): Promise<PublicQuote | null> {
   const override = await getContent("quote.today");
-  if (override) {
+  if (override && override.value.trim()) {
+    // `__none__` is a sentinel: admins can remove the auto-picked quote of the
+    // day entirely (nothing is shown until a quote is pinned again).
+    if (override.value.trim() === "__none__") return null;
     const pinned = await prisma.quote.findFirst({
       where: { id: override.value.trim(), status: "APPROVED", deletedAt: null },
       include: quoteInclude,

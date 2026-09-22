@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { parseZod, adminAuthSchema, adminBanSchema, adminUnbanSchema, banCreateSchema, quoteCreateSchema } from "../../schemas.js";
+import {
+  parseZod,
+  adminAuthSchema,
+  adminBanSchema,
+  adminUnbanSchema,
+  banCreateSchema,
+  quoteCreateSchema,
+  contentUpdateSchema,
+} from "../../schemas.js";
 
 describe("adminAuthSchema", () => {
   it("requires a password", () => {
@@ -82,5 +90,15 @@ describe("quoteCreateSchema (telegramUrl)", () => {
     expect(parseZod(quoteCreateSchema, { text: "x", categorySlug: "c", telegramUrl: "https://t.me/kanal" })).toBeNull();
     expect(parseZod(quoteCreateSchema, { text: "x", categorySlug: "c", telegramUrl: "https://example.com/abc/1" })).toBeNull();
     expect(parseZod(quoteCreateSchema, { text: "x", categorySlug: "c", telegramUrl: "https://t.me//123" })).toBeNull();
+  });
+});
+
+describe("contentUpdateSchema (quote.today)", () => {
+  it("accepts an empty value so the quote of the day can be unpinned", () => {
+    expect(parseZod(contentUpdateSchema, { value: "" })).toEqual({ value: "" });
+  });
+
+  it("accepts the hide-quote sentinel", () => {
+    expect(parseZod(contentUpdateSchema, { value: "__none__" })).toEqual({ value: "__none__" });
   });
 });

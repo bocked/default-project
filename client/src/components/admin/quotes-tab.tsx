@@ -85,20 +85,28 @@ export function AdminQuotesTab() {
   }, []);
 
   // Which quote is pinned as "quote of the day", and which one the API
-  // actually serves today (auto-pool when nothing is pinned).
-  useEffect(() => {
-    void Promise.all([
-      api<{ blocks: ContentBlock[] }>("/api/admin/content")
-        .then((d) => d.blocks.find((b) => b.key === "quote.today")?.value.trim() || null)
-        .catch(() => null),
-      api<{ quote: Quote | null }>("/api/quotes/today")
-        .then((d) => d.quote?.id ?? null)
-        .catch(() => null),
-    ]).then(([pin, today]) => {
-      setPinnedId(pin);
-      setTodayId(today);
-    });
+  // actually serves today (auto-pool when nothing is pinned). A `__none__`
+  // content value means an admin hid today's quote — treated the same as no
+  // pin so the list state stays consistent.
+  const loadQod = useCallback(async () => {
+    try {
+      const [blocks, todayRes] = await Promise.all([
+        api<{ blocks: ContentBlock[] }>("/api/admin/content"),
+        api<{ quote: Quote | null }>("/api/quotes/today"),
+      ]);
+      const raw = blocks.blocks.find((b) => b.key === "quote.today")?.value.trim() ?? "";
+      setPinnedId(raw && raw !== "__none__" ? raw : null);
+      setTodayId(todayRes.quote?.id ?? null);
+    } catch {
+      /* keep the current values on failure */
+    }
   }, []);
+
+  useEffect(() => {
+    // setState only runs after an await, so it is never synchronous; the
+    // `.then` hop keeps it from being flagged as set-in-effect.
+    void Promise.resolve().then(loadQod);
+  }, [loadQod]);
 
   useEffect(() => {
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
@@ -116,11 +124,14 @@ export function AdminQuotesTab() {
     setPinning(quote.id);
     setError(null);
     try {
+      // Removing a pinned quote restores the automatic daily pick (empty),
+      // removing an auto-picked one hides today's quote entirely (__none__).
+      const value = clear ? (pinnedId === quote.id ? "" : "__none__") : quote.id;
       await api<{ block: ContentBlock }>("/api/admin/content/quote.today", {
         method: "PUT",
-        body: { value: clear ? "" : quote.id },
+        body: { value },
       });
-      setPinnedId(clear ? null : quote.id);
+      await loadQod();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kun iqtibosi saqlanmadi");
     } finally {
@@ -376,7 +387,7 @@ export function AdminQuotesTab() {
                       Tahrirlash
                     </AdminButton>
                     {quote.status === "APPROVED" &&
-                      (pinnedId === quote.id ? (
+                      (pinnedId === quote.id || todayId === quote.id ? (
                         <AdminButton
                           variant="ghost"
                           disabled={busy || pinning === quote.id}

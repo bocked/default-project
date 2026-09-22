@@ -197,7 +197,9 @@ export type CategoryUpdate = z.infer<typeof categoryUpdateSchema>;
 
 export const contentUpdateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
-  value: z.string().trim().min(1).max(2000),
+  // Empty is allowed: clearing `quote.today` unpins the quote of the day
+  // (the API then falls back to the automatic daily pick).
+  value: z.string().trim().max(2000),
 });
 export type ContentUpdate = z.infer<typeof contentUpdateSchema>;
 
