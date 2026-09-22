@@ -17,6 +17,8 @@ import {
   telegramCodeExpiry,
   hashQuickLoginSessionId,
 } from "../lib/tokens.js";
+import { notifyQuoteModeration } from "../lib/notify.js";
+import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 
 export const telegramRouter = Router();
 
@@ -99,6 +101,8 @@ async function handleCallback(cq: Record<string, any>): Promise<void> {
       data: { status: "APPROVED", awaitingRejection: false, rejectionReason: null },
     });
     if (messageId) await editModerationMessage(chatId, messageId, approvedText(quote), null);
+    void notifyQuoteModeration({ quoteId, decision: "approved" });
+    void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
     addLog("info", `Iqtibos tasdiqlandi (Telegram): ${quote.text.slice(0, 40)}...`);
   } else if (data.startsWith(REJECT_PREFIX)) {
     const quoteId = data.slice(REJECT_PREFIX.length);
@@ -131,6 +135,8 @@ async function handleReply(msg: Record<string, any>): Promise<void> {
     data: { status: "REJECTED", rejectionReason: reason, awaitingRejection: false },
   });
   await editModerationMessage(msg.chat.id, repliedId, rejectedText(quote, reason), null);
+  void notifyQuoteModeration({ quoteId: quote.id, decision: "rejected", reason });
+  void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
   addLog("warn", `Iqtibos rad etildi (Telegram): ${quote.text.slice(0, 40)}...`);
 }
 

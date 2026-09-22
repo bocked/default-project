@@ -51,3 +51,13 @@ export const likeLimiter = rateLimit({
   ...standard,
   message: { error: "Too many requests" },
 });
+
+/** Guard on the quote feed / search endpoints (per IP per 15 min) so scrapers
+ *  and aggressive polling cannot hammer the database with list queries. */
+export const searchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 180,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});

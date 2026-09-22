@@ -163,3 +163,44 @@ export function sendPasswordResetEmail(to: string, token: string): Promise<boole
 
   return sendEmail({ to, subject: "Iqtibosim — parolni tiklash", text, html });
 }
+
+const escapeHtml = (value: string): string =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** Tells the author whether their submitted quote was approved or rejected. */
+export function sendQuoteModerationEmail(
+  to: string,
+  info: { decision: "approved" | "rejected"; reason?: string; text: string; displayAuthor: string }
+): Promise<boolean> {
+  const approved = info.decision === "approved";
+  const subject = approved ? "Iqtibosim — iqtibosingiz tasdiqlandi ✅" : "Iqtibosim — iqtibosingiz rad etildi";
+  const text = [
+    approved
+      ? "Iqtibosingiz tasdiqlandi! Endi u saytda hammaga ko'rinadi."
+      : `Iqtibosingiz rad etildi.` + (info.reason ? ` Sabab: ${info.reason}` : ""),
+    "",
+    `“${info.text}”`,
+    "",
+    `— ${info.displayAuthor}`,
+    "",
+    `yerlikoglon.uz sahifasida ko'ring: ${config.appUrl.replace(/\/$/, "")}`,
+  ].join("\n");
+
+  const html = `
+  <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+    <h2 style="color:#0f172a">Iqtibosim</h2>
+    <p style="color:#334155;line-height:1.6">
+      ${approved ? "<strong style='color:#16a34a'>Iqtibosingiz tasdiqlandi!</strong> Endi u saytda hammaga ko'rinadi."
+        : `<strong style='color:#dc2626'>Iqtibosingiz rad etildi.</strong>` + (info.reason ? ` Sabab: ${escapeHtml(info.reason)}` : "")}
+    </p>
+    <blockquote style="border-left:3px solid #2563eb;padding:8px 16px;margin:20px 0;color:#334155;background:#f8fafc;border-radius:0 6px 6px 0">
+      “${escapeHtml(info.text)}”
+    </blockquote>
+    <p style="color:#64748b">— ${escapeHtml(info.displayAuthor)}</p>
+    <p style="margin-top:20px">
+      <a href="${config.appUrl.replace(/\/$/, "")}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block">Saytga o'tish</a>
+    </p>
+  </div>`;
+
+  return sendEmail({ to, subject, text, html });
+}

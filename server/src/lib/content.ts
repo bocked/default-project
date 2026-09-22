@@ -22,6 +22,12 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     title: "Sayt tagi matni",
     value: "Iqtibosim — fikrlarni to'playdigan joy",
   },
+  {
+    key: "quote.today",
+    title: "Kun iqtibosi (ixtiyoriy)",
+    value:
+      "Bu yerga iqtibosning ID raqamini kiriting — o'sha iqtibos bosh sahifadagi «Kun iqtibosi» blokida doimiy ko'rsatiladi. Bo'sh qoldirilsa, sistem eng ko'p layk yig'gan iqtiboslardan avtomatik tanlaydi.",
+  },
 ];
 
 /** Seeding is best-effort and idempotent (keyed on the unique `key`). */

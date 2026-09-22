@@ -10,6 +10,8 @@ import { config } from "../config.js";
 import { adminLimiter } from "../lib/rateLimit.js";
 import { editModerationMessage, sendTelegramMessage, telegramEnabled } from "../lib/telegram.js";
 import { sendEmail } from "../lib/email.js";
+import { notifyQuoteModeration } from "../lib/notify.js";
+import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { listContent, getContent } from "../lib/content.js";
 import { clientIp } from "../lib/ip.js";
 import { normalizeTagName, slugify } from "../lib/categories.js";
@@ -59,6 +61,12 @@ function adminId(req: import("express").Request): string | null {
 
 function adminEmail(req: import("express").Request): string | null {
   return req.admin?.email ?? null;
+}
+
+/** Approve/reject/delete/restore changes what shows in the public feed, the
+ *  category/tag counts and the cached quote of the day — evict those keys. */
+function invalidateQuoteCaches(): void {
+  void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +193,14 @@ adminRouter.post("/quotes/bulk", validateBody(bulkQuotesSchema), async (req, res
     const ip = clientIp(req.headers);
     let count = 0;
     if (body.action === "approve" || body.action === "reject") {
+      // Remember which quotes were still PENDING so each owner is notified
+      // exactly once (only on the PENDING -> APPROVED/REJECTED transition).
+      const before = await prisma.quote.findMany({
+        where: { id: { in: body.ids }, deletedAt: null },
+        select: { id: true, status: true },
+      });
+      const pendingIds = before.filter((q) => q.status === "PENDING").map((q) => q.id);
+
       const result = await prisma.quote.updateMany({
         where: { id: { in: body.ids }, deletedAt: null },
         data:
@@ -193,6 +209,14 @@ adminRouter.post("/quotes/bulk", validateBody(bulkQuotesSchema), async (req, res
             : { status: "REJECTED", rejectionReason: body.reason ?? "Admin tomonidan rad etildi", awaitingRejection: false },
       });
       count = result.count;
+
+      for (const id of pendingIds) {
+        void notifyQuoteModeration({
+          quoteId: id,
+          decision: body.action === "approve" ? "approved" : "rejected",
+          reason: body.action === "reject" ? body.reason : undefined,
+        });
+      }
     } else if (body.action === "delete") {
       const result = await prisma.quote.updateMany({
         where: { id: { in: body.ids }, deletedAt: null },
@@ -229,6 +253,7 @@ adminRouter.post("/quotes/bulk", validateBody(bulkQuotesSchema), async (req, res
       detail: `${count} ta iqtibos ${body.action} qilindi`,
       ip,
     });
+    invalidateQuoteCaches();
     res.json({ ok: true, count });
   } catch {
     res.status(500).json({ error: "Amal bajarilmadi" });
@@ -243,6 +268,7 @@ adminRouter.post("/quotes/:id/approve", async (req, res) => {
       res.status(404).json({ error: "Quote not found" });
       return;
     }
+    const wasPending = quote.status === "PENDING";
     await prisma.quote.update({
       where: { id: quote.id },
       data: { status: "APPROVED", awaitingRejection: false, rejectionReason: null },
@@ -255,6 +281,8 @@ adminRouter.post("/quotes/:id/approve", async (req, res) => {
         null
       );
     }
+    if (wasPending) void notifyQuoteModeration({ quoteId: quote.id, decision: "approved" });
+    invalidateQuoteCaches();
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -279,6 +307,7 @@ adminRouter.post("/quotes/:id/reject", validateBody(adminQuoteRejectSchema), asy
       res.status(404).json({ error: "Quote not found" });
       return;
     }
+    const wasPending = quote.status === "PENDING";
     await prisma.quote.update({
       where: { id: quote.id },
       data: { status: "REJECTED", rejectionReason: body.reason, awaitingRejection: false },
@@ -291,6 +320,8 @@ adminRouter.post("/quotes/:id/reject", validateBody(adminQuoteRejectSchema), asy
         null
       );
     }
+    if (wasPending) void notifyQuoteModeration({ quoteId: quote.id, decision: "rejected", reason: body.reason });
+    invalidateQuoteCaches();
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -352,6 +383,7 @@ adminRouter.patch("/quotes/:id", validateBody(quoteEditSchema), async (req, res)
       },
       include: quoteInclude,
     });
+    invalidateQuoteCaches();
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -376,6 +408,7 @@ adminRouter.delete("/quotes/:id", async (req, res) => {
       return;
     }
     await prisma.quote.update({ where: { id: quote.id }, data: { deletedAt: new Date() } });
+    invalidateQuoteCaches();
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -400,6 +433,7 @@ adminRouter.post("/quotes/:id/restore", async (req, res) => {
       return;
     }
     await prisma.quote.update({ where: { id: quote.id }, data: { deletedAt: null } });
+    invalidateQuoteCaches();
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -696,6 +730,7 @@ adminRouter.patch("/tags/:id", validateBody(tagUpdateSchema), async (req, res) =
       where: { id: req.params.id },
       data: { name: body.name, slug },
     });
+    void invalidateCaches([CACHE_PREFIXES.catalog]);
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -720,6 +755,7 @@ adminRouter.delete("/tags/:id", async (req, res) => {
       return;
     }
     await prisma.tag.delete({ where: { id: tag.id } });
+    void invalidateCaches([CACHE_PREFIXES.catalog]);
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -769,6 +805,7 @@ adminRouter.post("/categories", validateBody(categoryUpdateSchema), async (req, 
     const category = await prisma.category.create({
       data: { name: body.name.trim(), slug },
     });
+    void invalidateCaches([CACHE_PREFIXES.catalog]);
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -802,6 +839,7 @@ adminRouter.patch("/categories/:id", validateBody(categoryUpdateSchema), async (
       where: { id: req.params.id },
       data: { name: body.name.trim(), slug },
     });
+    void invalidateCaches([CACHE_PREFIXES.catalog]);
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -831,6 +869,7 @@ adminRouter.delete("/categories/:id", async (req, res) => {
       return;
     }
     await prisma.category.delete({ where: { id: category.id } });
+    void invalidateCaches([CACHE_PREFIXES.catalog]);
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -872,6 +911,8 @@ adminRouter.put("/content/:key", validateBody(contentUpdateSchema), async (req, 
       where: { key: existing.key },
       data: { value: body.value, title: body.title ?? existing.title },
     });
+    // The content manager can pin `quote.today`; refresh the cached pick.
+    void invalidateCaches([CACHE_PREFIXES.quoteOfDay]);
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),

@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireFullUser } from "../middleware/auth.js";
-import { quoteCreateLimiter, likeLimiter } from "../lib/rateLimit.js";
+import { quoteCreateLimiter, likeLimiter, searchLimiter } from "../lib/rateLimit.js";
 import { clientIp } from "../lib/ip.js";
 import { isBotUserAgent, viewDedupe } from "../lib/views.js";
 import { normalizeTagName, slugify } from "../lib/categories.js";
@@ -10,6 +10,8 @@ import { sendModerationMessage } from "../lib/telegram.js";
 import { addLog } from "../lib/logstore.js";
 import { recordActivity } from "../lib/activity.js";
 import { validateBody, quoteCreateSchema, type QuoteCreate } from "../schemas.js";
+import { cachedGet, CACHE_PREFIXES } from "../lib/redisCache.js";
+import { getContent } from "../lib/content.js";
 
 export const quotesRouter = Router();
 
@@ -74,8 +76,25 @@ function pagination(query: Record<string, unknown>): { page: number; limit: numb
   return { page, limit, skip: (page - 1) * limit };
 }
 
+export type QuoteSort = "newest" | "most-liked" | "most-viewed";
+
+/** Maps the public `sort` query param onto a Prisma orderBy. Falls back to
+ *  newest (createdAt desc) for unknown or absent values. */
+function sortOrder(query: Record<string, unknown>): Prisma.QuoteOrderByWithRelationInput[] {
+  const raw = typeof query.sort === "string" ? query.sort.trim() : "";
+  switch (raw) {
+    case "most-liked":
+      return [{ likes: { _count: "desc" } }, { createdAt: "desc" }];
+    case "most-viewed":
+      return [{ views: "desc" }, { createdAt: "desc" }];
+    case "newest":
+    default:
+      return [{ createdAt: "desc" }];
+  }
+}
+
 // GET /api/quotes - public feed of APPROVED quotes with filters
-quotesRouter.get("/", async (req, res) => {
+quotesRouter.get("/", searchLimiter, async (req, res) => {
   try {
     const { page, limit, skip } = pagination(req.query);
     const where: Prisma.QuoteWhereInput = { status: "APPROVED" };
@@ -86,11 +105,13 @@ quotesRouter.get("/", async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (q) where.OR = searchWhere(q).OR;
 
+    const orderBy = sortOrder(req.query);
+
     const [quotes, total] = await Promise.all([
       prisma.quote.findMany({
         where,
         include: quoteInclude,
-        orderBy: { createdAt: "desc" },
+        orderBy,
         skip,
         take: limit,
       }),
@@ -136,7 +157,7 @@ quotesRouter.get("/", async (req, res) => {
 });
 
 // GET /api/quotes/search - case-insensitive full search over approved quotes
-quotesRouter.get("/search", async (req, res) => {
+quotesRouter.get("/search", searchLimiter, async (req, res) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (!q) {
@@ -154,6 +175,48 @@ quotesRouter.get("/search", async (req, res) => {
     res.status(500).json({ error: "Database unavailable" });
   }
 });
+
+// GET /api/quotes/today - deterministic "quote of the day". The admin can pin
+// a specific quote via the `quote.today` content block (its value = quote id);
+// otherwise one quote is picked deterministically from the most-liked pool so
+// the same quote shows all day without extra database work.
+quotesRouter.get("/today", async (_req, res) => {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    res.json({ date: day, quote: await quoteOfTheDay() });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+async function quoteOfTheDay(): Promise<PublicQuote | null> {
+  return cachedGet(CACHE_PREFIXES.quoteOfDay, todayKey(), 6 * 60 * 60 * 1000, fetchQuoteOfTheDay);
+}
+
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function fetchQuoteOfTheDay(): Promise<PublicQuote | null> {
+  const override = await getContent("quote.today");
+  if (override) {
+    const pinned = await prisma.quote.findFirst({
+      where: { id: override.value.trim(), status: "APPROVED", deletedAt: null },
+      include: quoteInclude,
+    });
+    if (pinned) return toPublicQuote(pinned);
+  }
+
+  const dayNumber = Math.floor(Date.now() / 86_400_000);
+  const candidates = await prisma.quote.findMany({
+    where: { status: "APPROVED", deletedAt: null },
+    include: quoteInclude,
+    orderBy: [{ likes: { _count: "desc" } }, { createdAt: "desc" }],
+    take: 30,
+  });
+  if (candidates.length === 0) return null;
+  return toPublicQuote(candidates[dayNumber % candidates.length]);
+}
 
 // GET /api/quotes/mine - the current user's quotes with moderation status
 quotesRouter.get("/mine", requireAuth, async (req, res) => {
