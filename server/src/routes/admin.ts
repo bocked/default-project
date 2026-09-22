@@ -496,8 +496,9 @@ adminRouter.patch("/quotes/:id", validateBody(quoteEditSchema), async (req, res)
   }
 });
 
-// DELETE /api/admin/quotes/:id - soft delete (moves to trash).
-adminRouter.delete("/quotes/:id", async (req, res) => {
+// POST /api/admin/quotes/:id/archive - soft delete (moves to trash). Any admin
+// can archive a quote so it can be restored from the trash later.
+adminRouter.post("/quotes/:id/archive", async (req, res) => {
   try {
     const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
     if (!quote) {
@@ -510,6 +511,33 @@ adminRouter.delete("/quotes/:id", async (req, res) => {
       adminId: adminId(req),
       adminEmail: adminEmail(req),
       action: "quote.delete",
+      targetType: "quote",
+      targetId: quote.id,
+      detail: quote.text.slice(0, 60),
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Iqtibos arxivga o'tkazilmadi" });
+  }
+});
+
+// DELETE /api/admin/quotes/:id - permanently delete a quote. SUPER_ADMIN only
+// (a regular ADMIN gets 403). The row is removed from the database entirely
+// (likes and tag links cascade), caches are evicted and the action is logged.
+adminRouter.delete("/quotes/:id", requireSuperAdmin, async (req, res) => {
+  try {
+    const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
+    if (!quote) {
+      res.status(404).json({ error: "Quote not found" });
+      return;
+    }
+    await prisma.quote.delete({ where: { id: quote.id } });
+    invalidateQuoteCaches();
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "quote.delete.hard",
       targetType: "quote",
       targetId: quote.id,
       detail: quote.text.slice(0, 60),

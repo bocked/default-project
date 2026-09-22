@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import {
   AdminActionMenu,
   AdminButton,
@@ -49,6 +50,7 @@ interface EditDraft {
 }
 
 export function AdminQuotesTab() {
+  const { user: me } = useAuth();
   const [quotes, setQuotes] = useState<AdminQuote[]>([]);
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -62,6 +64,7 @@ export function AdminQuotesTab() {
   const [todayId, setTodayId] = useState<string | null>(null);
   const [pinning, setPinning] = useState<string | null>(null);
   const [posting, setPosting] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
 
   const load = useCallback(async (t: Tab, q: string) => {
@@ -168,16 +171,32 @@ export function AdminQuotesTab() {
     await run(`/api/admin/quotes/${id}/reject`, { reason: reason.trim() });
   }
 
-  async function remove(id: string): Promise<void> {
+  async function archive(id: string): Promise<void> {
     setBusy(true);
     setError(null);
     try {
-      await api<{ ok: boolean }>(`/api/admin/quotes/${id}`, { method: "DELETE" });
+      await api<{ ok: boolean }>(`/api/admin/quotes/${id}/archive`, { method: "POST" });
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Amal bajarilmadi");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function hardDelete(id: string): Promise<void> {
+    if (!window.confirm("Iqtibos butunlay o'chiriladi (arxivga tashlanmaydi, tiklab bo'lmaydi). Davom etasizmi?")) {
+      return;
+    }
+    setDeleting(id);
+    setError(null);
+    try {
+      await api<{ ok: boolean }>(`/api/admin/quotes/${id}`, { method: "DELETE" });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Iqtibos o'chirilmadi");
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -383,6 +402,15 @@ export function AdminQuotesTab() {
                         Tasdiqlash
                       </AdminButton>
                     )}
+                    {me?.role === "SUPER_ADMIN" && (
+                      <AdminButton
+                        variant="danger"
+                        disabled={busy || deleting === quote.id}
+                        onClick={() => void hardDelete(quote.id)}
+                      >
+                        {deleting === quote.id ? "O'chirilmoqda..." : "O'chirish"}
+                      </AdminButton>
+                    )}
                     <AdminActionMenu
                       label="Amallar"
                       items={[
@@ -441,7 +469,7 @@ export function AdminQuotesTab() {
                           label: "Arxivga",
                           danger: true,
                           disabled: busy,
-                          onClick: () => void remove(quote.id),
+                          onClick: () => void archive(quote.id),
                         },
                       ]}
                     />

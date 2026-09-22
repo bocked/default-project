@@ -10,6 +10,7 @@ const actionLabel: Record<string, string> = {
   "quote.reject": "Iqtibos rad etildi",
   "quote.edit": "Iqtibos tahrirlandi",
   "quote.delete": "Iqtibos arxivga",
+  "quote.delete.hard": "Iqtibos butunlay o'chirildi",
   "quote.restore": "Iqtibos tiklandi",
   "quote.approve.bulk": "Iqtiboslar tasdiqlandi (ommaviy)",
   "quote.reject.bulk": "Iqtiboslar rad etildi (ommaviy)",

@@ -174,8 +174,8 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
     expect(reject.status).toBe(200);
     expect((await prisma.quote.findUniqueOrThrow({ where: { id: q2 } })).rejectionReason).toBe("Manba yo'q");
 
-    // Soft delete q2
-    const del = await request(base, "DELETE", `/api/admin/quotes/${q2}`, { token: ADMIN });
+    // Soft delete q2 (archive)
+    const del = await request(base, "POST", `/api/admin/quotes/${q2}/archive`, { token: ADMIN });
     expect(del.status).toBe(200);
     expect((await prisma.quote.findUniqueOrThrow({ where: { id: q2 } })).deletedAt).not.toBeNull();
 
@@ -195,6 +195,38 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
     });
     expect(bulk.status).toBe(200);
     expect((await prisma.quote.findUniqueOrThrow({ where: { id: q2 } })).status).toBe("APPROVED");
+  });
+
+  it("only SUPER_ADMIN can permanently delete a quote; ordinary ADMIN gets 403", async () => {
+    const userId = await makeUser(`${unique("delq")}@example.com`);
+    const qid = await makeQuote(userId, "Butunlay o'chiriladigan iqtibos.");
+
+    // A real ADMIN account is forbidden from hard-deleting (403).
+    const adminLogin = await request(base, "POST", "/api/auth/login", {
+      body: { email: "mirabbostolqinjonov@gmail.com", password: "admin-password" },
+    });
+    expect(adminLogin.status).toBe(200);
+    expect(adminLogin.json.user.role).toBe("ADMIN");
+    const forbidden = await request(base, "DELETE", `/api/admin/quotes/${qid}`, {
+      token: adminLogin.json.token,
+    });
+    expect(forbidden.status).toBe(403);
+    expect(await prisma.quote.findUnique({ where: { id: qid } })).not.toBeNull();
+
+    // The super-admin gate (master key / SUPER_ADMIN) hard-deletes the row.
+    const del = await request(base, "DELETE", `/api/admin/quotes/${qid}`, { token: ADMIN });
+    expect(del.status).toBe(200);
+    expect(await prisma.quote.findUnique({ where: { id: qid } })).toBeNull();
+
+    // The quote is gone for good — it is not sitting in the trash either.
+    const trash = await request(base, "GET", "/api/admin/quotes?deleted=1", { token: ADMIN });
+    expect(trash.json.quotes.some((q: any) => q.id === qid)).toBe(false);
+
+    // The hard delete is recorded in the audit log.
+    const audits = await request(base, "GET", "/api/admin/audit-logs", { token: ADMIN });
+    expect(
+      audits.json.logs.some((l: any) => l.action === "quote.delete.hard" && l.targetId === qid)
+    ).toBe(true);
   });
 
   it("manages hashtags (rename, delete)", async () => {
