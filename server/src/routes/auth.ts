@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -63,7 +64,19 @@ interface SafeUser {
   isPremium: boolean;
   premiumExpiresAt: Date | null;
   customWatermark: string | null;
+  isSuperApproved: boolean;
+  superApprovedAt: Date | null;
   createdAt: Date;
+}
+
+/** SUPER_ADMIN_EMAILS outranks ADMIN_EMAILS; never demotes an existing
+ *  SUPER_ADMIN at login (only ever promotes). */
+function roleForEmail(email: string | null, current: UserRole): UserRole {
+  if (!email) return current;
+  const normalized = email.toLowerCase();
+  if (config.superAdminEmails.includes(normalized)) return "SUPER_ADMIN";
+  if (config.adminEmails.includes(normalized) && current !== "SUPER_ADMIN") return "ADMIN";
+  return current;
 }
 
 function toUser(user: SafeUser): SafeUser {
@@ -82,6 +95,8 @@ function toUser(user: SafeUser): SafeUser {
     isPremium: user.isPremium,
     premiumExpiresAt: user.premiumExpiresAt,
     customWatermark: user.customWatermark,
+    isSuperApproved: user.isSuperApproved,
+    superApprovedAt: user.superApprovedAt,
     createdAt: user.createdAt,
   };
 }
@@ -113,7 +128,7 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
       passwordHash: await hashPassword(body.password),
       name: body.name ?? null,
       nickname: body.nickname ?? null,
-      role: config.adminEmails.includes(body.email.toLowerCase()) ? "ADMIN" : "USER",
+      role: roleForEmail(body.email, "USER"),
     },
   });
   await issueVerification(user.email!);
@@ -136,13 +151,13 @@ authRouter.post("/login", validateBody(loginSchema), async (_req, res) => {
     res.status(403).json({ error: "Hisob bloklangan", code: "ACCOUNT_BLOCKED" });
     return;
   }
-  // Promote admin emails lazily so the account gets ADMIN even if it was
-  // created before the email was listed (or by the register endpoint itself).
-  const promote =
-    user.role !== "ADMIN" && user.email !== null && config.adminEmails.includes(user.email.toLowerCase());
-  const current = promote
-    ? await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } })
-    : user;
+  // Promote admin emails lazily so the account gets ADMIN/SUPER_ADMIN even if
+  // it was created before the email was listed (or by the register endpoint).
+  const targetRole = roleForEmail(user.email, user.role);
+  const current =
+    targetRole !== user.role
+      ? await prisma.user.update({ where: { id: user.id }, data: { role: targetRole } })
+      : user;
   void recordActivity({ userId: current.id, action: "LOGIN", detail: current.email ?? current.telegramUsername ?? "telegram" });
   res.json({ token: signAuthToken(user.id), user: toUser(current) });
 });
@@ -373,7 +388,7 @@ authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), asy
       quickLogin: false,
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.nickname !== undefined ? { nickname: body.nickname } : {}),
-      role: config.adminEmails.includes(body.email.toLowerCase()) ? "ADMIN" : user.role,
+      role: roleForEmail(body.email, user.role),
     },
   });
   await issueVerification(updated.email!);

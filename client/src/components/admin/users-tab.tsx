@@ -141,6 +141,19 @@ export function AdminUsersTab() {
     }
   }
 
+  async function revokeSuperApproval(u: AdminUser): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await api<{ ok: boolean }>(`/api/admin/users/${u.id}/super-approve`, { method: "DELETE" });
+      await load(search, role, blocked);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Tasdiqlash bekor qilinmadi");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function toggle(id: string): void {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -186,6 +199,7 @@ export function AdminUsersTab() {
         />
         <AdminSelect value={role} onChange={(e) => setRole(e.target.value)} className="w-auto">
           <option value="">Barcha rollar</option>
+          <option value="SUPER_ADMIN">Super admin</option>
           <option value="ADMIN">Admin</option>
           <option value="USER">Foydalanuvchi</option>
         </AdminSelect>
@@ -245,10 +259,11 @@ export function AdminUsersTab() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
-                        <Badge tone={u.role === "ADMIN" ? "blue" : "slate"}>
-                          {u.role === "ADMIN" ? "Admin" : "Foydalanuvchi"}
+                        <Badge tone={u.role === "ADMIN" || u.role === "SUPER_ADMIN" ? "blue" : "slate"}>
+                          {u.role === "SUPER_ADMIN" ? "Super admin" : u.role === "ADMIN" ? "Admin" : "Foydalanuvchi"}
                         </Badge>
                         {isPremiumActive(u) && <Badge tone="amber">VIP</Badge>}
+                        {u.isSuperApproved && <Badge tone="emerald">Super Verified</Badge>}
                         {u.blocked && <Badge tone="rose">Bloklangan</Badge>}
                         {u.emailVerified && <Badge tone="emerald">Email</Badge>}
                         {u.phoneVerified && <Badge tone="emerald">Telefon</Badge>}
@@ -263,65 +278,82 @@ export function AdminUsersTab() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1.5">
-                        {u.role !== "ADMIN" && (
-                          <>
-                            <AdminSelect
-                              value={vipDays[u.id] ?? "30"}
-                              onChange={(e) => setVipDays((prev) => ({ ...prev, [u.id]: e.target.value }))}
-                              className="w-28 py-1.5 text-xs"
-                            >
-                              <option value="7">7 kun</option>
-                              <option value="30">30 kun</option>
-                              <option value="365">1 yil</option>
-                              <option value="forever">Umrbod</option>
-                            </AdminSelect>
-                            {isPremiumActive(u) ? (
-                              <>
+                        {(() => {
+                          if (u.role === "SUPER_ADMIN") {
+                            return u.id === me?.id ? (
+                              <span className="text-xs text-slate-400 dark:text-slate-500">Boshqarib bo&apos;lmaydi</span>
+                            ) : null;
+                          }
+                          if (u.role === "ADMIN") {
+                            return u.id === me?.id ? (
+                              <span className="text-xs text-slate-400 dark:text-slate-500">Boshqarib bo&apos;lmaydi</span>
+                            ) : (
+                              <AdminButton
+                                variant="slate"
+                                disabled={busy}
+                                onClick={() => void runRole(u, "USER")}
+                              >
+                                Admindan chiqarish
+                              </AdminButton>
+                            );
+                          }
+                          return (
+                            <>
+                              {me?.role === "SUPER_ADMIN" && (u.isSuperApproved ? (
+                                <AdminButton variant="primary" disabled={busy} onClick={() => void revokeSuperApproval(u)}>
+                                  Tasdiqlashni olib tashlash
+                                </AdminButton>
+                              ) : (
+                                <AdminButton variant="success" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/super-approve`)}>
+                                  ⚡ Super Tasdiqlash
+                                </AdminButton>
+                              ))}
+                              <AdminSelect
+                                value={vipDays[u.id] ?? "30"}
+                                onChange={(e) => setVipDays((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                                className="w-28 py-1.5 text-xs"
+                              >
+                                <option value="7">7 kun</option>
+                                <option value="30">30 kun</option>
+                                <option value="365">1 yil</option>
+                                <option value="forever">Umrbod</option>
+                              </AdminSelect>
+                              {isPremiumActive(u) ? (
+                                <>
+                                  <AdminButton variant="amber" disabled={busy} onClick={() => void grantPremium(u)}>
+                                    VIP uzaytirish
+                                  </AdminButton>
+                                  <AdminButton variant="slate" disabled={busy} onClick={() => void revokePremium(u)}>
+                                    VIP olib tashlash
+                                  </AdminButton>
+                                </>
+                              ) : (
                                 <AdminButton variant="amber" disabled={busy} onClick={() => void grantPremium(u)}>
-                                  VIP uzaytirish
+                                  VIP berish
                                 </AdminButton>
-                                <AdminButton variant="slate" disabled={busy} onClick={() => void revokePremium(u)}>
-                                  VIP olib tashlash
+                              )}
+                              <AdminButton
+                                variant="primary"
+                                disabled={busy}
+                                onClick={() => void runRole(u, "ADMIN")}
+                              >
+                                Admin qilish
+                              </AdminButton>
+                              {u.blocked ? (
+                                <AdminButton variant="slate" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/unblock`)}>
+                                  Blokdan chiqarish
                                 </AdminButton>
-                              </>
-                            ) : (
-                              <AdminButton variant="amber" disabled={busy} onClick={() => void grantPremium(u)}>
-                                VIP berish
+                              ) : (
+                                <AdminButton variant="amber" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/block`)}>
+                                  Bloklash
+                                </AdminButton>
+                              )}
+                              <AdminButton variant="danger" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/delete`)}>
+                                Arxivga
                               </AdminButton>
-                            )}
-                            <AdminButton
-                              variant="primary"
-                              disabled={busy}
-                              onClick={() => void runRole(u, "ADMIN")}
-                            >
-                              Admin qilish
-                            </AdminButton>
-                            {u.blocked ? (
-                              <AdminButton variant="slate" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/unblock`)}>
-                                Blokdan chiqarish
-                              </AdminButton>
-                            ) : (
-                              <AdminButton variant="amber" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/block`)}>
-                                Bloklash
-                              </AdminButton>
-                            )}
-                            <AdminButton variant="danger" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/delete`)}>
-                              Arxivga
-                            </AdminButton>
-                          </>
-                        )}
-                        {u.role === "ADMIN" && u.id !== me?.id && (
-                          <AdminButton
-                            variant="slate"
-                            disabled={busy}
-                            onClick={() => void runRole(u, "USER")}
-                          >
-                            Admindan chiqarish
-                          </AdminButton>
-                        )}
-                        {u.role === "ADMIN" && u.id === me?.id && (
-                          <span className="text-xs text-slate-400 dark:text-slate-500">Boshqarib bo&apos;lmaydi</span>
-                        )}
+                            </>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>

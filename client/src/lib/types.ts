@@ -19,6 +19,8 @@ export interface User {
   isPremium?: boolean;
   premiumExpiresAt?: string | null;
   customWatermark?: string | null;
+  isSuperApproved?: boolean;
+  superApprovedAt?: string | null;
   createdAt: string;
 }
 
@@ -95,6 +97,8 @@ export interface AdminUser {
   isPremium: boolean;
   premiumExpiresAt: string | null;
   customWatermark?: string | null;
+  isSuperApproved?: boolean;
+  superApprovedAt?: string | null;
   createdAt: string;
 }
 

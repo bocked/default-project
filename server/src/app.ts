@@ -144,15 +144,28 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   return { app, server, io };
 }
 
-/** Grants the ADMIN role to every configured admin email. Best-effort. */
+/** Grants the ADMIN role to every configured admin email, then the SUPER_ADMIN
+ *  role to configured super-admin emails (run last so SUPER_ADMIN wins when an
+ *  email is listed in both). Best-effort. */
 async function promoteAdminEmails(): Promise<void> {
-  if (config.adminEmails.length === 0) return;
-  const result = await prisma.user.updateMany({
-    where: { email: { in: config.adminEmails } },
-    data: { role: "ADMIN" },
-  });
-  if (result.count > 0) {
-    logger.info(`granted ADMIN role to ${result.count} user(s)`);
+  if (config.adminEmails.length === 0 && config.superAdminEmails.length === 0) return;
+  if (config.adminEmails.length > 0) {
+    const admins = await prisma.user.updateMany({
+      where: { email: { in: config.adminEmails } },
+      data: { role: "ADMIN" },
+    });
+    if (admins.count > 0) {
+      logger.info(`granted ADMIN role to ${admins.count} user(s)`);
+    }
+  }
+  if (config.superAdminEmails.length > 0) {
+    const supers = await prisma.user.updateMany({
+      where: { email: { in: config.superAdminEmails } },
+      data: { role: "SUPER_ADMIN" },
+    });
+    if (supers.count > 0) {
+      logger.info(`granted SUPER_ADMIN role to ${supers.count} user(s)`);
+    }
   }
 }
 

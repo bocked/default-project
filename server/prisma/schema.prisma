@@ -25,6 +25,7 @@ enum QuoteStatus {
 enum UserRole {
   USER
   ADMIN
+  SUPER_ADMIN
 }
 
 model AdminLog {
@@ -92,6 +93,10 @@ model User {
   premiumExpiresAt            DateTime?
   // Replaces "yerlikoglon.uz" with the user's own channel/handle on share images.
   customWatermark             String?
+  // Manually approved by a SUPER_ADMIN: lets the user post quotes without the
+  // email/phone verification step (feature is super-admin-only).
+  isSuperApproved             Boolean         @default(false)
+  superApprovedAt             DateTime?
   createdAt                   DateTime        @default(now())
   updatedAt                   DateTime        @updatedAt
   // Moderation controls (admin panel).

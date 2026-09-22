@@ -7,8 +7,8 @@ declare global {
     interface Request {
       /** Populated by requireAuth for authenticated routes. */
       user?: User;
-      /** Populated by requireAdmin: the acting admin's identity. */
-      admin?: { id: string | null; email: string | null };
+      /** Populated by requireAdmin/requireSuperAdmin: the acting identity. */
+      admin?: { id: string | null; email: string | null; role?: string | null };
     }
   }
 }

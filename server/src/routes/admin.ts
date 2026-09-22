@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Prisma, QuoteStatus, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { requireAdmin } from "../middleware/adminAuth.js";
+import { requireAdmin, requireSuperAdmin } from "../middleware/adminAuth.js";
 import { recentLogs, addLog } from "../lib/logstore.js";
 import { recordAudit } from "../lib/audit.js";
 import { onlineCount } from "./api.js";
@@ -552,7 +552,7 @@ adminRouter.post("/quotes/:id/restore", async (req, res) => {
 
 function userQuery(query: Record<string, unknown>) {
   const where: Record<string, unknown> = { deletedAt: query.deleted === "1" ? { not: null } : null };
-  const role = typeof query.role === "string" && ["USER", "ADMIN"].includes(query.role.toUpperCase())
+  const role = typeof query.role === "string" && ["USER", "ADMIN", "SUPER_ADMIN"].includes(query.role.toUpperCase())
     ? (query.role.toUpperCase() as UserRole)
     : undefined;
   if (role) where.role = role;
@@ -594,6 +594,8 @@ adminRouter.get("/users", async (req, res) => {
           isPremium: true,
           premiumExpiresAt: true,
           customWatermark: true,
+          isSuperApproved: true,
+          superApprovedAt: true,
           createdAt: true,
         },
         orderBy: { createdAt: "desc" },
@@ -613,7 +615,7 @@ async function guardTargetUser(res: import("express").Response, id: string): Pro
     res.status(404).json({ error: "Foydalanuvchi topilmadi" });
     return false;
   }
-  if (target.role === "ADMIN") {
+  if (target.role === "ADMIN" || target.role === "SUPER_ADMIN") {
     res.status(400).json({ error: "Admin hisobini bloklash yoki o'chirish mumkin emas" });
     return false;
   }
@@ -695,6 +697,10 @@ adminRouter.patch("/users/:id/role", validateBody(userRoleUpdateSchema), async (
       res.status(404).json({ error: "Foydalanuvchi topilmadi" });
       return;
     }
+    if (target.role === "SUPER_ADMIN") {
+      res.status(403).json({ error: "Super admin rolini o'zgartirib bo'lmaydi" });
+      return;
+    }
     const actorId = adminId(req);
     if (actorId && target.id === actorId) {
       res.status(400).json({ error: "O'zingizning rolingizni o'zgartira olmaysiz" });
@@ -752,6 +758,68 @@ adminRouter.post("/users/:id/premium", validateBody(premiumUpdateSchema), async 
   }
 });
 
+// POST /api/admin/users/:id/super-approve - SUPER_ADMIN manually verifies a
+// user so they can post quotes without the email/phone verification step.
+// A regular ADMIN gets 403 — this is the one super-admin-only moderation tool.
+adminRouter.post("/users/:id/super-approve", requireSuperAdmin, async (req, res) => {
+  try {
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) {
+      res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      return;
+    }
+    if (target.role === "ADMIN" || target.role === "SUPER_ADMIN") {
+      res.status(400).json({ error: "Admin hisobini qo'lda tasdiqlash shart emas" });
+      return;
+    }
+    const user = await prisma.user.update({
+      where: { id: target.id },
+      data: { isSuperApproved: true, superApprovedAt: new Date() },
+      select: { id: true, isSuperApproved: true, superApprovedAt: true },
+    });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "user.super-approve",
+      targetType: "user",
+      targetId: user.id,
+      detail: target.email ?? target.telegramUsername ?? target.id,
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true, user: { id: user.id, isSuperApproved: true, superApprovedAt: user.superApprovedAt?.toISOString() ?? null } });
+  } catch {
+    res.status(500).json({ error: "Foydalanuvchi tasdiqlanmadi" });
+  }
+});
+
+// DELETE /api/admin/users/:id/super-approve - revoke the manual approval.
+adminRouter.delete("/users/:id/super-approve", requireSuperAdmin, async (req, res) => {
+  try {
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) {
+      res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      return;
+    }
+    const user = await prisma.user.update({
+      where: { id: target.id },
+      data: { isSuperApproved: false, superApprovedAt: null },
+      select: { id: true, isSuperApproved: true, superApprovedAt: true },
+    });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "user.super-unapprove",
+      targetType: "user",
+      targetId: user.id,
+      detail: target.email ?? target.telegramUsername ?? target.id,
+      ip: clientIp(req.headers),
+    });
+    res.json({ ok: true, user: { id: user.id, isSuperApproved: false, superApprovedAt: null } });
+  } catch {
+    res.status(500).json({ error: "Tasdiqlash bekor qilinmadi" });
+  }
+});
+
 // POST /api/admin/users/:id/restore
 adminRouter.post("/users/:id/restore", async (req, res) => {
   try {
@@ -781,7 +849,7 @@ adminRouter.post("/users/bulk", validateBody(bulkUsersSchema), async (req, res) 
     const body = res.locals.body as BulkUsers;
     const ip = clientIp(req.headers);
     const admins = await prisma.user.findMany({
-      where: { id: { in: body.ids }, role: "ADMIN" },
+      where: { id: { in: body.ids }, role: { in: ["ADMIN", "SUPER_ADMIN"] } },
       select: { id: true },
     });
     const adminIds = new Set(admins.map((a) => a.id));

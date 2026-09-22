@@ -241,7 +241,7 @@ export default function ProfilePage() {
 
       <PremiumCard user={user} onSaved={refresh} />
 
-      {(user.emailVerified || user.phoneVerified) && categories.length > 0 && (
+      {(user.emailVerified || user.phoneVerified || user.isSuperApproved) && categories.length > 0 && (
         <QuoteForm categories={categories} onCreated={handleCreated} />
       )}
 

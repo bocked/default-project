@@ -63,11 +63,11 @@ export function NavBar() {
           <Link href="/profile" className={navLink}>
             Profil
           </Link>
-          {user?.role === "ADMIN" && (
+          {user?.role === "ADMIN" || user?.role === "SUPER_ADMIN" ? (
             <Link href="/admin" className="rounded-lg px-3 py-2 text-sm text-amber-700 transition hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-950">
               Admin
             </Link>
-          )}
+          ) : null}
           {user ? (
             <button type="button" onClick={handleLogout} className={navLink}>
               Chiqish
@@ -118,11 +118,11 @@ export function NavBar() {
             <Link href="/profile" className={navLink} onClick={() => setMobileOpen(false)}>
               Profil
             </Link>
-            {user?.role === "ADMIN" && (
+            {user?.role === "ADMIN" || user?.role === "SUPER_ADMIN" ? (
               <Link href="/admin" className="rounded-lg px-3 py-2 text-sm text-amber-700 transition hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-950" onClick={() => setMobileOpen(false)}>
                 Admin
               </Link>
-            )}
+            ) : null}
             {user ? (
               <button type="button" onClick={handleLogout} className={`${navLink} text-left`}>
                 Chiqish

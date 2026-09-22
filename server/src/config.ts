@@ -31,6 +31,12 @@ export const config = {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
+  // Emails whose accounts get the SUPER_ADMIN role — the only role allowed to
+  // manually verify users (bypass email/phone verification for posting).
+  superAdminEmails: (process.env.SUPER_ADMIN_EMAILS ?? "mirabbostolqinjonov@gmail.com")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
   // Optional comma-separated list of IPs allowed to reach /api/admin/*. When
   // empty, the admin API stays open to any authenticated admin.
   adminIpWhitelist: (process.env.ADMIN_IP_WHITELIST ?? "")
