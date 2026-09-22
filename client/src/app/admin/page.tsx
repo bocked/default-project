@@ -9,16 +9,26 @@ import {
   EmptyState,
   PageTitle,
 } from "@/components/admin-ui";
-import type { ActivityPoint, AdminLogEntry, AdminStats, TopQuotes } from "@/lib/types";
+import type {
+  ActivityPoint,
+  AdminLogEntry,
+  AdminStats,
+  Quote,
+  TopQuotes,
+} from "@/lib/types";
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [today, setToday] = useState<Quote | null>(null);
   const [activity, setActivity] = useState<ActivityPoint[]>([]);
   const [logs, setLogs] = useState<AdminLogEntry[]>([]);
   const [topQuotes, setTopQuotes] = useState<TopQuotes | null>(null);
 
   useEffect(() => {
     void api<AdminStats>("/api/admin/stats").then(setStats).catch(() => setStats(null));
+    void api<{ quote: Quote | null }>("/api/quotes/today")
+      .then((d) => setToday(d.quote))
+      .catch(() => setToday(null));
     void api<{ activity: ActivityPoint[] }>("/api/admin/stats/activity?days=14")
       .then((d) => setActivity(d.activity))
       .catch(() => setActivity([]));
@@ -31,14 +41,14 @@ export default function AdminDashboard() {
   }, []);
 
   const cards = [
-    { label: "Kutilmoqda", value: stats?.quotes.pending ?? 0, tone: "amber" as const },
-    { label: "Tasdiqlangan", value: stats?.quotes.approved ?? 0, tone: "emerald" as const },
-    { label: "Rad etilgan", value: stats?.quotes.rejected ?? 0, tone: "rose" as const },
-    { label: "Foydalanuvchilar", value: stats?.users ?? 0, tone: "blue" as const },
-    { label: "Bloklangan", value: stats?.blockedUsers ?? 0, tone: "rose" as const },
-    { label: "Arxivdagi iqtiboslar", value: stats?.deletedQuotes ?? 0, tone: "slate" as const },
+    { label: "Kutilmoqda", value: stats?.quotes.pending ?? 0, tone: "amber" as const, href: "/admin/content?tab=quotes" },
+    { label: "Tasdiqlangan", value: stats?.quotes.approved ?? 0, tone: "emerald" as const, href: "/admin/content?tab=quotes" },
+    { label: "Rad etilgan", value: stats?.quotes.rejected ?? 0, tone: "rose" as const, href: "/admin/content?tab=quotes" },
+    { label: "Foydalanuvchilar", value: stats?.users ?? 0, tone: "blue" as const, href: "/admin/users" },
+    { label: "Bloklangan", value: stats?.blockedUsers ?? 0, tone: "rose" as const, href: "/admin/users?tab=bans" },
+    { label: "Arxivdagi iqtiboslar", value: stats?.deletedQuotes ?? 0, tone: "slate" as const, href: "/admin/content?tab=trash" },
     { label: "Onlayn", value: stats?.online ?? 0, tone: "blue" as const },
-  ];
+  ] as const;
 
   const WWW_UZ_STATS_URL = "https://www.uz/stat/48123";
 
@@ -57,15 +67,75 @@ export default function AdminDashboard() {
         }
       />
 
+      <div className="grid gap-3 lg:grid-cols-2">
+        <AdminCard>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-white">
+              <span className="text-amber-500">★</span> Kun iqtibosi
+            </h2>
+            <Link
+              href="/admin/content?tab=quotes"
+              className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+            >
+              Boshqarish
+            </Link>
+          </div>
+          {today ? (
+            <>
+              <blockquote className="mt-3 font-serif text-base leading-relaxed text-slate-800 dark:text-slate-100">
+                &ldquo;{today.text}&rdquo;
+              </blockquote>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <Badge tone="amber">★ Bugun ko&apos;rsatilmoqda</Badge>
+                <span className="font-medium text-slate-700 dark:text-slate-300">{today.displayAuthor}</span>
+                <Badge tone="blue">{today.category.name}</Badge>
+                <span>
+                  {today.views ?? 0} ko&apos;rish · {today.likeCount ?? 0} layk
+                </span>
+              </div>
+            </>
+          ) : (
+            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+              Hozircha kun iqtibosi belgilanmagan. Tasdiqlangan iqtibosga &ldquo;★ Kun iqtibosi qilish&rdquo; tugmasini
+              bosing.
+            </p>
+          )}
+        </AdminCard>
+        <AdminCard>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Zaxira (Backup)</h2>
+            <Link
+              href="/admin/settings?tab=backup"
+              className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+            >
+              Boshqarish
+            </Link>
+          </div>
+          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+            Ma&apos;lumotlar bazasi zaxirasini yaratish, yuklab olish va tiklash bo&apos;limi Sozlamalar &rarr; Zaxira
+            varag&apos;ida joylashgan.
+          </p>
+        </AdminCard>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
-        {cards.map((card) => (
-          <AdminCard key={card.label} className="p-4">
-            <p className="text-2xl font-bold text-slate-900 dark:text-white">{card.value}</p>
-            <div className="mt-1">
-              <Badge tone={card.tone}>{card.label}</Badge>
-            </div>
-          </AdminCard>
-        ))}
+        {cards.map((card) => {
+          const inner = (
+            <AdminCard className="p-4">
+              <p className="text-2xl font-bold text-slate-900 dark:text-white">{card.value}</p>
+              <div className="mt-1">
+                <Badge tone={card.tone}>{card.label}</Badge>
+              </div>
+            </AdminCard>
+          );
+          return "href" in card ? (
+            <Link key={card.label} href={card.href} className="block transition hover:opacity-95">
+              {inner}
+            </Link>
+          ) : (
+            <div key={card.label}>{inner}</div>
+          );
+        })}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-5">
