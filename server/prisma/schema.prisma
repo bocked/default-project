@@ -129,6 +129,7 @@ model Quote {
   awaitingRejection   Boolean     @default(false)
   telegramMessageId   Int? // id of the Telegram moderation message
   telegramUrl         String? // optional t.me/<channel>/<id> post embedded on the site
+  telegramPostedAt    DateTime? // when the quote was published to the Telegram channel
   views               Int         @default(0) // public feed views (analytics)
   userId              String
   categoryId          String

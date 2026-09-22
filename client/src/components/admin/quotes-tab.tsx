@@ -60,6 +60,7 @@ export function AdminQuotesTab() {
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [todayId, setTodayId] = useState<string | null>(null);
   const [pinning, setPinning] = useState<string | null>(null);
+  const [posting, setPosting] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
 
   const load = useCallback(async (t: Tab, q: string) => {
@@ -176,6 +177,19 @@ export function AdminQuotesTab() {
       setError(err instanceof Error ? err.message : "Amal bajarilmadi");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function postTelegram(quote: AdminQuote): Promise<void> {
+    setPosting(quote.id);
+    setError(null);
+    try {
+      await api<{ ok: boolean }>(`/api/admin/quotes/${quote.id}/post-telegram`, { method: "POST" });
+      setQuotes((qs) => qs.map((q) => (q.id === quote.id ? { ...q, telegramPostedAt: new Date().toISOString() } : q)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Amal bajarilmadi");
+    } finally {
+      setPosting(null);
     }
   }
 
@@ -315,6 +329,9 @@ export function AdminQuotesTab() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <Badge tone={statusTone[quote.status]}>{statusLabel[quote.status]}</Badge>
+                    {quote.status === "APPROVED" && quote.telegramPostedAt && (
+                      <Badge tone="slate">✓ Telegramga joylashgan</Badge>
+                    )}
                     {todayId === quote.id && <Badge tone="emerald">★ Bugun ko&apos;rsatilmoqda</Badge>}
                     {pinnedId === quote.id && todayId !== quote.id && (
                       <Badge tone="blue">★ Kun iqtibosiga tayinlangan</Badge>
@@ -386,6 +403,16 @@ export function AdminQuotesTab() {
                     >
                       Tahrirlash
                     </AdminButton>
+                    {quote.status === "APPROVED" && (
+                      <AdminButton
+                        variant="slate"
+                        disabled={busy || posting === quote.id}
+                        onClick={() => void postTelegram(quote)}
+                        title="Tasdiqlangan iqtibosni Telegram kanalga yuborish"
+                      >
+                        {posting === quote.id ? "Yuborilmoqda..." : "📨 Telegramga joylash"}
+                      </AdminButton>
+                    )}
                     {quote.status === "APPROVED" &&
                       (pinnedId === quote.id || todayId === quote.id ? (
                         <AdminButton

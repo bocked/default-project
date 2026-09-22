@@ -8,6 +8,11 @@ export function telegramEnabled(): boolean {
   return config.telegramBotToken.length > 0 && config.telegramAdminChatId.length > 0;
 }
 
+/** Whether the bot can publish approved quotes to the Telegram channel. */
+export function channelEnabled(): boolean {
+  return config.telegramBotToken.length > 0 && config.telegramChannelId.length > 0;
+}
+
 async function apiCall<T>(method: string, body: unknown): Promise<T | null> {
   if (!config.telegramBotToken) return null;
   try {
@@ -103,6 +108,47 @@ export async function answerCallbackQuery(callbackQueryId: string, text?: string
     text: text ?? "",
     show_alert: false,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Channel posting (approved quotes published to the Telegram channel)
+// ---------------------------------------------------------------------------
+
+/** Inline button appended to channel posts — opens the quote on the site. */
+export interface ChannelKeyboard {
+  inline_keyboard: Array<Array<{ text: string; url: string }>>;
+}
+
+export interface ChannelQuote {
+  id: string;
+  text: string;
+  displayAuthor: string;
+}
+
+export function channelPostKeyboard(quoteId: string, siteUrl: string): ChannelKeyboard {
+  return {
+    inline_keyboard: [[{ text: "🔗 Saytda o'qish", url: `${siteUrl}/?quote=${quoteId}` }]],
+  };
+}
+
+/** The nicely formatted post body shown for an approved quote in the channel. */
+export function quoteChannelPostText(quote: ChannelQuote): string {
+  return [`💬 Iqtibos`, "", `“${quote.text}”`, "", `— ${quote.displayAuthor}`].join("\n");
+}
+
+/**
+ * Publishes an approved quote to the configured Telegram channel with a
+ * "read on site" inline button. Returns false when the channel is not
+ * configured or Telegram rejects the message.
+ */
+export async function publishQuoteToChannel(quote: ChannelQuote): Promise<boolean> {
+  if (!channelEnabled()) return false;
+  const json = await apiCall<TelegramResult<{ message_id: number }>>("sendMessage", {
+    chat_id: config.telegramChannelId,
+    text: quoteChannelPostText(quote),
+    reply_markup: channelPostKeyboard(quote.id, config.publicSiteUrl),
+  });
+  return json?.ok === true;
 }
 
 // ---------------------------------------------------------------------------

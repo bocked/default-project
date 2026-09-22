@@ -6,6 +6,7 @@ import { AuthProvider } from "@/lib/auth";
 import { SiteShell } from "@/components/SiteShell";
 import { ToastProvider } from "@/components/ToastProvider";
 import { PwaRegister } from "@/components/PwaRegister";
+import { InstallPwa } from "@/components/InstallPwa";
 import { PageViewTracker } from "@/components/PageViewTracker";
 
 const inter = Inter({
@@ -54,6 +55,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-background text-foreground">
         <PwaRegister />
+        <InstallPwa />
         <PageViewTracker />
         <ToastProvider>
           <AuthProvider>

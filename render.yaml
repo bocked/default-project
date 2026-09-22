@@ -29,6 +29,8 @@ services:
         sync: false
       - key: APP_URL
         value: "https://default-project-bza.pages.dev"
+      - key: SITE_URL
+        value: "https://yerlikoglon.uz"
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
@@ -46,6 +48,8 @@ services:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_ADMIN_CHAT_ID
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
         sync: false
       - key: TELEGRAM_WEBHOOK_SECRET
         sync: false

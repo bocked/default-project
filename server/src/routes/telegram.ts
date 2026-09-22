@@ -9,6 +9,7 @@ import {
   sendTelegramMessage,
   requestContactMessage,
   sendVerificationCodeMessage,
+  publishQuoteToChannel,
 } from "../lib/telegram.js";
 import {
   hashTelegramVerifyToken,
@@ -102,6 +103,17 @@ async function handleCallback(cq: Record<string, any>): Promise<void> {
     });
     if (messageId) await editModerationMessage(chatId, messageId, approvedText(quote), null);
     void notifyQuoteModeration({ quoteId, decision: "approved" });
+    void (async () => {
+      try {
+        const posted = await publishQuoteToChannel({ id: quote.id, text: quote.text, displayAuthor: quote.displayAuthor });
+        if (posted) {
+          await prisma.quote.update({ where: { id: quote.id }, data: { telegramPostedAt: new Date() } });
+          addLog("info", `Iqtibos Telegram kanalga joylandi: ${quote.text.slice(0, 40)}...`);
+        }
+      } catch {
+        /* channel failures must never break the approval */
+      }
+    })();
     void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
     addLog("info", `Iqtibos tasdiqlandi (Telegram): ${quote.text.slice(0, 40)}...`);
   } else if (data.startsWith(REJECT_PREFIX)) {

@@ -70,6 +70,10 @@ export const config = {
   // (the webhook still processes incoming updates).
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
   telegramAdminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID ?? "",
+  // Channel the bot posts approved quotes to (auto / manual "post to Telegram").
+  telegramChannelId: process.env.TELEGRAM_CHANNEL_ID ?? "",
+  // Public site URL used for the "read on site" button on channel posts.
+  publicSiteUrl: process.env.SITE_URL?.replace(/\/+$/, "") ?? "https://yerlikoglon.uz",
   // Secret shared with Telegram when registering the webhook
   // (`X-Telegram-Bot-Api-Secret-Token` header).
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? "",

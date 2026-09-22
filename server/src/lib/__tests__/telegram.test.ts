@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moderationKeyboard, moderationText } from "../telegram.js";
+import { moderationKeyboard, moderationText, quoteChannelPostText, channelPostKeyboard } from "../telegram.js";
 
 describe("moderationKeyboard", () => {
   it("attaches approve and reject buttons with the quote id", () => {
@@ -36,5 +36,24 @@ describe("moderationText", () => {
   it("renders a tagless quote without crashing", () => {
     const text = moderationText({ ...base, tags: [] });
     expect(text).toContain("Heshteglar: —");
+  });
+});
+
+describe("quoteChannelPostText", () => {
+  it("formats the quote with author for the channel", () => {
+    const text = quoteChannelPostText({ id: "q1", text: "Bilim — kuchdir.", displayAuthor: "anonim" });
+    expect(text).toContain("Bilim — kuchdir.");
+    expect(text).toContain("— anonim");
+    expect(text.startsWith("💬 Iqtibos")).toBe(true);
+  });
+});
+
+describe("channelPostKeyboard", () => {
+  it("links to the quote page with an inline button", () => {
+    const kb = channelPostKeyboard("q1", "https://yerlikoglon.uz");
+    expect(kb.inline_keyboard[0][0]).toEqual({
+      text: "🔗 Saytda o'qish",
+      url: "https://yerlikoglon.uz/?quote=q1",
+    });
   });
 });

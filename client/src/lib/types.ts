@@ -96,6 +96,7 @@ export interface AdminQuote {
   displayAuthor: string;
   anonymous: boolean;
   telegramUrl: string | null;
+  telegramPostedAt: string | null;
   status: QuoteStatus;
   rejectionReason: string | null;
   deletedAt: string | null;

@@ -8,7 +8,7 @@ import { onlineCount } from "./api.js";
 import { bus } from "../lib/bus.js";
 import { config } from "../config.js";
 import { adminLimiter } from "../lib/rateLimit.js";
-import { editModerationMessage, sendTelegramMessage, telegramEnabled } from "../lib/telegram.js";
+import { editModerationMessage, sendTelegramMessage, telegramEnabled, channelEnabled, publishQuoteToChannel } from "../lib/telegram.js";
 import { sendEmail } from "../lib/email.js";
 import { notifyQuoteModeration } from "../lib/notify.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
@@ -264,6 +264,27 @@ adminRouter.post("/quotes/bulk", validateBody(bulkQuotesSchema), async (req, res
           void editModerationMessage(config.telegramAdminChatId, q.telegramMessageId, text, null);
         }
       }
+      if (body.action === "approve") {
+        // Auto-publish approved quotes (freshly approved or already approved
+        // but never posted) to the Telegram channel — those not posted yet.
+        const toPublish = await prisma.quote.findMany({
+          where: { id: { in: body.ids }, status: "APPROVED", telegramPostedAt: null },
+          select: { id: true, text: true, displayAuthor: true },
+        });
+        for (const q of toPublish) {
+          void (async () => {
+            try {
+              const posted = await publishQuoteToChannel(q);
+              if (posted) {
+                await prisma.quote.update({ where: { id: q.id }, data: { telegramPostedAt: new Date() } });
+                addLog("info", `Iqtibos Telegram kanalga joylandi: ${q.text.slice(0, 40)}...`);
+              }
+            } catch {
+              /* channel failures must never break the bulk action */
+            }
+          })();
+        }
+      }
     }
     await recordAudit({
       adminId: adminId(req),
@@ -302,6 +323,20 @@ adminRouter.post("/quotes/:id/approve", async (req, res) => {
       );
     }
     if (wasPending) void notifyQuoteModeration({ quoteId: quote.id, decision: "approved" });
+    // First approval auto-publishes the quote to the Telegram channel.
+    if (!quote.telegramPostedAt) {
+      void (async () => {
+        try {
+          const posted = await publishQuoteToChannel({ id: quote.id, text: quote.text, displayAuthor: quote.displayAuthor });
+          if (posted) {
+            await prisma.quote.update({ where: { id: quote.id }, data: { telegramPostedAt: new Date() } });
+            addLog("info", `Iqtibos Telegram kanalga joylandi: ${quote.text.slice(0, 40)}...`);
+          }
+        } catch {
+          /* channel failures must never break the approval */
+        }
+      })();
+    }
     invalidateQuoteCaches();
     await recordAudit({
       adminId: adminId(req),
@@ -354,6 +389,46 @@ adminRouter.post("/quotes/:id/reject", validateBody(adminQuoteRejectSchema), asy
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: "Failed to reject quote" });
+  }
+});
+
+// POST /api/admin/quotes/:id/post-telegram - publish (or republish) an
+// approved quote to the configured Telegram channel.
+adminRouter.post("/quotes/:id/post-telegram", async (req, res) => {
+  try {
+    const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
+    if (!quote) {
+      res.status(404).json({ error: "Iqtibos topilmadi" });
+      return;
+    }
+    if (quote.status !== "APPROVED") {
+      res.status(400).json({ error: "Faqat tasdiqlangan iqtiboslarni Telegramga joylash mumkin" });
+      return;
+    }
+    if (!channelEnabled()) {
+      res.status(400).json({ error: "Telegram kanal sozlanmagan. TELEGRAM_CHANNEL_ID o'rnating." });
+      return;
+    }
+    const posted = await publishQuoteToChannel(quote);
+    if (!posted) {
+      res.status(502).json({ error: "Telegramga yuborilmadi. Bot kanalga admin qilib qo'shilganini tekshiring." });
+      return;
+    }
+    await prisma.quote.update({ where: { id: quote.id }, data: { telegramPostedAt: new Date() } });
+    invalidateQuoteCaches();
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "quote.post-telegram",
+      targetType: "quote",
+      targetId: quote.id,
+      detail: quote.text.slice(0, 60),
+      ip: clientIp(req.headers),
+    });
+    addLog("info", `Iqtibos Telegram kanalga joylandi (qo'lda): ${quote.text.slice(0, 40)}...`);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Telegramga joylash bajarilmadi" });
   }
 });
 
