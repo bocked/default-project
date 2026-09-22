@@ -42,6 +42,12 @@ function HomeInner() {
   const sort = (searchParams.get("sort") as SortKey) || "newest";
   const page = Math.max(1, Number(searchParams.get("page") ?? 1));
 
+  // Share deep link (?quote=<id>): that quote is highlighted and scrolled into
+  // view; if it is not on the loaded page it is fetched and prepended.
+  const quoteId = (searchParams.get("quote") ?? "").trim();
+  const deepLinkedRef = useRef<string | null>(null);
+  const scrolledRef = useRef(false);
+
   const heroTitle = content["hero.title"] ?? "Iqtibosim";
   const heroSubtitle =
     content["hero.subtitle"] ??
@@ -125,6 +131,45 @@ function HomeInner() {
     setError(null);
     void fetchQuotes(page);
   }, [fetchQuotes, page]);
+
+  // Deep link: prepend the target quote when it is not on the loaded page.
+  useEffect(() => {
+    if (!quoteId || loading) return;
+    if (quotes.some((n) => n.id === quoteId)) return;
+    if (deepLinkedRef.current === quoteId) return;
+    const id = window.setTimeout(() => {
+      deepLinkedRef.current = quoteId;
+      void api<{ quote: Quote | null }>(`/api/quotes/${encodeURIComponent(quoteId)}`)
+        .then((data) => {
+          if (!data.quote) return;
+          setQuotes((prev) => {
+            if (prev.some((n) => n.id === quoteId)) return prev;
+            return [data.quote as Quote, ...prev];
+          });
+          setTotal((t) => t + 1);
+        })
+        .catch(() => {});
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [quoteId, quotes, loading]);
+
+  // Scroll the highlighted quote into view once its card exists.
+  useEffect(() => {
+    if (!quoteId || scrolledRef.current) return;
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(`quote-${quoteId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        scrolledRef.current = true;
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [quoteId, quotes.length, loading]);
+
+  // A new deep-link should scroll again, even within the same session.
+  useEffect(() => {
+    scrolledRef.current = false;
+  }, [quoteId]);
 
   useEffect(() => {
     void api<{ content: Record<string, string> }>("/api/content")
@@ -214,7 +259,7 @@ function HomeInner() {
 
       <div className="space-y-4">
         {quotes.map((quote) => (
-          <QuoteCard key={quote.id} quote={quote} />
+          <QuoteCard key={quote.id} quote={quote} highlight={quote.id === quoteId} />
         ))}
       </div>
 

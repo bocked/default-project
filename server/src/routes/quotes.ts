@@ -287,6 +287,43 @@ quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireFullUser, validat
   }
 });
 
+// GET /api/quotes/:id - one APPROVED quote by id. Used for share deep links
+// (the ?quote=<id> URL highlights the quote on the homepage) and for the
+// Cloudflare Pages Function that builds link-preview (OpenGraph) tags. Applies
+// the same view-count rules as the feed: bots and deduped visitors never
+// inflate the counter.
+quotesRouter.get("/:id", searchLimiter, async (req, res) => {
+  try {
+    const userId = (req as import("express").Request & { user?: { id: string } }).user?.id;
+    const quote = await prisma.quote.findFirst({
+      where: { id: req.params.id, status: "APPROVED", deletedAt: null },
+      include: quoteInclude,
+    });
+    if (!quote) {
+      res.status(404).json({ error: "Iqtibos topilmadi" });
+      return;
+    }
+
+    if (!isBotUserAgent(req.headers["user-agent"])) {
+      const visitor = userId ? `u:${userId}` : `ip:${clientIp(req.headers)}`;
+      if (viewDedupe.shouldCount(`${visitor}:${quote.id}`)) {
+        void prisma.quote
+          .updateMany({ where: { id: quote.id }, data: { views: { increment: 1 } } })
+          .catch(() => {});
+      }
+      viewDedupe.prune();
+    }
+
+    const likedByMe = userId
+      ? (await prisma.quoteLike.findUnique({ where: { userId_quoteId: { userId, quoteId: quote.id } } })) !== null
+      : false;
+
+    res.json({ quote: toPublicQuote({ ...quote, likedByMe }, userId) });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
 // POST /api/quotes/:id/like - like an approved quote (idempotent, unique per user).
 quotesRouter.post("/:id/like", likeLimiter, requireAuth, async (req, res) => {
   try {

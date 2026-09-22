@@ -14,7 +14,15 @@ function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("uz-UZ", { day: "numeric", month: "long", year: "numeric" });
 }
 
-export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showStatus?: boolean }) {
+export function QuoteCard({
+  quote,
+  showStatus = false,
+  highlight = false,
+}: {
+  quote: Quote;
+  showStatus?: boolean;
+  highlight?: boolean;
+}) {
   const { user } = useAuth();
   const toast = useToast();
   const [liked, setLiked] = useState(Boolean(quote.likedByMe));
@@ -40,9 +48,17 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
     };
   }, [menuOpen]);
 
-  /** "“<text>” — <author>" is what gets shared / copied. */
+  /** "“<text>” — <author>" alone (the body of Telegram / WhatsApp shares). */
   function shareText(): string {
     return `\u201C${quote.text}\u201D \u2014 ${quote.displayAuthor}`;
+  }
+
+  /** Deep link that opens this exact quote highlighted on the homepage. */
+  const shareUrl = `https://yerlikoglon.uz/?quote=${encodeURIComponent(quote.id)}`;
+
+  /** Full share payload: quote + author + deep link. */
+  function shareDetail(): string {
+    return `${shareText()}\n\nBatafsil: ${shareUrl}`;
   }
 
   async function toggleLike(): Promise<void> {
@@ -96,18 +112,37 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
   }
 
   function shareOn(target: "telegram" | "whatsapp"): void {
-    const text = `${shareText()}\n\nyerlikoglon.uz`;
+    const text = shareDetail();
     const url =
       target === "telegram"
-        ? `https://t.me/share/url?url=${encodeURIComponent("https://yerlikoglon.uz")}&text=${encodeURIComponent(text)}`
+        ? `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`
         : `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank", "noopener,noreferrer");
     setMenuOpen(false);
   }
 
-  async function copyToClipboard(): Promise<void> {
+  /** "Matn sifatida ulashish" — native share sheet when available, otherwise copy the text. */
+  async function shareTextClipboard(): Promise<void> {
+    const text = shareDetail();
+    const native = window.navigator as Navigator & {
+      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
+    };
     try {
-      await navigator.clipboard.writeText(`${shareText()}\n\nyerlikoglon.uz`);
+      if (typeof native.share === "function") {
+        await native.share({ title: "Iqtibosim", text, url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(text);
+        toast.success("Matn nusxalandi");
+      }
+    } catch {
+      // user cancelled the native share sheet: ignore
+    }
+    setMenuOpen(false);
+  }
+
+  async function copyLink(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
       toast.success("Havola nusxalandi");
     } catch {
       toast.error("Nusxalash imkoni bo'lmadi");
@@ -122,7 +157,16 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
     "flex min-h-[44px] w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800";
 
   return (
-    <figure className="animate-slide-up rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none sm:p-5">
+    <figure
+      id={`quote-${quote.id}`}
+      className={`animate-slide-up relative scroll-mt-28 rounded-2xl border p-4 shadow-sm sm:p-5 ${
+        menuOpen ? "z-30" : ""
+      } ${
+        highlight
+          ? "border-blue-400/70 bg-blue-50/40 shadow-md ring-2 ring-blue-500/60 dark:border-blue-500/60 dark:bg-blue-500/10 dark:shadow-none"
+          : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none"
+      }`}
+    >
       <blockquote className="font-serif text-base leading-relaxed text-slate-800 dark:text-slate-100 md:text-lg">
         <span className="mr-1 text-blue-600 dark:text-blue-400">&ldquo;</span>
         {quote.text}
@@ -224,7 +268,7 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
           {menuOpen && (
             <div
               role="menu"
-              className="animate-pop-in absolute right-0 top-full z-30 mt-2 w-60 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+              className="animate-pop-in absolute right-0 top-full z-50 mt-2 w-60 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900"
             >
               <button type="button" onClick={() => void shareAsImage()} className={shareItemClass}>
                 <svg className="h-4 w-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
@@ -233,6 +277,19 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
                   <path strokeLinecap="round" strokeLinejoin="round" d="m21 15-5-5L5 21" />
                 </svg>
                 <span>Rasm sifatida ulashish</span>
+              </button>
+              <button type="button" onClick={() => void shareTextClipboard()} className={shareItemClass}>
+                <svg className="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M13 5H6a2 2 0 00-2 2v8a2 2 0 002 2h9a2 2 0 002-2v-6l-4-4z"
+                  />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 5v4h4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m13.5 12.5-4 4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 16.5h2.5V14" />
+                </svg>
+                <span>Matn sifatida ulashish</span>
               </button>
               <button type="button" onClick={() => shareOn("telegram")} className={shareItemClass}>
                 <svg className="h-4 w-4 text-sky-500" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -246,7 +303,7 @@ export function QuoteCard({ quote, showStatus = false }: { quote: Quote; showSta
                 </svg>
                 <span>WhatsApp orqali</span>
               </button>
-              <button type="button" onClick={() => void copyToClipboard()} className={shareItemClass}>
+              <button type="button" onClick={() => void copyLink()} className={shareItemClass}>
                 <svg className="h-4 w-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="9" y="9" width="13" height="13" rx="2" />
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
