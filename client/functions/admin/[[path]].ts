@@ -37,6 +37,7 @@ const REDIRECTS: Record<string, string> = {
   "/admin/announcements": "/admin/communication?tab=announcements",
   "/admin/feedback": "/admin/communication?tab=feedback",
   "/admin/seo": "/admin/settings?tab=seo",
+  "/admin/backup": "/admin/settings?tab=backup",
   "/admin/logs": "/admin/audit?tab=logs",
   "/admin/activity": "/admin/audit?tab=activity",
 };

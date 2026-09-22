@@ -12,7 +12,6 @@ const NAV = [
   { href: "/admin/communication", label: "Muloqot" },
   { href: "/admin/settings", label: "Sozlamalar" },
   { href: "/admin/audit", label: "Audit" },
-  { href: "/admin/backup", label: "Zaxira" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

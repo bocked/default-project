@@ -14,7 +14,7 @@ import {
 } from "@/components/admin-ui";
 import type { BackupRecord } from "@/lib/types";
 
-export default function AdminBackupPage() {
+export function AdminBackupTab() {
   const [backups, setBackups] = useState<BackupRecord[]>([]);
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);

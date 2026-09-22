@@ -6,11 +6,13 @@ import { AdminTabs } from "@/components/admin-ui";
 import { AdminGeneralSettingsTab } from "@/components/admin/general-settings-tab";
 import { AdminSeoTab } from "@/components/admin/seo-tab";
 import { AdminContentBlocksTab } from "@/components/admin/content-blocks-tab";
+import { AdminBackupTab } from "@/components/admin/backup-tab";
 
 const TABS = [
   { id: "general", label: "Umumiy Sozlamalar" },
   { id: "seo", label: "SEO Qoidalari" },
   { id: "content", label: "Content Blocks" },
+  { id: "backup", label: "Zaxira" },
 ];
 
 function AdminSettingsInner() {
@@ -24,6 +26,7 @@ function AdminSettingsInner() {
       {tab === "general" && <AdminGeneralSettingsTab />}
       {tab === "seo" && <AdminSeoTab />}
       {tab === "content" && <AdminContentBlocksTab />}
+      {tab === "backup" && <AdminBackupTab />}
     </div>
   );
 }
