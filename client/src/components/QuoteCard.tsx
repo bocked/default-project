@@ -6,9 +6,11 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "./ToastProvider";
 import type { Quote } from "@/lib/types";
-import { renderQuoteImage } from "@/lib/quoteImage";
+import { renderQuoteImage, pickVipTheme } from "@/lib/quoteImage";
+import { isPremiumActive } from "@/lib/premium";
 import { StatusBadge } from "./StatusBadge";
 import { TelegramPost } from "./TelegramPost";
+import { VipBadge } from "./VipBadge";
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("uz-UZ", { day: "numeric", month: "long", year: "numeric" });
@@ -88,7 +90,13 @@ export function QuoteCard({
     if (busyArt) return;
     setBusyArt(true);
     try {
-      const blob = await renderQuoteImage(quote);
+      // VIP users get exclusive canvas backgrounds + fonts and their own
+      // watermark (channel/handle) instead of the default site wordmark.
+      const vip = isPremiumActive(user);
+      const blob = await renderQuoteImage(quote, {
+        theme: vip ? pickVipTheme(quote.id) : undefined,
+        watermark: vip && user?.customWatermark?.trim() ? user.customWatermark.trim() : undefined,
+      });
       const file = new File([blob], `iqtibos-${quote.id}.png`, { type: "image/png" });
       if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: "Iqtibos" });
@@ -178,6 +186,7 @@ export function QuoteCard({
       <figcaption className="mt-4 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <span className="truncate font-medium text-slate-700 dark:text-slate-300">{quote.displayAuthor}</span>
+          {quote.authorPremium && <VipBadge size="sm" className="shrink-0" />}
           <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{formatDate(quote.createdAt)}</span>
         </div>
         <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">

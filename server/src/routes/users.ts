@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+import { isPremiumActive } from "../lib/premium.js";
 
 export const usersRouter = Router();
 
@@ -14,7 +15,13 @@ usersRouter.get("/:id", async (req, res) => {
   try {
     const user = await prisma.user.findFirst({
       where: { id: req.params.id, deletedAt: null, blocked: false },
-      select: { id: true, nickname: true, createdAt: true },
+      select: {
+        id: true,
+        nickname: true,
+        isPremium: true,
+        premiumExpiresAt: true,
+        createdAt: true,
+      },
     });
     if (!user) {
       res.status(404).json({ error: "Profil topilmadi" });
@@ -27,7 +34,12 @@ usersRouter.get("/:id", async (req, res) => {
       take: 100,
     });
     res.json({
-      user,
+      user: {
+        id: user.id,
+        nickname: user.nickname,
+        isPremium: isPremiumActive(user),
+        createdAt: user.createdAt,
+      },
       quotes: quotes.map((q) => ({
         id: q.id,
         text: q.text,

@@ -10,14 +10,16 @@ import { sendModerationMessage } from "../lib/telegram.js";
 import { addLog } from "../lib/logstore.js";
 import { recordActivity } from "../lib/activity.js";
 import { validateBody, quoteCreateSchema, type QuoteCreate } from "../schemas.js";
-import { cachedGet, CACHE_PREFIXES } from "../lib/redisCache.js";
+import { cachedGet, invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { getContent } from "../lib/content.js";
+import { isPremiumActive } from "../lib/premium.js";
 
 export const quotesRouter = Router();
 
 const quoteInclude = {
   category: { select: { id: true, name: true, slug: true } },
   tags: { select: { id: true, name: true, slug: true } },
+  user: { select: { isPremium: true, premiumExpiresAt: true } },
   _count: { select: { likes: true } },
 } satisfies Prisma.QuoteInclude;
 
@@ -27,6 +29,7 @@ interface PublicQuote {
   displayAuthor: string;
   anonymous: boolean;
   telegramUrl: string | null;
+  authorPremium: boolean;
   createdAt: Date;
   views: number;
   likeCount: number;
@@ -50,6 +53,7 @@ function toPublicQuote(q: any, userId?: string): PublicQuote {
     displayAuthor: q.displayAuthor,
     anonymous: q.anonymous,
     telegramUrl: q.telegramUrl ?? null,
+    authorPremium: isPremiumActive(q.user ?? { isPremium: false }),
     createdAt: q.createdAt,
     views: q.views ?? 0,
     likeCount,
@@ -260,6 +264,10 @@ quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireFullUser, validat
       ? "Anonim"
       : req.user!.nickname || req.user!.name || "Foydalanuvchi";
 
+    // VIP fast moderation: active premium users skip the admin queue — their
+    // quotes go straight to the APPROVED feed.
+    const autoApproved = isPremiumActive(req.user!);
+
     const quote = await prisma.quote.create({
       data: {
         text: body.text,
@@ -268,6 +276,7 @@ quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireFullUser, validat
         telegramUrl: body.telegramUrl ?? null,
         userId: req.user!.id,
         categoryId: category.id,
+        status: autoApproved ? "APPROVED" : "PENDING",
         tags: {
           connectOrCreate: tagData.map((t) => ({
             where: { slug: t.slug },
@@ -278,11 +287,17 @@ quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireFullUser, validat
       include: quoteInclude,
     });
 
-    const messageId = await sendModerationMessage({ quote, author: req.user!, category, tags: quote.tags });
-    if (messageId !== null) {
-      await prisma.quote.update({ where: { id: quote.id }, data: { telegramMessageId: messageId } });
+    if (autoApproved) {
+      // The new APPROVED quote can change the feed, counts and daily pick.
+      void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
+      addLog("info", `VIP iqtibos avtomatik tasdiqlandi: ${quote.text.slice(0, 40)}... (${req.user!.email ?? req.user!.id})`);
+    } else {
+      const messageId = await sendModerationMessage({ quote, author: req.user!, category, tags: quote.tags });
+      if (messageId !== null) {
+        await prisma.quote.update({ where: { id: quote.id }, data: { telegramMessageId: messageId } });
+      }
+      addLog("info", `Yangi iqtibos: ${quote.text.slice(0, 40)}... (${req.user!.email ?? req.user!.id})`);
     }
-    addLog("info", `Yangi iqtibos: ${quote.text.slice(0, 40)}... (${req.user!.email ?? req.user!.id})`);
     void recordActivity({ userId: req.user!.id, action: "QUOTE_CREATE", detail: quote.text.slice(0, 80), targetId: quote.id });
     res.status(201).json({ quote });
   } catch {

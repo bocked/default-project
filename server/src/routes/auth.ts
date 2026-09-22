@@ -60,6 +60,9 @@ interface SafeUser {
   telegramUsername: string | null;
   telegramFirstName: string | null;
   telegramLastName: string | null;
+  isPremium: boolean;
+  premiumExpiresAt: Date | null;
+  customWatermark: string | null;
   createdAt: Date;
 }
 
@@ -76,6 +79,9 @@ function toUser(user: SafeUser): SafeUser {
     telegramUsername: user.telegramUsername,
     telegramFirstName: user.telegramFirstName,
     telegramLastName: user.telegramLastName,
+    isPremium: user.isPremium,
+    premiumExpiresAt: user.premiumExpiresAt,
+    customWatermark: user.customWatermark,
     createdAt: user.createdAt,
   };
 }
@@ -214,9 +220,10 @@ authRouter.get("/me", requireAuth, (req, res) => {
 // PATCH /api/auth/me - update real name / nickname
 authRouter.patch("/me", requireAuth, validateBody(updateProfileSchema), async (req, res) => {
   const body = res.locals.body as UpdateProfile;
-  const data: { name?: string | null; nickname?: string | null } = {};
+  const data: { name?: string | null; nickname?: string | null; customWatermark?: string | null } = {};
   if (body.name !== undefined) data.name = body.name;
   if (body.nickname !== undefined) data.nickname = body.nickname;
+  if (body.customWatermark !== undefined) data.customWatermark = body.customWatermark;
   const user = await prisma.user.update({ where: { id: req.user!.id }, data });
   res.json({ user: toUser(user) });
 });

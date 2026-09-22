@@ -16,6 +16,9 @@ export interface User {
   telegramUsername?: string | null;
   telegramFirstName?: string | null;
   telegramLastName?: string | null;
+  isPremium?: boolean;
+  premiumExpiresAt?: string | null;
+  customWatermark?: string | null;
   createdAt: string;
 }
 
@@ -43,6 +46,7 @@ export interface Quote {
   telegramUrl?: string | null;
   status?: QuoteStatus;
   rejectionReason?: string | null;
+  authorPremium?: boolean;
   createdAt: string;
   views?: number;
   likeCount?: number;
@@ -61,6 +65,7 @@ export interface PaginatedQuotes {
 export interface PublicUserProfile {
   id: string;
   nickname: string | null;
+  isPremium?: boolean;
   createdAt: string;
 }
 
@@ -87,6 +92,9 @@ export interface AdminUser {
   blocked: boolean;
   blockedAt: string | null;
   deletedAt: string | null;
+  isPremium: boolean;
+  premiumExpiresAt: string | null;
+  customWatermark?: string | null;
   createdAt: string;
 }
 

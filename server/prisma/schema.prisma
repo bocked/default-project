@@ -86,6 +86,12 @@ model User {
   telegramVerifyChatId        String?
   telegramVerifyCode          String?
   telegramVerifyCodeExpiresAt DateTime?
+  // Premium (VIP): isPremium may stay true after premiumExpiresAt passes —
+  // gate "active" with premiumExpiresAt at read time, not just isPremium.
+  isPremium                   Boolean         @default(false)
+  premiumExpiresAt            DateTime?
+  // Replaces "yerlikoglon.uz" with the user's own channel/handle on share images.
+  customWatermark             String?
   createdAt                   DateTime        @default(now())
   updatedAt                   DateTime        @updatedAt
   // Moderation controls (admin panel).

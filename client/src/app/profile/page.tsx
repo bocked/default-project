@@ -6,6 +6,8 @@ import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { QuoteCard } from "@/components/QuoteCard";
 import { QuoteForm } from "@/components/QuoteForm";
+import { VipBadge } from "@/components/VipBadge";
+import { isPremiumActive, formatPremiumExpiry } from "@/lib/premium";
 import type { Category, Quote, User } from "@/lib/types";
 
 export default function ProfilePage() {
@@ -237,6 +239,8 @@ export default function ProfilePage() {
 
       <ProfileSettings key={user.id} user={user} onSaved={refresh} />
 
+      <PremiumCard user={user} onSaved={refresh} />
+
       {(user.emailVerified || user.phoneVerified) && categories.length > 0 && (
         <QuoteForm categories={categories} onCreated={handleCreated} />
       )}
@@ -268,13 +272,15 @@ function ProfileSettings({
   onSaved: () => Promise<User | null>;
 }) {  const [name, setName] = useState(user.name ?? "");
   const [nickname, setNickname] = useState(user.nickname ?? "");
+  const [customWatermark, setCustomWatermark] = useState(user.customWatermark ?? "");
   const [profileSaved, setProfileSaved] = useState(false);
+  const premium = isPremiumActive(user);
 
   async function saveProfile(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     await api<{ user: User }>("/api/auth/me", {
       method: "PATCH",
-      body: { name, nickname },
+      body: { name, nickname, ...(premium ? { customWatermark } : {}) },
     });
     await onSaved();
     setProfileSaved(true);
@@ -303,6 +309,23 @@ function ProfileSettings({
             className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-900"
           />
         </div>
+        {premium && (
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              Rasm watermarki (VIP) — Telegram kanalingiz yoki ismingiz
+            </label>
+            <input
+              value={customWatermark}
+              onChange={(e) => setCustomWatermark(e.target.value)}
+              maxLength={50}
+              placeholder="masalan: @kanalim"
+              className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100 dark:border-amber-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500"
+            />
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              Rasm sifatida ulashishda pastdagi &quot;yerlikoglon.uz&quot; o&apos;rniga shu matn chiqadi.
+            </p>
+          </div>
+        )}
         <div className="sm:col-span-2">
           <button
             type="submit"
@@ -313,6 +336,64 @@ function ProfileSettings({
           {profileSaved && <span className="ml-3 text-sm text-emerald-600 dark:text-emerald-400">Saqlandi ✓</span>}
         </div>
       </form>
+    </section>
+  );
+}
+
+/** VIP status card: shows active-subscription info, or promotes the three
+ *  exclusive benefits to everyone else. */
+function PremiumCard({ user, onSaved }: { user: User; onSaved: () => Promise<User | null> }) {
+  const premium = isPremiumActive(user);
+
+  if (premium) {
+    return (
+      <section
+        className="rounded-2xl border border-amber-300 p-5 shadow-sm dark:border-amber-700"
+        style={{ background: "linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)" }}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <VipBadge size="md" />
+            <div>
+              <h2 className="text-sm font-semibold text-amber-950">VIP a&apos;zolik faol</h2>
+              <p className="text-xs text-amber-800">
+                {formatPremiumExpiry(user)} · iqtiboslaringiz avtomatik tasdiqlanadi
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onSaved}
+            className="rounded-xl border border-amber-400 bg-white/70 px-3.5 py-2 text-xs font-semibold text-amber-900 transition hover:bg-white"
+          >
+            Yangilash
+          </button>
+        </div>
+
+        <ul className="mt-4 grid gap-2 text-xs text-amber-900 sm:grid-cols-3">
+          <li className="rounded-xl bg-white/70 px-3 py-2.5">🖼 O&apos;z watermarkingiz (kanal/ism)</li>
+          <li className="rounded-xl bg-white/70 px-3 py-2.5">🎨 5+ eksklyuziv fon va premium shriftlar</li>
+          <li className="rounded-xl bg-white/70 px-3 py-2.5">⚡ Iqtiboslar avtomatik (tezkor) tasdiqlash</li>
+        </ul>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-amber-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:to-amber-950/40">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">VIP a&apos;zolik</h2>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            Eksklyuziv imkoniyatlardan foydalaning — status admin panelida beriladi.
+          </p>
+        </div>
+      </div>
+      <ul className="mt-4 grid gap-2 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
+        <li className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/5">🖼 Rasmda o&apos;z telegram kanalingiz/ismingiz</li>
+        <li className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/5">🎨 5+ eksklyuziv fon va premium shriftlar</li>
+        <li className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/5">⚡ Tezkor moderatsiya — iqtibos darhol o&apos;rnatiladi</li>
+      </ul>
     </section>
   );
 }

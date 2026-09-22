@@ -24,6 +24,7 @@ import {
   bulkQuotesSchema,
   bulkUsersSchema,
   userRoleUpdateSchema,
+  premiumUpdateSchema,
   tagUpdateSchema,
   categoryUpdateSchema,
   contentUpdateSchema,
@@ -38,6 +39,7 @@ import {
   type BulkQuotes,
   type BulkUsers,
   type UserRoleUpdate,
+  type PremiumUpdate,
   type TagUpdate,
   type CategoryUpdate,
   type ContentUpdate,
@@ -589,6 +591,9 @@ adminRouter.get("/users", async (req, res) => {
           blocked: true,
           blockedAt: true,
           deletedAt: true,
+          isPremium: true,
+          premiumExpiresAt: true,
+          customWatermark: true,
           createdAt: true,
         },
         orderBy: { createdAt: "desc" },
@@ -708,6 +713,42 @@ adminRouter.patch("/users/:id/role", validateBody(userRoleUpdateSchema), async (
     res.json({ ok: true, user: { id: user.id, role: user.role } });
   } catch {
     res.status(500).json({ error: "Rol o'zgartirilmadi" });
+  }
+});
+
+// POST /api/admin/users/:id/premium - grant, extend or revoke VIP status.
+// `expiresAt` null = lifetime; a past date disables active premium instantly.
+adminRouter.post("/users/:id/premium", validateBody(premiumUpdateSchema), async (req, res) => {
+  try {
+    const { isPremium, expiresAt } = res.locals.body as PremiumUpdate;
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) {
+      res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      return;
+    }
+    const user = await prisma.user.update({
+      where: { id: target.id },
+      data: {
+        isPremium,
+        premiumExpiresAt: isPremium ? (expiresAt ? new Date(expiresAt) : null) : null,
+      },
+      select: { id: true, isPremium: true, premiumExpiresAt: true },
+    });
+    await recordAudit({
+      adminId: adminId(req),
+      adminEmail: adminEmail(req),
+      action: "user.premium",
+      targetType: "user",
+      targetId: user.id,
+      detail: isPremium ? `VIP berildi (${expiresAt ?? "umrbod"})` : "VIP olib tashlandi",
+      ip: clientIp(req.headers),
+    });
+    res.json({
+      ok: true,
+      user: { id: user.id, isPremium: user.isPremium, premiumExpiresAt: user.premiumExpiresAt?.toISOString() ?? null },
+    });
+  } catch {
+    res.status(500).json({ error: "VIP holat o'zgartirilmadi" });
   }
 });
 

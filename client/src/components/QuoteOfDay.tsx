@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Quote } from "@/lib/types";
+import { VipBadge } from "./VipBadge";
 
 interface TodayResponse {
   date: string;
@@ -64,7 +65,10 @@ export function QuoteOfDay() {
           <blockquote className="mt-3 font-serif text-lg leading-relaxed text-white md:text-xl">
             &ldquo;{quote.text}&rdquo;
           </blockquote>
-          <figcaption className="mt-3 text-sm font-medium text-blue-100">\u2014 {quote.displayAuthor}</figcaption>
+          <figcaption className="mt-3 flex items-center gap-2 text-sm font-medium text-blue-100">
+            <span>— {quote.displayAuthor}</span>
+            {quote.authorPremium && <VipBadge size="sm" />}
+          </figcaption>
         </>
       )}
     </section>

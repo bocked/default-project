@@ -94,6 +94,14 @@ export const updateProfileSchema = z.object({
     .max(50)
     .optional()
     .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+  // VIP watermark shown instead of yerlikoglon.uz on share images. Empty
+  // clears it (falls back to the default wordmark).
+  customWatermark: z
+    .string()
+    .trim()
+    .max(50)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
 });
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 
@@ -183,6 +191,14 @@ export const userRoleUpdateSchema = z.object({
   role: z.enum(["USER", "ADMIN"]),
 });
 export type UserRoleUpdate = z.infer<typeof userRoleUpdateSchema>;
+
+export const premiumUpdateSchema = z.object({
+  isPremium: z.boolean(),
+  // Null means "lifetime"; otherwise an ISO date (already in the past revokes
+  // active premium without touching the flag).
+  expiresAt: z.string().datetime().nullable(),
+});
+export type PremiumUpdate = z.infer<typeof premiumUpdateSchema>;
 
 export const tagUpdateSchema = z.object({
   name: z.string().trim().min(1).max(40),

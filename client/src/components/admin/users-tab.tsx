@@ -15,6 +15,7 @@ import {
   ErrorNote,
   PageTitle,
 } from "@/components/admin-ui";
+import { isPremiumActive } from "@/lib/premium";
 import type { AdminUser } from "@/lib/types";
 
 export function AdminUsersTab() {
@@ -25,6 +26,7 @@ export function AdminUsersTab() {
   const [role, setRole] = useState("");
   const [blocked, setBlocked] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [vipDays, setVipDays] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
@@ -99,6 +101,41 @@ export function AdminUsersTab() {
       await load(search, role, blocked);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Rol o'zgartirilmadi");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function grantPremium(u: AdminUser): Promise<void> {
+    const days = vipDays[u.id] ?? "30";
+    const expiresAt =
+      days === "forever" ? null : new Date(Date.now() + Number(days) * 24 * 60 * 60 * 1000).toISOString();
+    setBusy(true);
+    setError(null);
+    try {
+      await api<{ ok: boolean }>(`/api/admin/users/${u.id}/premium`, {
+        method: "POST",
+        body: { isPremium: true, expiresAt },
+      });
+      await load(search, role, blocked);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "VIP berilmadi");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokePremium(u: AdminUser): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await api<{ ok: boolean }>(`/api/admin/users/${u.id}/premium`, {
+        method: "POST",
+        body: { isPremium: false, expiresAt: null },
+      });
+      await load(search, role, blocked);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "VIP olib tashlanmadi");
     } finally {
       setBusy(false);
     }
@@ -211,6 +248,7 @@ export function AdminUsersTab() {
                         <Badge tone={u.role === "ADMIN" ? "blue" : "slate"}>
                           {u.role === "ADMIN" ? "Admin" : "Foydalanuvchi"}
                         </Badge>
+                        {isPremiumActive(u) && <Badge tone="amber">VIP</Badge>}
                         {u.blocked && <Badge tone="rose">Bloklangan</Badge>}
                         {u.emailVerified && <Badge tone="emerald">Email</Badge>}
                         {u.phoneVerified && <Badge tone="emerald">Telefon</Badge>}
@@ -227,6 +265,30 @@ export function AdminUsersTab() {
                       <div className="flex justify-end gap-1.5">
                         {u.role !== "ADMIN" && (
                           <>
+                            <AdminSelect
+                              value={vipDays[u.id] ?? "30"}
+                              onChange={(e) => setVipDays((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                              className="w-28 py-1.5 text-xs"
+                            >
+                              <option value="7">7 kun</option>
+                              <option value="30">30 kun</option>
+                              <option value="365">1 yil</option>
+                              <option value="forever">Umrbod</option>
+                            </AdminSelect>
+                            {isPremiumActive(u) ? (
+                              <>
+                                <AdminButton variant="amber" disabled={busy} onClick={() => void grantPremium(u)}>
+                                  VIP uzaytirish
+                                </AdminButton>
+                                <AdminButton variant="slate" disabled={busy} onClick={() => void revokePremium(u)}>
+                                  VIP olib tashlash
+                                </AdminButton>
+                              </>
+                            ) : (
+                              <AdminButton variant="amber" disabled={busy} onClick={() => void grantPremium(u)}>
+                                VIP berish
+                              </AdminButton>
+                            )}
                             <AdminButton
                               variant="primary"
                               disabled={busy}
