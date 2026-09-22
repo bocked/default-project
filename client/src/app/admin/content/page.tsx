@@ -11,7 +11,7 @@ import {
   ErrorNote,
   PageTitle,
 } from "@/components/admin-ui";
-import type { ContentBlock } from "@/lib/types";
+import type { ContentBlock, Quote } from "@/lib/types";
 
 export default function AdminContentPage() {
   const [blocks, setBlocks] = useState<ContentBlock[]>([]);
@@ -20,6 +20,13 @@ export default function AdminContentPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [todayQuote, setTodayQuote] = useState<Quote | null>(null);
+
+  useEffect(() => {
+    void api<{ quote: Quote | null }>("/api/quotes/today")
+      .then((d) => setTodayQuote(d.quote))
+      .catch(() => setTodayQuote(null));
+  }, []);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -95,6 +102,21 @@ export default function AdminContentPage() {
                   </label>
                   <AdminTextarea rows={3} value={draft.value} onChange={(e) => patch(block.key, { value: e.target.value })} />
                 </div>
+                {block.key === "quote.today" && (
+                  <div className="rounded-lg bg-slate-50 p-2.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    {todayQuote ? (
+                      <p>
+                        Amalda: &ldquo;{todayQuote.text}&rdquo; — {todayQuote.displayAuthor}
+                      </p>
+                    ) : (
+                      <p>Hozircha kun iqtibosi belgilanmagan.</p>
+                    )}
+                    <p className="mt-1 text-slate-400 dark:text-slate-500">
+                      Qulay boshqaruv uchun: Admin &rarr; Iqtiboslar sahifasida har bir tasdiqlangan iqtibosga
+                      &ldquo;Kun iqtibosi qilish&rdquo; tugmasi mavjud. Bo&apos;sh qoldirilsa tizim avtomatik tanlaydi.
+                    </p>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-slate-400 dark:text-slate-500">
                     Yangilandi: {new Date(block.updatedAt).toLocaleString("uz-UZ")}

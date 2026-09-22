@@ -15,7 +15,7 @@ import {
   ErrorNote,
   PageTitle,
 } from "@/components/admin-ui";
-import type { AdminQuote, Category, QuoteStatus } from "@/lib/types";
+import type { AdminQuote, Category, ContentBlock, Quote, QuoteStatus } from "@/lib/types";
 
 type Tab = "ALL" | QuoteStatus;
 
@@ -57,6 +57,9 @@ export default function AdminQuotesPage() {
   const [editing, setEditing] = useState<EditDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [todayId, setTodayId] = useState<string | null>(null);
+  const [pinning, setPinning] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
 
   const load = useCallback(async (t: Tab, q: string) => {
@@ -81,6 +84,22 @@ export default function AdminQuotesPage() {
     void api<{ categories: Category[] }>("/api/categories").then((d) => setCategories(d.categories)).catch(() => setCategories([]));
   }, []);
 
+  // Which quote is pinned as "quote of the day", and which one the API
+  // actually serves today (auto-pool when nothing is pinned).
+  useEffect(() => {
+    void Promise.all([
+      api<{ blocks: ContentBlock[] }>("/api/admin/content")
+        .then((d) => d.blocks.find((b) => b.key === "quote.today")?.value.trim() || null)
+        .catch(() => null),
+      api<{ quote: Quote | null }>("/api/quotes/today")
+        .then((d) => d.quote?.id ?? null)
+        .catch(() => null),
+    ]).then(([pin, today]) => {
+      setPinnedId(pin);
+      setTodayId(today);
+    });
+  }, []);
+
   useEffect(() => {
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => void load(tab, search), 250);
@@ -91,6 +110,22 @@ export default function AdminQuotesPage() {
 
   async function refresh(): Promise<void> {
     await load(tab, search);
+  }
+
+  async function pinQod(quote: AdminQuote, clear: boolean): Promise<void> {
+    setPinning(quote.id);
+    setError(null);
+    try {
+      await api<{ block: ContentBlock }>("/api/admin/content/quote.today", {
+        method: "PUT",
+        body: { value: clear ? "" : quote.id },
+      });
+      setPinnedId(clear ? null : quote.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kun iqtibosi saqlanmadi");
+    } finally {
+      setPinning(null);
+    }
   }
 
   async function run(path: string, body?: unknown): Promise<void> {
@@ -269,6 +304,8 @@ export default function AdminQuotesPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <Badge tone={statusTone[quote.status]}>{statusLabel[quote.status]}</Badge>
+                    {todayId === quote.id && <Badge tone="emerald">Bugun ko&apos;rsatilmoqda</Badge>}
+                    {pinnedId === quote.id && todayId !== quote.id && <Badge tone="blue">Kun iqtibosiga tayinlangan</Badge>}
                     <span>{quote.category.name}</span>
                     <span>{new Date(quote.createdAt).toLocaleDateString("uz-UZ")}</span>
                     {quote.anonymous && <Badge tone="slate">Anonim</Badge>}
@@ -336,6 +373,24 @@ export default function AdminQuotesPage() {
                     >
                       Tahrirlash
                     </AdminButton>
+                    {quote.status === "APPROVED" &&
+                      (pinnedId === quote.id ? (
+                        <AdminButton
+                          variant="ghost"
+                          disabled={busy || pinning === quote.id}
+                          onClick={() => void pinQod(quote, true)}
+                        >
+                          {pinning === quote.id ? "O'chirilmoqda..." : "Kun iqtibosidan olib tashlash"}
+                        </AdminButton>
+                      ) : (
+                        <AdminButton
+                          variant="amber"
+                          disabled={busy || pinning === quote.id}
+                          onClick={() => void pinQod(quote, false)}
+                        >
+                          {pinning === quote.id ? "Tayinlanmoqda..." : "Kun iqtibosi qilish"}
+                        </AdminButton>
+                      ))}
                     <AdminButton variant="ghost" disabled={busy} onClick={() => void remove(quote.id)}>
                       Arxivga
                     </AdminButton>
