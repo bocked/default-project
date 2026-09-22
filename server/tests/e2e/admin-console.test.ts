@@ -66,6 +66,9 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
       body: { text: "Adminning iqtibosi.", categorySlug: "motivatsiya", tags: [], anonymous: true },
     });
     expect(post.status).toBe(201);
+    // Admin posts skip the moderation queue (fast moderation like VIP).
+    const adminQuote = await prisma.quote.findFirstOrThrow({ where: { text: "Adminning iqtibosi." } });
+    expect(adminQuote.status).toBe("APPROVED");
   });
 
   it("lists users and supports block/unblock/delete/restore + bulk", async () => {

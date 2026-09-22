@@ -239,9 +239,10 @@ quotesRouter.get("/mine", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/quotes - submit a new quote (stored as PENDING). Quick-login
-// (Telegram-only) accounts are blocked until they complete a full registration.
-quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireFullUser, validateBody(quoteCreateSchema), async (req, res) => {
+// POST /api/quotes - submit a new quote. Quick-login (Telegram-only) accounts
+// are blocked until they complete a full registration. requireAuth must run
+// before the create limiter so trusted roles can bypass throttling.
+quotesRouter.post("/", requireAuth, quoteCreateLimiter, requireFullUser, validateBody(quoteCreateSchema), async (req, res) => {
   const body = res.locals.body as QuoteCreate;
   try {
     const category = await prisma.category.findUnique({ where: { slug: body.categorySlug } });
@@ -264,9 +265,10 @@ quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireFullUser, validat
       ? "Anonim"
       : req.user!.nickname || req.user!.name || "Foydalanuvchi";
 
-    // VIP fast moderation: active premium users skip the admin queue — their
-    // quotes go straight to the APPROVED feed.
-    const autoApproved = isPremiumActive(req.user!);
+    // Fast moderation: admins/super-admins and active premium users skip the
+    // admin queue — their quotes go straight to the APPROVED feed.
+    const trustedRole = req.user!.role === "ADMIN" || req.user!.role === "SUPER_ADMIN";
+    const autoApproved = trustedRole || isPremiumActive(req.user!);
 
     const quote = await prisma.quote.create({
       data: {
@@ -290,7 +292,12 @@ quotesRouter.post("/", quoteCreateLimiter, requireAuth, requireFullUser, validat
     if (autoApproved) {
       // The new APPROVED quote can change the feed, counts and daily pick.
       void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
-      addLog("info", `VIP iqtibos avtomatik tasdiqlandi: ${quote.text.slice(0, 40)}... (${req.user!.email ?? req.user!.id})`);
+      const source = trustedRole
+        ? req.user!.role === "SUPER_ADMIN"
+          ? "Super admin"
+          : "Admin"
+        : "VIP";
+      addLog("info", `${source} iqtibos avtomatik tasdiqlandi: ${quote.text.slice(0, 40)}... (${req.user!.email ?? req.user!.id})`);
     } else {
       const messageId = await sendModerationMessage({ quote, author: req.user!, category, tags: quote.tags });
       if (messageId !== null) {

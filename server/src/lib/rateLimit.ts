@@ -33,11 +33,16 @@ export const authLimiter = rateLimit({
   message: { error: "Too many requests" },
 });
 
-/** Guard on quote creation (per hour). */
+/** Skip when a trusted role (admin/super admin) is posting, so quote
+ *  creation is never throttled for them. Runs after requireAuth. */
+const quoteSkip = (req: import("express").Request): boolean =>
+  process.env.NODE_ENV === "test" || req.user?.role === "ADMIN" || req.user?.role === "SUPER_ADMIN";
+
+/** Guard on quote creation (per hour, per IP). Trusted roles are exempt. */
 export const quoteCreateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 30,
-  skip,
+  skip: quoteSkip,
   ...standard,
   message: { error: "Too many requests" },
 });
