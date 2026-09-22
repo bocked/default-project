@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireFullUser } from "../middleware/auth.js";
 import { quoteCreateLimiter, likeLimiter, searchLimiter } from "../lib/rateLimit.js";
@@ -9,7 +9,7 @@ import { normalizeTagName, slugify } from "../lib/categories.js";
 import { sendModerationMessage } from "../lib/telegram.js";
 import { addLog } from "../lib/logstore.js";
 import { recordActivity } from "../lib/activity.js";
-import { validateBody, quoteCreateSchema, type QuoteCreate } from "../schemas.js";
+import { validateBody, quoteCreateSchema, type QuoteCreate, type QuoteCustomStyles } from "../schemas.js";
 import { cachedGet, invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { getContent } from "../lib/content.js";
 import { isPremiumActive } from "../lib/premium.js";
@@ -30,6 +30,7 @@ interface PublicQuote {
   anonymous: boolean;
   telegramUrl: string | null;
   authorPremium: boolean;
+  customStyles: QuoteCustomStyles | null;
   createdAt: Date;
   views: number;
   likeCount: number;
@@ -54,6 +55,7 @@ function toPublicQuote(q: any, userId?: string): PublicQuote {
     anonymous: q.anonymous,
     telegramUrl: q.telegramUrl ?? null,
     authorPremium: isPremiumActive(q.user ?? { isPremium: false }),
+    customStyles: q.customStyles ?? null,
     createdAt: q.createdAt,
     views: q.views ?? 0,
     likeCount,
@@ -265,12 +267,13 @@ quotesRouter.post("/", requireAuth, quoteCreateLimiter, requireFullUser, validat
       ? "Anonim"
       : req.user!.nickname || req.user!.name || "Foydalanuvchi";
 
-    // Fast moderation: admins/super-admins, users manually approved by a
-    // SUPER_ADMIN, and active premium users skip the admin queue — their
-    // quotes go straight to the APPROVED feed.
+    // All quotes need a moderator's approval before they reach the public
+    // feed. Only admins/super-admins and users manually approved by a
+    // SUPER_ADMIN skip the queue — premium/VIP does NOT auto-approve anymore.
     const trusted =
       req.user!.role === "ADMIN" || req.user!.role === "SUPER_ADMIN" || Boolean(req.user!.isSuperApproved);
-    const autoApproved = trusted || isPremiumActive(req.user!);
+    const autoApproved = trusted;
+    const isActivePremium = isPremiumActive(req.user!);
 
     const quote = await prisma.quote.create({
       data: {
@@ -278,6 +281,9 @@ quotesRouter.post("/", requireAuth, quoteCreateLimiter, requireFullUser, validat
         displayAuthor,
         anonymous: body.anonymous,
         telegramUrl: body.telegramUrl ?? null,
+        // VIP-only: custom post card styling is persisted only for active
+        // premium users so normal authors cannot forge it.
+        customStyles: isActivePremium ? (body.customStyles ?? Prisma.DbNull) : undefined,
         userId: req.user!.id,
         categoryId: category.id,
         status: autoApproved ? "APPROVED" : "PENDING",
@@ -299,9 +305,7 @@ quotesRouter.post("/", requireAuth, quoteCreateLimiter, requireFullUser, validat
           ? "Super admin"
           : req.user!.role === "ADMIN"
             ? "Admin"
-            : req.user!.isSuperApproved
-              ? "Super tasdiqlangan"
-              : "VIP";
+            : "Super tasdiqlangan";
       addLog("info", `${source} iqtibos avtomatik tasdiqlandi: ${quote.text.slice(0, 40)}... (${req.user!.email ?? req.user!.id})`);
     } else {
       const messageId = await sendModerationMessage({ quote, author: req.user!, category, tags: quote.tags });

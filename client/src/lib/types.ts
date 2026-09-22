@@ -40,6 +40,19 @@ export interface Tag {
 
 export type QuoteStatus = "PENDING" | "APPROVED" | "REJECTED";
 
+/** VIP-only per-post card styling saved as `customStyles` JSON on the Quote.
+ *  Mirrors server/src/schemas.ts `quoteCustomStylesSchema`. */
+export interface QuoteCustomStyles {
+  fontFamily?: "serif" | "sans" | "mono" | "calligraphic";
+  textColor?: string;
+  cardBg?: string;
+  fontSize?: number;
+  alignment?: "left" | "center" | "right";
+  border?: "none" | "gold" | "silver" | "neon";
+  quoteMark?: "classic" | "double" | "single" | "none";
+  texture?: "none" | "paper" | "glass";
+}
+
 export interface Quote {
   id: string;
   text: string;
@@ -49,6 +62,7 @@ export interface Quote {
   status?: QuoteStatus;
   rejectionReason?: string | null;
   authorPremium?: boolean;
+  customStyles?: QuoteCustomStyles | null;
   createdAt: string;
   views?: number;
   likeCount?: number;
@@ -112,6 +126,7 @@ export interface AdminQuote {
   status: QuoteStatus;
   rejectionReason: string | null;
   deletedAt: string | null;
+  customStyles?: QuoteCustomStyles | null;
   createdAt: string;
   category: Category;
   tags: Tag[];

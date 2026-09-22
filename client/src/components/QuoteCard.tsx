@@ -8,9 +8,9 @@ import { useToast } from "./ToastProvider";
 import type { Quote } from "@/lib/types";
 import { renderQuoteImage, pickVipTheme } from "@/lib/quoteImage";
 import { isPremiumActive } from "@/lib/premium";
+import { quoteCardStyle, quoteTextStyle, quoteMarks } from "@/lib/quoteStyles";
 import { StatusBadge } from "./StatusBadge";
 import { TelegramPost } from "./TelegramPost";
-import { VipBadge } from "./VipBadge";
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("uz-UZ", { day: "numeric", month: "long", year: "numeric" });
@@ -164,6 +164,8 @@ export function QuoteCard({
   const shareItemClass =
     "flex min-h-[44px] w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800";
 
+  const [open, close] = quoteMarks(quote.customStyles);
+
   return (
     <figure
       id={`quote-${quote.id}`}
@@ -174,11 +176,23 @@ export function QuoteCard({
           ? "border-blue-400/70 bg-blue-50/40 shadow-md ring-2 ring-blue-500/60 dark:border-blue-500/60 dark:bg-blue-500/10 dark:shadow-none"
           : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none"
       }`}
+      style={quoteCardStyle(quote.customStyles)}
     >
-      <blockquote className="font-serif text-base leading-relaxed text-slate-800 dark:text-slate-100 md:text-lg">
-        <span className="mr-1 text-blue-600 dark:text-blue-400">&ldquo;</span>
+      <blockquote
+        className="font-serif text-base leading-relaxed text-slate-800 dark:text-slate-100 md:text-lg"
+        style={quoteTextStyle(quote.customStyles)}
+      >
+        {open && (
+          <span className="mr-1 select-none opacity-70" aria-hidden="true">
+            {open}
+          </span>
+        )}
         {quote.text}
-        <span className="ml-1 text-blue-600 dark:text-blue-400">&rdquo;</span>
+        {close && (
+          <span className="ml-1 select-none opacity-70" aria-hidden="true">
+            {close}
+          </span>
+        )}
       </blockquote>
 
       {quote.telegramUrl && <TelegramPost url={quote.telegramUrl} />}
@@ -186,7 +200,6 @@ export function QuoteCard({
       <figcaption className="mt-4 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <span className="truncate font-medium text-slate-700 dark:text-slate-300">{quote.displayAuthor}</span>
-          {quote.authorPremium && <VipBadge size="sm" className="shrink-0" />}
           <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{formatDate(quote.createdAt)}</span>
         </div>
         <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">

@@ -93,6 +93,43 @@ describe("quoteCreateSchema (telegramUrl)", () => {
   });
 });
 
+describe("quoteCreateSchema (customStyles, VIP post styling)", () => {
+  it("accepts a full valid styling object", () => {
+    expect(
+      parseZod(quoteCreateSchema, {
+        text: "x",
+        categorySlug: "c",
+        customStyles: {
+          fontFamily: "mono",
+          textColor: "#f8fafc",
+          cardBg: "#0f172a",
+          fontSize: 20,
+          alignment: "center",
+          border: "gold",
+          quoteMark: "double",
+          texture: "glass",
+        },
+      }),
+    ).toMatchObject({ customStyles: { fontFamily: "mono", fontSize: 20, texture: "glass" } });
+  });
+
+  it("rejects unknown keys (strict schema)", () => {
+    expect(parseZod(quoteCreateSchema, { text: "x", categorySlug: "c", customStyles: { evil: 1 } })).toBeNull();
+  });
+
+  it("rejects malformed colours and out-of-range font sizes", () => {
+    expect(parseZod(quoteCreateSchema, { text: "x", categorySlug: "c", customStyles: { textColor: "red" } })).toBeNull();
+    expect(parseZod(quoteCreateSchema, { text: "x", categorySlug: "c", customStyles: { cardBg: "#fff" } })).toBeNull();
+    expect(parseZod(quoteCreateSchema, { text: "x", categorySlug: "c", customStyles: { fontSize: 200 } })).toBeNull();
+  });
+
+  it("allows null so non-styled posts stay unstyled", () => {
+    expect(parseZod(quoteCreateSchema, { text: "x", categorySlug: "c", customStyles: null })).toMatchObject({
+      customStyles: null,
+    });
+  });
+});
+
 describe("contentUpdateSchema (quote.today)", () => {
   it("accepts an empty value so the quote of the day can be unpinned", () => {
     expect(parseZod(contentUpdateSchema, { value: "" })).toEqual({ value: "" });

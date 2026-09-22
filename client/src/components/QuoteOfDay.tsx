@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Quote } from "@/lib/types";
-import { VipBadge } from "./VipBadge";
+import { quoteTextStyle, quoteMarks } from "@/lib/quoteStyles";
 
 interface TodayResponse {
   date: string;
@@ -42,6 +42,7 @@ export function QuoteOfDay() {
   if (failed || quote === null) return null;
 
   const dateLabel = formatLongDate(date);
+  const [openMark, closeMark] = quote ? quoteMarks(quote.customStyles) : ["\u201C", "\u201D"];
 
   return (
     <section
@@ -62,12 +63,20 @@ export function QuoteOfDay() {
         </div>
       ) : (
         <>
-          <blockquote className="mt-3 font-serif text-lg leading-relaxed text-white md:text-xl">
-            &ldquo;{quote.text}&rdquo;
+          <blockquote
+            className="mt-3 font-serif text-lg leading-relaxed text-white md:text-xl"
+            style={quoteTextStyle(quote.customStyles)}
+          >
+            <span className="mr-1 select-none opacity-70" aria-hidden="true">
+              {openMark}
+            </span>
+            {quote.text}
+            <span className="ml-1 select-none opacity-70" aria-hidden="true">
+              {closeMark}
+            </span>
           </blockquote>
           <figcaption className="mt-3 flex items-center gap-2 text-sm font-medium text-blue-100">
             <span>— {quote.displayAuthor}</span>
-            {quote.authorPremium && <VipBadge size="sm" />}
           </figcaption>
         </>
       )}

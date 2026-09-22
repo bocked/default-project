@@ -147,12 +147,31 @@ const telegramUrl = z
       .optional()
   );
 
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
+/** VIP-only per-post card styling. Strict so unknown/forged keys never reach
+ *  the database, and each field is bounded to keep payloads small. */
+export const quoteCustomStylesSchema = z
+  .object({
+    fontFamily: z.enum(["serif", "sans", "mono", "calligraphic"]).optional(),
+    textColor: hexColor.optional(),
+    cardBg: hexColor.optional(),
+    fontSize: z.number().int().min(14).max(40).optional(),
+    alignment: z.enum(["left", "center", "right"]).optional(),
+    border: z.enum(["none", "gold", "silver", "neon"]).optional(),
+    quoteMark: z.enum(["classic", "double", "single", "none"]).optional(),
+    texture: z.enum(["none", "paper", "glass"]).optional(),
+  })
+  .strict();
+export type QuoteCustomStyles = z.infer<typeof quoteCustomStylesSchema>;
+
 export const quoteCreateSchema = z.object({
   text: z.string().trim().min(1).max(1000),
   categorySlug: z.string().trim().min(1).max(60),
   tags: z.array(z.string().trim().max(40)).max(5).default([]),
   anonymous: z.boolean().default(false),
   telegramUrl,
+  customStyles: quoteCustomStylesSchema.nullish(),
 });
 export type QuoteCreate = z.infer<typeof quoteCreateSchema>;
 
@@ -171,6 +190,7 @@ export const quoteEditSchema = z.object({
   displayAuthor: z.string().trim().min(1).max(100).optional(),
   tags: z.array(z.string().trim().max(40)).max(5).optional(),
   telegramUrl,
+  customStyles: quoteCustomStylesSchema.nullish(),
 });
 export type QuoteEdit = z.infer<typeof quoteEditSchema>;
 

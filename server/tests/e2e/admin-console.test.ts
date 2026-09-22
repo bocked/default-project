@@ -19,6 +19,26 @@ async function makeQuote(userId: string, text: string): Promise<string> {
   return quote.id;
 }
 
+/** Registers a login-able user, promotes them to a plain ADMIN via the shared
+ *  master key, and returns their JWT. Used wherever a "real ADMIN" (not a
+ *  SUPER_ADMIN) session is required. */
+async function makeLoginableAdmin(base: string): Promise<{ token: string; id: string }> {
+  const email = `${unique("admin")}@example.com`;
+  const password = "s3cret-password";
+  const reg = await request(base, "POST", "/api/auth/register", { body: { email, password } });
+  expect(reg.status).toBe(201);
+  const id = reg.json.user.id;
+  const grant = await request(base, "PATCH", `/api/admin/users/${id}/role`, {
+    token: ADMIN,
+    body: { role: "ADMIN" },
+  });
+  expect(grant.status).toBe(200);
+  const login = await request(base, "POST", "/api/auth/login", { body: { email, password } });
+  expect(login.status).toBe(200);
+  expect(login.json.user.role).toBe("ADMIN");
+  return { token: login.json.token, id };
+}
+
 describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
   let ts: TestServer;
   let base: string;
@@ -59,7 +79,8 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
       body: { email: "mirabbostolqinjonov@gmail.com", password: "admin-password" },
     });
     expect(res.status).toBe(201);
-    expect(res.json.user.role).toBe("ADMIN");
+    // The configured super-admin email is promoted to SUPER_ADMIN.
+    expect(res.json.user.role).toBe("SUPER_ADMIN");
 
     const post = await request(base, "POST", "/api/quotes", {
       token: res.json.token,
@@ -79,13 +100,9 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
     const id = reg.json.user.id;
 
     // A plain ADMIN session must NOT be able to super-approve (403).
-    const adminLogin = await request(base, "POST", "/api/auth/login", {
-      body: { email: "mirabbostolqinjonov@gmail.com", password: "admin-password" },
-    });
-    expect(adminLogin.status).toBe(200);
-    expect(adminLogin.json.user.role).toBe("ADMIN");
+    const plainAdmin = await makeLoginableAdmin(base);
     const forbidden = await request(base, "POST", `/api/admin/users/${id}/super-approve`, {
-      token: adminLogin.json.token,
+      token: plainAdmin.token,
     });
     expect(forbidden.status).toBe(403);
 
@@ -202,13 +219,9 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
     const qid = await makeQuote(userId, "Butunlay o'chiriladigan iqtibos.");
 
     // A real ADMIN account is forbidden from hard-deleting (403).
-    const adminLogin = await request(base, "POST", "/api/auth/login", {
-      body: { email: "mirabbostolqinjonov@gmail.com", password: "admin-password" },
-    });
-    expect(adminLogin.status).toBe(200);
-    expect(adminLogin.json.user.role).toBe("ADMIN");
+    const plainAdmin = await makeLoginableAdmin(base);
     const forbidden = await request(base, "DELETE", `/api/admin/quotes/${qid}`, {
-      token: adminLogin.json.token,
+      token: plainAdmin.token,
     });
     expect(forbidden.status).toBe(403);
     expect(await prisma.quote.findUnique({ where: { id: qid } })).not.toBeNull();
@@ -281,7 +294,11 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
   });
 
   it("grants and revokes the ADMIN role; self-demotion is blocked", async () => {
-    const id = await makeUser(`${unique("role")}@example.com`);
+    const email = `${unique("role")}@example.com`;
+    const password = "s3cret-password";
+    const reg = await request(base, "POST", "/api/auth/register", { body: { email, password } });
+    expect(reg.status).toBe(201);
+    const id = reg.json.user.id;
 
     // Grant admin via the shared admin secret.
     const grant = await request(base, "PATCH", `/api/admin/users/${id}/role`, {
@@ -291,13 +308,11 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
     expect(grant.status).toBe(200);
     expect((await prisma.user.findUniqueOrThrow({ where: { id } })).role).toBe("ADMIN");
 
-    // A real admin JWT cannot demote their own account.
-    const login = await request(base, "POST", "/api/auth/login", {
-      body: { email: "mirabbostolqinjonov@gmail.com", password: "admin-password" },
-    });
+    // A real ADMIN JWT cannot demote their own account.
+    const login = await request(base, "POST", "/api/auth/login", { body: { email, password } });
     expect(login.status).toBe(200);
-    const selfId = (await prisma.user.findUniqueOrThrow({ where: { email: "mirabbostolqinjonov@gmail.com" } })).id;
-    const self = await request(base, "PATCH", `/api/admin/users/${selfId}/role`, {
+    expect(login.json.user.role).toBe("ADMIN");
+    const self = await request(base, "PATCH", `/api/admin/users/${id}/role`, {
       token: login.json.token,
       body: { role: "USER" },
     });

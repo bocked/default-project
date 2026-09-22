@@ -359,6 +359,7 @@ export function AdminQuotesTab() {
                     <span>{quote.category.name}</span>
                     <span>{new Date(quote.createdAt).toLocaleDateString("uz-UZ")}</span>
                     {quote.anonymous && <Badge tone="slate">Anonim</Badge>}
+                    {quote.customStyles && <Badge tone="blue">🎨 Uslub</Badge>}
                   </div>
 
                   <blockquote className="mt-2 font-serif text-base leading-relaxed text-slate-800 dark:text-slate-100">

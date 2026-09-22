@@ -100,6 +100,52 @@ describe("E2E: auth, quotes, search and Telegram moderation", () => {
     expect(feed.json.quotes.some((q: any) => q.text === "Yashirin iqtibos.")).toBe(false);
   });
 
+  it("VIP quotes still need moderation and only VIP can set customStyles", async () => {
+    const { token } = await registerUser(base);
+    const email = (await request(base, "GET", "/api/auth/me", { token })).json.user.email;
+    await verifyEmail(base, email);
+    const vipUser = await prisma.user.findUniqueOrThrow({ where: { email } });
+    // Grant lifetime premium so the API sees an active VIP user.
+    await prisma.user.update({ where: { id: vipUser.id }, data: { isPremium: true, premiumExpiresAt: null } });
+
+    const category = await prisma.category.findFirstOrThrow();
+    const vipPost = await request(base, "POST", "/api/quotes", {
+      token,
+      body: {
+        text: "VIP iqtibos endi moderatsiyadan o'tadi.",
+        categorySlug: category.slug,
+        tags: [],
+        anonymous: false,
+        customStyles: { fontFamily: "mono", fontSize: 20, border: "gold", quoteMark: "double" },
+      },
+    });
+    expect(vipPost.status).toBe(201);
+    // Premium no longer auto-approves — the quote waits for a moderator.
+    expect(vipPost.json.quote.status).toBe("PENDING");
+    // The custom card styling is persisted alongside the quote.
+    expect(vipPost.json.quote.customStyles).toMatchObject({ fontFamily: "mono", fontSize: 20, border: "gold" });
+    // And it must NOT appear on the public feed until approved.
+    const feedBefore = await request(base, "GET", "/api/quotes");
+    expect(feedBefore.json.quotes.some((q: any) => q.text.includes("moderatsiyadan o'tadi"))).toBe(false);
+
+    // A plain (non-VIP) user cannot forge custom styling.
+    const plain = await registerUser(base);
+    const plainEmail = (await request(base, "GET", "/api/auth/me", { token: plain.token })).json.user.email;
+    await verifyEmail(base, plainEmail);
+    const plainPost = await request(base, "POST", "/api/quotes", {
+      token: plain.token,
+      body: {
+        text: "Oddiy foydalanuvchi uslubsiz.",
+        categorySlug: category.slug,
+        tags: [],
+        anonymous: true,
+        customStyles: { border: "neon" },
+      },
+    });
+    expect(plainPost.status).toBe(201);
+    expect(plainPost.json.quote.customStyles).toBeNull();
+  });
+
   it("approves a quote through the Telegram callback and it appears publicly as Anonim", async () => {
     const { token } = await registerUser(base);
     const email = (await request(base, "GET", "/api/auth/me", { token })).json.user.email;

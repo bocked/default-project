@@ -6,7 +6,6 @@ import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { QuoteCard } from "@/components/QuoteCard";
 import { QuoteForm } from "@/components/QuoteForm";
-import { VipBadge } from "@/components/VipBadge";
 import { isPremiumActive, formatPremiumExpiry } from "@/lib/premium";
 import type { Category, Quote, User } from "@/lib/types";
 
@@ -371,11 +370,10 @@ function PremiumCard({ user, onSaved }: { user: User; onSaved: () => Promise<Use
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <VipBadge size="md" />
             <div>
               <h2 className="text-sm font-semibold text-amber-950">VIP a&apos;zolik faol</h2>
               <p className="text-xs text-amber-800">
-                {formatPremiumExpiry(user)} · iqtiboslaringiz avtomatik tasdiqlanadi
+                {formatPremiumExpiry(user)} · iqtiboslaringiz uchun eksklyuziv post uslubi
               </p>
             </div>
           </div>
@@ -391,7 +389,7 @@ function PremiumCard({ user, onSaved }: { user: User; onSaved: () => Promise<Use
         <ul className="mt-4 grid gap-2 text-xs text-amber-900 sm:grid-cols-3">
           <li className="rounded-xl bg-white/70 px-3 py-2.5">🖼 O&apos;z watermarkingiz (kanal/ism)</li>
           <li className="rounded-xl bg-white/70 px-3 py-2.5">🎨 5+ eksklyuziv fon va premium shriftlar</li>
-          <li className="rounded-xl bg-white/70 px-3 py-2.5">⚡ Iqtiboslar avtomatik (tezkor) tasdiqlash</li>
+          <li className="rounded-xl bg-white/70 px-3 py-2.5">🎛 Post uslubini sozlash (shrift, rang, ramka, tekstura)</li>
         </ul>
       </section>
     );
@@ -410,7 +408,7 @@ function PremiumCard({ user, onSaved }: { user: User; onSaved: () => Promise<Use
       <ul className="mt-4 grid gap-2 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
         <li className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/5">🖼 Rasmda o&apos;z telegram kanalingiz/ismingiz</li>
         <li className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/5">🎨 5+ eksklyuziv fon va premium shriftlar</li>
-        <li className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/5">⚡ Tezkor moderatsiya — iqtibos darhol o&apos;rnatiladi</li>
+        <li className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/5">🎛 Post uslubi — eksklyuziv post kartochka dizayni</li>
       </ul>
     </section>
   );

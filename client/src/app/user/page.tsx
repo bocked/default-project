@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { QuoteCard } from "@/components/QuoteCard";
-import { VipBadge } from "@/components/VipBadge";
 import type { PublicUserProfileData } from "@/lib/types";
 
 export default function UserProfilePage() {
@@ -60,7 +59,6 @@ function UserProfile() {
       <section className="text-center">
         <h1 className="flex items-center justify-center gap-2 font-serif text-2xl font-bold text-slate-900 dark:text-white">
           {displayName}
-          {data.user.isPremium && <VipBadge size="md" />}
         </h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           A&apos;zo: {new Date(data.user.createdAt).toLocaleDateString("uz-UZ")} · {data.quotes.length} ta iqtibos
