@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
+  AdminActionMenu,
   AdminButton,
   AdminCard,
   AdminInput,
@@ -17,6 +18,10 @@ import {
 } from "@/components/admin-ui";
 import { isPremiumActive } from "@/lib/premium";
 import type { AdminUser } from "@/lib/types";
+
+function vipExpiry(days: string): string | null {
+  return days === "forever" ? null : new Date(Date.now() + Number(days) * 24 * 60 * 60 * 1000).toISOString();
+}
 
 export function AdminUsersTab() {
   const { user: me } = useAuth();
@@ -108,8 +113,7 @@ export function AdminUsersTab() {
 
   async function grantPremium(u: AdminUser): Promise<void> {
     const days = vipDays[u.id] ?? "30";
-    const expiresAt =
-      days === "forever" ? null : new Date(Date.now() + Number(days) * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = vipExpiry(days);
     setBusy(true);
     setError(null);
     try {
@@ -172,7 +176,7 @@ export function AdminUsersTab() {
         subtitle={`Jami: ${total} ta foydalanuvchi.`}
         actions={
           selected.size > 0 ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 Tanlangan: {selected.size}
               </span>
@@ -195,15 +199,15 @@ export function AdminUsersTab() {
           placeholder="Email, ism, telefon yoki Telegram ID bo'yicha..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="max-w-xs"
+          className="w-full sm:w-56 sm:max-w-xs"
         />
-        <AdminSelect value={role} onChange={(e) => setRole(e.target.value)} className="w-auto">
+        <AdminSelect value={role} onChange={(e) => setRole(e.target.value)} className="w-full sm:w-auto py-1 text-xs">
           <option value="">Barcha rollar</option>
           <option value="SUPER_ADMIN">Super admin</option>
           <option value="ADMIN">Admin</option>
           <option value="USER">Foydalanuvchi</option>
         </AdminSelect>
-        <AdminSelect value={blocked} onChange={(e) => setBlocked(e.target.value)} className="w-auto">
+        <AdminSelect value={blocked} onChange={(e) => setBlocked(e.target.value)} className="w-full sm:w-auto py-1 text-xs">
           <option value="">Bloklanganlar: barchasi</option>
           <option value="1">Bloklangan</option>
           <option value="0">Bloklanmagan</option>
@@ -217,7 +221,7 @@ export function AdminUsersTab() {
 
       {users.length > 0 && (
         <AdminCard className="overflow-x-auto p-0">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="w-full min-w-[560px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                 <th className="px-4 py-3">
@@ -230,8 +234,8 @@ export function AdminUsersTab() {
                 </th>
                 <th className="px-4 py-3">Foydalanuvchi</th>
                 <th className="px-4 py-3">Holat</th>
-                <th className="px-4 py-3">Telegram / Telefon</th>
-                <th className="px-4 py-3">Ro&apos;yxat</th>
+                <th className="hidden px-4 py-3 md:table-cell">Telegram / Telefon</th>
+                <th className="hidden px-4 py-3 md:table-cell">Ro&apos;yxat</th>
                 <th className="px-4 py-3 text-right">Harakatlar</th>
               </tr>
             </thead>
@@ -269,91 +273,103 @@ export function AdminUsersTab() {
                         {u.phoneVerified && <Badge tone="emerald">Telefon</Badge>}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
+                    <td className="hidden px-4 py-3 text-xs text-slate-500 dark:text-slate-400 md:table-cell">
                       <p>{u.telegramId ?? "—"}</p>
                       <p>{u.phoneNumber ?? "—"}</p>
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
+                    <td className="hidden px-4 py-3 text-xs text-slate-500 dark:text-slate-400 md:table-cell">
                       {new Date(u.createdAt).toLocaleDateString("uz-UZ")}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1.5">
-                        {(() => {
-                          if (u.role === "SUPER_ADMIN") {
-                            return u.id === me?.id ? (
-                              <span className="text-xs text-slate-400 dark:text-slate-500">Boshqarib bo&apos;lmaydi</span>
-                            ) : null;
-                          }
-                          if (u.role === "ADMIN") {
-                            return u.id === me?.id ? (
-                              <span className="text-xs text-slate-400 dark:text-slate-500">Boshqarib bo&apos;lmaydi</span>
-                            ) : (
-                              <AdminButton
-                                variant="slate"
-                                disabled={busy}
-                                onClick={() => void runRole(u, "USER")}
-                              >
-                                Admindan chiqarish
-                              </AdminButton>
-                            );
-                          }
-                          return (
-                            <>
-                              {me?.role === "SUPER_ADMIN" && (u.isSuperApproved ? (
-                                <AdminButton variant="primary" disabled={busy} onClick={() => void revokeSuperApproval(u)}>
-                                  Tasdiqlashni olib tashlash
-                                </AdminButton>
-                              ) : (
-                                <AdminButton variant="success" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/super-approve`)}>
-                                  ⚡ Super Tasdiqlash
-                                </AdminButton>
-                              ))}
-                              <AdminSelect
-                                value={vipDays[u.id] ?? "30"}
-                                onChange={(e) => setVipDays((prev) => ({ ...prev, [u.id]: e.target.value }))}
-                                className="w-28 py-1.5 text-xs"
-                              >
-                                <option value="7">7 kun</option>
-                                <option value="30">30 kun</option>
-                                <option value="365">1 yil</option>
-                                <option value="forever">Umrbod</option>
-                              </AdminSelect>
-                              {isPremiumActive(u) ? (
-                                <>
-                                  <AdminButton variant="amber" disabled={busy} onClick={() => void grantPremium(u)}>
-                                    VIP uzaytirish
-                                  </AdminButton>
-                                  <AdminButton variant="slate" disabled={busy} onClick={() => void revokePremium(u)}>
-                                    VIP olib tashlash
-                                  </AdminButton>
-                                </>
-                              ) : (
-                                <AdminButton variant="amber" disabled={busy} onClick={() => void grantPremium(u)}>
-                                  VIP berish
-                                </AdminButton>
-                              )}
-                              <AdminButton
-                                variant="primary"
-                                disabled={busy}
-                                onClick={() => void runRole(u, "ADMIN")}
-                              >
-                                Admin qilish
-                              </AdminButton>
-                              {u.blocked ? (
-                                <AdminButton variant="slate" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/unblock`)}>
-                                  Blokdan chiqarish
-                                </AdminButton>
-                              ) : (
-                                <AdminButton variant="amber" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/block`)}>
-                                  Bloklash
-                                </AdminButton>
-                              )}
-                              <AdminButton variant="danger" disabled={busy} onClick={() => void runAction(`/api/admin/users/${u.id}/delete`)}>
-                                Arxivga
-                              </AdminButton>
-                            </>
-                          );
-                        })()}
+                        {u.role === "SUPER_ADMIN"
+                          ? u.id === me?.id && (
+                              <span className="py-1 text-xs text-slate-400 dark:text-slate-500">O&apos;zingiz</span>
+                            )
+                          : u.role === "ADMIN"
+                            ? u.id === me?.id && (
+                                <span className="py-1 text-xs text-slate-400 dark:text-slate-500">O&apos;zingiz</span>
+                              )
+                            : (
+                              <AdminActionMenu
+                                label="Amallar"
+                                header={
+                                  <AdminSelect
+                                    value={vipDays[u.id] ?? "30"}
+                                    onChange={(e) => setVipDays((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                                    className="w-full py-1 text-xs"
+                                  >
+                                    <option value="7">7 kun</option>
+                                    <option value="30">30 kun</option>
+                                    <option value="365">1 yil</option>
+                                    <option value="forever">Umrbod</option>
+                                  </AdminSelect>
+                                }
+                                items={[
+                                  ...(me?.role === "SUPER_ADMIN"
+                                    ? u.isSuperApproved
+                                      ? [
+                                          {
+                                            label: "Super tasdiqlashni olib tashlash",
+                                            danger: true,
+                                            disabled: busy,
+                                            onClick: () => void revokeSuperApproval(u),
+                                          },
+                                        ]
+                                      : [
+                                          {
+                                            label: "⚡ Super tasdiqlash",
+                                            disabled: busy,
+                                            onClick: () => void runAction(`/api/admin/users/${u.id}/super-approve`),
+                                          },
+                                        ]
+                                    : []),
+                                  ...(isPremiumActive(u)
+                                    ? [
+                                        {
+                                          label: "VIP uzaytirish",
+                                          disabled: busy,
+                                          onClick: () => void grantPremium(u),
+                                        },
+                                        {
+                                          label: "VIP olib tashlash",
+                                          danger: true,
+                                          disabled: busy,
+                                          onClick: () => void revokePremium(u),
+                                        },
+                                      ]
+                                    : [
+                                        {
+                                          label: "VIP berish",
+                                          disabled: busy,
+                                          onClick: () => void grantPremium(u),
+                                        },
+                                      ]),
+                                  {
+                                    label: "Admin qilish",
+                                    disabled: busy,
+                                    onClick: () => void runRole(u, "ADMIN"),
+                                  },
+                                  u.blocked
+                                    ? {
+                                        label: "Blokdan chiqarish",
+                                        disabled: busy,
+                                        onClick: () => void runAction(`/api/admin/users/${u.id}/unblock`),
+                                      }
+                                    : {
+                                        label: "Bloklash",
+                                        disabled: busy,
+                                        onClick: () => void runAction(`/api/admin/users/${u.id}/block`),
+                                      },
+                                  {
+                                    label: "Arxivga",
+                                    danger: true,
+                                    disabled: busy,
+                                    onClick: () => void runAction(`/api/admin/users/${u.id}/delete`),
+                                  },
+                                ]}
+                              />
+                            )}
                       </div>
                     </td>
                   </tr>

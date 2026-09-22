@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 
 /** Small shared primitives for the admin console. All text is Uzbek. */
@@ -44,11 +45,72 @@ export function AdminButton({
   return (
     <button
       type="button"
-      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${buttonStyles[variant]} ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${buttonStyles[variant]} ${className}`}
       {...props}
     >
       {children}
     </button>
+  );
+}
+
+export interface AdminActionItem {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}
+
+/** Compact "⋮" row action menu so table rows stay narrow on small screens. */
+export function AdminActionMenu({
+  label = "Amallar",
+  items,
+  header,
+}: {
+  label?: string;
+  items: AdminActionItem[];
+  header?: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative inline-block text-left">
+      <button
+        type="button"
+        title={label}
+        aria-label={label}
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-lg leading-none text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+      >
+        ⋮
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-50 mt-1 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+            {header && <div className="border-b border-slate-100 px-3 pb-1 dark:border-slate-700">{header}</div>}
+            <div className="max-h-72 overflow-y-auto">
+              {items.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  disabled={item.disabled}
+                  onClick={() => {
+                    setOpen(false);
+                    item.onClick();
+                  }}
+                  className={`block w-full px-3 py-2 text-left text-sm transition disabled:opacity-50 ${
+                    item.danger
+                      ? "text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

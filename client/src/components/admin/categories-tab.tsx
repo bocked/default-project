@@ -136,10 +136,10 @@ export function AdminCategoriesTab() {
       {!busy && categories.length === 0 && <EmptyState text="Bo&apos;limlar topilmadi." />}
 
       <AdminCard className="overflow-x-auto p-0">
-        <table className="w-full min-w-[600px] text-left text-sm">
+        <table className="w-full min-w-[520px] text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
-              <th className="px-4 py-3">ID</th>
+              <th className="hidden px-4 py-3 md:table-cell">ID</th>
               <th className="px-4 py-3">Nom</th>
               <th className="px-4 py-3">Slug</th>
               <th className="px-4 py-3">Iqtiboslar soni</th>
@@ -154,7 +154,7 @@ export function AdminCategoriesTab() {
                   editingId === cat.id ? "bg-blue-50 dark:bg-blue-950/30" : ""
                 }`}
               >
-                <td className="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{cat.id.slice(0, 8)}</td>
+                <td className="hidden px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400 md:table-cell">{cat.id.slice(0, 8)}</td>
                 <td className="px-4 py-3">
                   {editingId === cat.id ? (
                     <AdminInput

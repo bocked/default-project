@@ -49,14 +49,14 @@ export function AdminAuditLogsTab() {
       {audit.length === 0 && <EmptyState text="Audit yozuvlari yo'q." />}
       {audit.length > 0 && (
         <AdminCard className="overflow-x-auto p-0">
-          <table className="w-full min-w-[680px] text-left text-sm">
+          <table className="w-full min-w-[520px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                 <th className="px-4 py-3">Vaqt</th>
                 <th className="px-4 py-3">Admin</th>
                 <th className="px-4 py-3">Amal</th>
                 <th className="px-4 py-3">Tafsilot</th>
-                <th className="px-4 py-3">IP</th>
+                <th className="hidden px-4 py-3 md:table-cell">IP</th>
               </tr>
             </thead>
             <tbody>
@@ -74,7 +74,7 @@ export function AdminAuditLogsTab() {
                   <td className="max-w-[260px] truncate px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
                     {log.detail ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-400 dark:text-slate-500">{log.ip ?? "—"}</td>
+                  <td className="hidden px-4 py-3 text-xs text-slate-400 dark:text-slate-500 md:table-cell">{log.ip ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

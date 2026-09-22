@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import {
+  AdminActionMenu,
   AdminButton,
   AdminCard,
   AdminInput,
@@ -299,7 +300,7 @@ export function AdminQuotesTab() {
           placeholder="Matn, muallif yoki egasi bo'yicha qidirish..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="max-w-xs"
+          className="w-full sm:w-56 sm:max-w-xs"
         />
       </div>
 
@@ -376,64 +377,74 @@ export function AdminQuotesTab() {
                     </p>
                   )}
 
-                  <div className="mt-3 flex flex-wrap gap-1.5">
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
                     {quote.status !== "APPROVED" && (
                       <AdminButton variant="success" disabled={busy} onClick={() => void approve(quote.id)}>
                         Tasdiqlash
                       </AdminButton>
                     )}
-                    {quote.status !== "REJECTED" && (
-                      <AdminButton variant="danger" disabled={busy} onClick={() => void reject(quote.id)}>
-                        Rad etish
-                      </AdminButton>
-                    )}
-                    <AdminButton
-                      variant="slate"
-                      disabled={busy}
-                      onClick={() =>
-                        setEditing({
-                          id: quote.id,
-                          text: quote.text,
-                          displayAuthor: quote.displayAuthor,
-                          categorySlug: quote.category.slug,
-                          tags: quote.tags.map((t) => t.name).join(", "),
-                          telegramUrl: quote.telegramUrl ?? "",
-                        })
-                      }
-                    >
-                      Tahrirlash
-                    </AdminButton>
-                    {quote.status === "APPROVED" && (
-                      <AdminButton
-                        variant="slate"
-                        disabled={busy || posting === quote.id}
-                        onClick={() => void postTelegram(quote)}
-                        title="Tasdiqlangan iqtibosni Telegram kanalga yuborish"
-                      >
-                        {posting === quote.id ? "Yuborilmoqda..." : "📨 Telegramga joylash"}
-                      </AdminButton>
-                    )}
-                    {quote.status === "APPROVED" &&
-                      (pinnedId === quote.id || todayId === quote.id ? (
-                        <AdminButton
-                          variant="ghost"
-                          disabled={busy || pinning === quote.id}
-                          onClick={() => void pinQod(quote, true)}
-                        >
-                          {pinning === quote.id ? "O'chirilmoqda..." : "★ Kun iqtibosidan olib tashlash"}
-                        </AdminButton>
-                      ) : (
-                        <AdminButton
-                          variant="amber"
-                          disabled={busy || pinning === quote.id}
-                          onClick={() => void pinQod(quote, false)}
-                        >
-                          {pinning === quote.id ? "Tayinlanmoqda..." : "★ Kun iqtibosi qilish"}
-                        </AdminButton>
-                      ))}
-                    <AdminButton variant="ghost" disabled={busy} onClick={() => void remove(quote.id)}>
-                      Arxivga
-                    </AdminButton>
+                    <AdminActionMenu
+                      label="Amallar"
+                      items={[
+                        ...(quote.status !== "REJECTED"
+                          ? [
+                              {
+                                label: "Rad etish",
+                                danger: true,
+                                disabled: busy,
+                                onClick: () => void reject(quote.id),
+                              },
+                            ]
+                          : []),
+                        {
+                          label: "Tahrirlash",
+                          disabled: busy,
+                          onClick: () =>
+                            setEditing({
+                              id: quote.id,
+                              text: quote.text,
+                              displayAuthor: quote.displayAuthor,
+                              categorySlug: quote.category.slug,
+                              tags: quote.tags.map((t) => t.name).join(", "),
+                              telegramUrl: quote.telegramUrl ?? "",
+                            }),
+                        },
+                        ...(quote.status === "APPROVED"
+                          ? [
+                              {
+                                label: posting === quote.id ? "Yuborilmoqda..." : "📨 Telegramga joylash",
+                                disabled: busy || posting === quote.id,
+                                onClick: () => void postTelegram(quote),
+                              },
+                              ...(pinnedId === quote.id || todayId === quote.id
+                                ? [
+                                    {
+                                      label:
+                                        pinning === quote.id
+                                          ? "O'chirilmoqda..."
+                                          : "★ Kun iqtibosidan olib tashlash",
+                                      disabled: busy || pinning === quote.id,
+                                      onClick: () => void pinQod(quote, true),
+                                    },
+                                  ]
+                                : [
+                                    {
+                                      label:
+                                        pinning === quote.id ? "Tayinlanmoqda..." : "★ Kun iqtibosi qilish",
+                                      disabled: busy || pinning === quote.id,
+                                      onClick: () => void pinQod(quote, false),
+                                    },
+                                  ]),
+                            ]
+                          : []),
+                        {
+                          label: "Arxivga",
+                          danger: true,
+                          disabled: busy,
+                          onClick: () => void remove(quote.id),
+                        },
+                      ]}
+                    />
                   </div>
                 </div>
               </div>

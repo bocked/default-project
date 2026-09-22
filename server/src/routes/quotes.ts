@@ -265,10 +265,12 @@ quotesRouter.post("/", requireAuth, quoteCreateLimiter, requireFullUser, validat
       ? "Anonim"
       : req.user!.nickname || req.user!.name || "Foydalanuvchi";
 
-    // Fast moderation: admins/super-admins and active premium users skip the
-    // admin queue — their quotes go straight to the APPROVED feed.
-    const trustedRole = req.user!.role === "ADMIN" || req.user!.role === "SUPER_ADMIN";
-    const autoApproved = trustedRole || isPremiumActive(req.user!);
+    // Fast moderation: admins/super-admins, users manually approved by a
+    // SUPER_ADMIN, and active premium users skip the admin queue — their
+    // quotes go straight to the APPROVED feed.
+    const trusted =
+      req.user!.role === "ADMIN" || req.user!.role === "SUPER_ADMIN" || Boolean(req.user!.isSuperApproved);
+    const autoApproved = trusted || isPremiumActive(req.user!);
 
     const quote = await prisma.quote.create({
       data: {
@@ -292,11 +294,14 @@ quotesRouter.post("/", requireAuth, quoteCreateLimiter, requireFullUser, validat
     if (autoApproved) {
       // The new APPROVED quote can change the feed, counts and daily pick.
       void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
-      const source = trustedRole
-        ? req.user!.role === "SUPER_ADMIN"
+      const source =
+        req.user!.role === "SUPER_ADMIN"
           ? "Super admin"
-          : "Admin"
-        : "VIP";
+          : req.user!.role === "ADMIN"
+            ? "Admin"
+            : req.user!.isSuperApproved
+              ? "Super tasdiqlangan"
+              : "VIP";
       addLog("info", `${source} iqtibos avtomatik tasdiqlandi: ${quote.text.slice(0, 40)}... (${req.user!.email ?? req.user!.id})`);
     } else {
       const messageId = await sendModerationMessage({ quote, author: req.user!, category, tags: quote.tags });

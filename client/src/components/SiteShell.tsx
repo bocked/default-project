@@ -35,7 +35,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
       <WwwUzTracker />
       <AnnouncementsBanner />
       <NavBar />
-      <main className={`mx-auto w-full flex-1 px-4 py-4 sm:py-6 ${isAdmin ? "max-w-6xl" : "max-w-3xl"}`}>
+      <main className={`mx-auto w-full flex-1 px-4 py-4 sm:px-6 sm:py-6 ${isAdmin ? "max-w-7xl" : "max-w-3xl"}`}>
         {mounted && pathname !== "/" && <BackButton />}
         {children}
       </main>
