@@ -125,13 +125,13 @@ quotesRouter.get("/", searchLimiter, async (req, res) => {
     // per 24h. Bots, refreshes and repeat fetches never inflate the counter.
     if (ids.length > 0 && !isBotUserAgent(req.headers["user-agent"])) {
       const visitor = userId ? `u:${userId}` : `ip:${clientIp(req.headers)}`;
-      const fresh = ids.filter((id) => viewDedupe.shouldCount(`${visitor}:${id}`));
-      if (fresh.length > 0) {
+      const fresh = await viewDedupe.countFresh(ids.map((id) => `${visitor}:${id}`));
+      const freshIds = ids.filter((_, i) => fresh[i]);
+      if (freshIds.length > 0) {
         void prisma.quote
-          .updateMany({ where: { id: { in: fresh } }, data: { views: { increment: 1 } } })
+          .updateMany({ where: { id: { in: freshIds } }, data: { views: { increment: 1 } } })
           .catch(() => {});
       }
-      viewDedupe.prune();
     }
 
     const liked = userId
@@ -306,12 +306,11 @@ quotesRouter.get("/:id", searchLimiter, async (req, res) => {
 
     if (!isBotUserAgent(req.headers["user-agent"])) {
       const visitor = userId ? `u:${userId}` : `ip:${clientIp(req.headers)}`;
-      if (viewDedupe.shouldCount(`${visitor}:${quote.id}`)) {
+      if (await viewDedupe.shouldCount(`${visitor}:${quote.id}`)) {
         void prisma.quote
           .updateMany({ where: { id: quote.id }, data: { views: { increment: 1 } } })
           .catch(() => {});
       }
-      viewDedupe.prune();
     }
 
     const likedByMe = userId

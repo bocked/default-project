@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
 import { recordActivity } from "../lib/activity.js";
+import { trackPageView } from "../lib/analytics.js";
 import { validateBody, publicFeedbackSchema, type PublicFeedback } from "../schemas.js";
 
 export const siteRouter = Router();
@@ -47,6 +48,14 @@ siteRouter.get("/seo", async (req, res) => {
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }
+});
+
+// POST /api/pageview - anonymous analytics beacon fired by the frontend on
+// every page navigation. Unique visitors are deduplicated server-side in
+// Redis (24h TTL); bots are filtered out and never counted.
+siteRouter.post("/pageview", async (req, res) => {
+  await trackPageView(req.headers);
+  res.json({ ok: true });
 });
 
 // POST /api/feedback - authenticated users can send feedback / complaints.

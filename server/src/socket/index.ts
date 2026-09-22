@@ -59,6 +59,7 @@ export function initSocket(io: Server): void {
   io.on("connection", (socket) => {
     socket.data.isAdmin = false;
     setOnlineCount(io.engine.clientsCount);
+    io.emit("online", { online: io.engine.clientsCount });
     socket.emit("connected", {
       online: io.engine.clientsCount,
       ip: socket.data.ip ?? "unknown",
@@ -67,6 +68,7 @@ export function initSocket(io: Server): void {
     socket.on("disconnect", () => {
       adminAuthCooldown.remove(socket.id);
       setOnlineCount(io.engine.clientsCount);
+      io.emit("online", { online: io.engine.clientsCount });
     });
 
     registerAdminHandlers(socket);

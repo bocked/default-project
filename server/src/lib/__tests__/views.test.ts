@@ -29,32 +29,40 @@ describe("isBotUserAgent", () => {
 });
 
 describe("ViewDedupe", () => {
-  it("counts the first view and rejects repeats inside the window", () => {
+  it("counts the first view and rejects repeats inside the window", async () => {
     const d = new ViewDedupe();
-    expect(d.shouldCount("ip:1:quote-1", 0)).toBe(true);
-    expect(d.shouldCount("ip:1:quote-1", 1000)).toBe(false);
-    expect(d.shouldCount("ip:1:quote-1", VIEW_WINDOW_MINUS_ONE)).toBe(false);
+    expect(await d.shouldCount("ip:1:quote-1", 0)).toBe(true);
+    expect(await d.shouldCount("ip:1:quote-1", 1000)).toBe(false);
+    expect(await d.shouldCount("ip:1:quote-1", VIEW_WINDOW_MINUS_ONE)).toBe(false);
   });
 
-  it("counts again after the window", () => {
+  it("counts again after the window", async () => {
     const d = new ViewDedupe();
-    d.shouldCount("ip:1:quote-1", 0);
-    expect(d.shouldCount("ip:1:quote-1", VIEW_WINDOW_PLUS_ONE)).toBe(true);
+    await d.shouldCount("ip:1:quote-1", 0);
+    expect(await d.shouldCount("ip:1:quote-1", VIEW_WINDOW_PLUS_ONE)).toBe(true);
   });
 
-  it("tracks visitors and quotes independently", () => {
+  it("tracks visitors and quotes independently", async () => {
     const d = new ViewDedupe();
-    expect(d.shouldCount("ip:1:quote-1", 0)).toBe(true);
-    expect(d.shouldCount("ip:2:quote-1", 0)).toBe(true);
-    expect(d.shouldCount("ip:1:quote-2", 0)).toBe(true);
-    expect(d.shouldCount("ip:1:quote-1", 0)).toBe(false);
+    expect(await d.shouldCount("ip:1:quote-1", 0)).toBe(true);
+    expect(await d.shouldCount("ip:2:quote-1", 0)).toBe(true);
+    expect(await d.shouldCount("ip:1:quote-2", 0)).toBe(true);
+    expect(await d.shouldCount("ip:1:quote-1", 0)).toBe(false);
   });
 
-  it("prunes expired keys", () => {
+  it("prunes expired keys", async () => {
     const d = new ViewDedupe();
-    d.shouldCount("ip:1:quote-1", 0);
+    await d.shouldCount("ip:1:quote-1", 0);
     d.prune(VIEW_WINDOW_PLUS_ONE);
-    expect(d.shouldCount("ip:1:quote-1", VIEW_WINDOW_PLUS_ONE)).toBe(true);
+    expect(await d.shouldCount("ip:1:quote-1", VIEW_WINDOW_PLUS_ONE)).toBe(true);
+  });
+
+  it("countFresh marks only unseen keys", async () => {
+    const d = new ViewDedupe();
+    await d.shouldCount("ip:1:quote-1");
+    const fresh = await d.countFresh(["ip:1:quote-1", "ip:2:quote-1", "ip:1:quote-2"]);
+    expect(fresh).toEqual([false, true, true]);
+    expect(fresh.filter(Boolean).length).toBe(2);
   });
 });
 

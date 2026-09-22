@@ -243,6 +243,18 @@ model Backup {
   @@index([createdAt(sort: Desc)])
 }
 
+model DailyStat {
+  id        String   @id @default(uuid())
+  // YYYY-MM-DD (UTC).
+  date      String   @unique
+  // Unique visitors and total page views aggregated daily.
+  visitors  Int      @default(0)
+  pageViews Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+}
+
 model TelegramQuickSession {
   id          String    @id @default(uuid())
   // SHA-256 digest of the opaque `quick_<sessionId>` payload.

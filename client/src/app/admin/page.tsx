@@ -2,7 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import {
+  Bar,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { api } from "@/lib/api";
+import { adminSocket, closeAdminSocket } from "@/lib/realtime";
 import {
   AdminCard,
   Badge,
@@ -15,6 +27,7 @@ import type {
   AdminStats,
   Quote,
   TopQuotes,
+  VisitorPoint,
 } from "@/lib/types";
 
 export default function AdminDashboard() {
@@ -23,6 +36,8 @@ export default function AdminDashboard() {
   const [activity, setActivity] = useState<ActivityPoint[]>([]);
   const [logs, setLogs] = useState<AdminLogEntry[]>([]);
   const [topQuotes, setTopQuotes] = useState<TopQuotes | null>(null);
+  const [visitorPoints, setVisitorPoints] = useState<VisitorPoint[]>([]);
+  const [liveOnline, setLiveOnline] = useState<number | null>(null);
 
   useEffect(() => {
     void api<AdminStats>("/api/admin/stats").then(setStats).catch(() => setStats(null));
@@ -38,6 +53,30 @@ export default function AdminDashboard() {
     void api<TopQuotes>("/api/admin/stats/top-quotes?days=30&limit=5")
       .then(setTopQuotes)
       .catch(() => setTopQuotes(null));
+    void api<{ points: VisitorPoint[] }>("/api/admin/stats/visitors?days=30")
+      .then((d) => setVisitorPoints(d.points))
+      .catch(() => setVisitorPoints([]));
+  }, []);
+
+  // Keep dashboard numbers fresh (online + today's visitors/page views).
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void api<AdminStats>("/api/admin/stats").then(setStats).catch(() => {});
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Real-time "online" count straight from the Socket.IO server.
+  useEffect(() => {
+    const onOnline = (payload: { online: number }) => setLiveOnline(payload.online);
+    const socket = adminSocket();
+    socket.on("online", onOnline);
+    socket.on("connected", onOnline);
+    return () => {
+      socket.off("online", onOnline);
+      socket.off("connected", onOnline);
+      closeAdminSocket();
+    };
   }, []);
 
   const cards = [
@@ -47,7 +86,6 @@ export default function AdminDashboard() {
     { label: "Foydalanuvchilar", value: stats?.users ?? 0, tone: "blue" as const, href: "/admin/users" },
     { label: "Bloklangan", value: stats?.blockedUsers ?? 0, tone: "rose" as const, href: "/admin/users?tab=bans" },
     { label: "Arxivdagi iqtiboslar", value: stats?.deletedQuotes ?? 0, tone: "slate" as const, href: "/admin/content?tab=trash" },
-    { label: "Onlayn", value: stats?.online ?? 0, tone: "blue" as const },
   ] as const;
 
   const WWW_UZ_STATS_URL = "https://www.uz/stat/48123";
@@ -118,25 +156,52 @@ export default function AdminDashboard() {
         </AdminCard>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
-        {cards.map((card) => {
-          const inner = (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <AdminCard className="p-4">
+          <div className="flex items-center justify-between">
+            <Badge tone="blue">Hozir onlayn</Badge>
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+          </div>
+          <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">{liveOnline ?? stats?.online ?? 0}</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Jonli — Socket.io</p>
+        </AdminCard>
+        <AdminCard className="p-4">
+          <Badge tone="emerald">Bugungi unikal tashriflar</Badge>
+          <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">{stats?.today.visitors ?? 0}</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">1 kishi = 1 ta (24 soatlik oyna)</p>
+        </AdminCard>
+        <AdminCard className="p-4">
+          <Badge tone="amber">Bugungi umumiy ko&apos;rishlar</Badge>
+          <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">{stats?.today.pageViews ?? 0}</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Sahifa ko&apos;rishlar (botlarsiz)</p>
+        </AdminCard>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        {cards.map((card) => (
+          <Link key={card.label} href={card.href} className="block transition hover:opacity-95">
             <AdminCard className="p-4">
               <p className="text-2xl font-bold text-slate-900 dark:text-white">{card.value}</p>
               <div className="mt-1">
                 <Badge tone={card.tone}>{card.label}</Badge>
               </div>
             </AdminCard>
-          );
-          return "href" in card ? (
-            <Link key={card.label} href={card.href} className="block transition hover:opacity-95">
-              {inner}
-            </Link>
-          ) : (
-            <div key={card.label}>{inner}</div>
-          );
-        })}
+          </Link>
+        ))}
       </div>
+
+      <AdminCard>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+          So&apos;nggi 30 kun: unikal tashriflar va ko&apos;rishlar
+        </h2>
+        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          Har kuni Redis orqali deduplikatsiya qilinib, ma&apos;lumotlar bazasida jamlanadi.
+        </p>
+        <VisitorsChart data={visitorPoints} />
+      </AdminCard>
 
       <div className="grid gap-6 lg:grid-cols-5">
         <AdminCard className="lg:col-span-3">
@@ -276,6 +341,41 @@ function TopQuotesList({ data }: { data: TopQuotes | null }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function VisitorsChart({ data }: { data: VisitorPoint[] }) {
+  if (data.length === 0) {
+    return <EmptyState text="Statistika mavjud emas." />;
+  }
+  return (
+    <div className="mt-4 h-64 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 4, right: 8, left: -14, bottom: 0 }}>
+          <CartesianGrid strokeOpacity={0.12} vertical={false} />
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 10 }}
+            tickFormatter={(d: string) => d.slice(5)}
+            interval="preserveStartEnd"
+          />
+          <YAxis tick={{ fontSize: 10 }} width={46} allowDecimals={false} />
+          <Tooltip
+            labelFormatter={(label) => String(label)}
+            contentStyle={{
+              fontSize: 12,
+              borderRadius: 8,
+              background: "rgba(15, 23, 42, 0.92)",
+              border: "none",
+              color: "#f8fafc",
+            }}
+          />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Bar dataKey="visitors" name="Unikal tashriflar" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+          <Line dataKey="pageViews" name="Ko'rishlar" stroke="#10b981" strokeWidth={2} dot={false} type="monotone" />
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 }

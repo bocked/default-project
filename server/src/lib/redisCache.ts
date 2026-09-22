@@ -23,6 +23,8 @@ export const CACHE_PREFIXES = {
   catalog: "catalog",
   /** Quote of the day payloads (keyed by date). */
   quoteOfDay: "qotd",
+  /** Admin analytics aggregates (visitor history charts). */
+  analytics: "analytics",
 } as const;
 
 function withPrefix(prefix: string, name: string): string {

@@ -14,6 +14,7 @@ import { notifyQuoteModeration } from "../lib/notify.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { listContent, getContent } from "../lib/content.js";
 import { clientIp } from "../lib/ip.js";
+import { todayAnalytics, visitorHistory } from "../lib/analytics.js";
 import { normalizeTagName, slugify } from "../lib/categories.js";
 import {
   validateBody,
@@ -76,7 +77,7 @@ function invalidateQuoteCaches(): void {
 // GET /api/admin/stats - dashboard numbers
 adminRouter.get("/stats", async (_req, res) => {
   try {
-    const [bans, online, pending, approved, rejected, users, deletedQuotes, blockedUsers] = await Promise.all([
+    const [bans, online, pending, approved, rejected, users, deletedQuotes, blockedUsers, today] = await Promise.all([
       prisma.bannedIp.count(),
       Promise.resolve(onlineCount()),
       prisma.quote.count({ where: { status: "PENDING", deletedAt: null } }),
@@ -85,8 +86,27 @@ adminRouter.get("/stats", async (_req, res) => {
       prisma.user.count({ where: { deletedAt: null } }),
       prisma.quote.count({ where: { deletedAt: { not: null } } }),
       prisma.user.count({ where: { blocked: true, deletedAt: null } }),
+      todayAnalytics(),
     ]);
-    res.json({ bans, online, quotes: { pending, approved, rejected }, users, deletedQuotes, blockedUsers });
+    res.json({
+      bans,
+      online,
+      quotes: { pending, approved, rejected },
+      users,
+      deletedQuotes,
+      blockedUsers,
+      today,
+    });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// GET /api/admin/stats/visitors?days=30 - daily unique visitors & page views
+adminRouter.get("/stats/visitors", async (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(7, Number(req.query.days) || 30));
+    res.json({ days, points: await visitorHistory(days) });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }

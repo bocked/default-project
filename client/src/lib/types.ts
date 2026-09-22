@@ -153,6 +153,12 @@ export interface ActivityPoint {
   approved: number;
 }
 
+export interface VisitorPoint {
+  date: string;
+  visitors: number;
+  pageViews: number;
+}
+
 export interface AdminStats {
   bans: number;
   online: number;
@@ -160,6 +166,7 @@ export interface AdminStats {
   users: number;
   deletedQuotes: number;
   blockedUsers: number;
+  today: { visitors: number; pageViews: number };
 }
 
 export interface AdminAnnouncement {

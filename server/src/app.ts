@@ -19,6 +19,7 @@ import { telegramRouter } from "./routes/telegram.js";
 import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
+import { flushAnalyticsToDb } from "./lib/analytics.js";
 import { logger } from "./lib/logger.js";
 import { apiLimiter, authLimiter } from "./lib/rateLimit.js";
 import { tryEnsureDefaultCategories } from "./lib/categories.js";
@@ -180,12 +181,20 @@ export async function startServer(): Promise<void> {
 
   const { server, io } = createApp();
 
+  // Fold Redis/memory visitor counters into the DailyStat table every 5 minutes.
+  // Page views themselves stay Redis-only, so the DB is never hit per request.
+  const analyticsFlushTimer = setInterval(() => {
+    void flushAnalyticsToDb();
+  }, 5 * 60 * 1000);
+
   server.listen(config.port, () => {
     logger.info(`listening on http://localhost:${config.port}`);
   });
 
   const shutdown = async (): Promise<void> => {
     logger.info("shutting down");
+    clearInterval(analyticsFlushTimer);
+    await flushAnalyticsToDb();
     io.close();
     server.close();
     await prisma.$disconnect();

@@ -8,11 +8,16 @@
  *    user id, otherwise the client IP), and
  *  - requests from known bots / headless crawlers never count at all.
  *
- * Dedupe state is in-memory (single app instance). After a restart the window
- * simply starts over, which is acceptable for the "most read" analytics.
+ * Dedupe state lives in Redis (`view:<visitor>:<quoteId>` with a 24h TTL) so
+ * the window survives restarts and multiple instances share one counter. When
+ * Redis is not available the same keys are tracked in memory with the exact
+ * same 24h window, which keeps local development zero-setup.
  */
 
+import { redis } from "./redis.js";
+
 const VIEW_WINDOW_MS = 24 * 60 * 60 * 1000;
+const VIEW_WINDOW_SECONDS = 24 * 60 * 60;
 
 /** Common bots, crawlers and automated downloaders that must not inflate views. */
 const BOT_PATTERNS = [
@@ -89,19 +94,65 @@ export function isBotUserAgent(userAgent: string | undefined): boolean {
   return BOT_PATTERNS.some((p) => ua.includes(p));
 }
 
-/** Per-`visitor:quote` cooldown map. Rejects repeated views within the window. */
+/** Per-`visitor:quote` 24h cooldown backed by Redis, with an in-memory window
+ *  used whenever Redis is unavailable (local development, tests). */
 export class ViewDedupe {
   private readonly seen = new Map<string, number>();
 
-  /** True when this key has not been seen within the window (a fresh view). */
-  shouldCount(key: string, now: number = Date.now()): boolean {
+  private markDone(key: string, now: number): void {
+    // Bound memory: drop entries older than the window first.
+    for (const [k, at] of this.seen) {
+      if (now - at >= VIEW_WINDOW_MS) this.seen.delete(k);
+    }
+    this.seen.set(key, now);
+  }
+
+  /** True when this key has not been seen within the window. Marks it seen. */
+  async shouldCount(key: string, now: number = Date.now()): Promise<boolean> {
+    if (redis.available) {
+      try {
+        const result = await redis.client!.set(key, "1", "EX", VIEW_WINDOW_SECONDS, "NX");
+        return result === "OK";
+      } catch {
+        /* fall back to the in-memory window */
+      }
+    }
     const last = this.seen.get(key);
     if (last !== undefined && now - last < VIEW_WINDOW_MS) return false;
-    this.seen.set(key, now);
+    this.markDone(key, now);
     return true;
   }
 
-  /** Drops entries older than the window so memory stays bounded. */
+  /** Bulk variant of shouldCount for feeds: sets all keys in one Redis
+   *  pipeline and returns which ones were fresh. Falls back to sequential
+   *  in-memory checks when Redis is unavailable. */
+  async countFresh(keys: readonly string[]): Promise<boolean[]> {
+    if (keys.length === 0) return [];
+    if (redis.available) {
+      try {
+        const client = redis.client!;
+        const pipe = client.pipeline();
+        for (const key of keys) pipe.set(key, "1", "EX", VIEW_WINDOW_SECONDS, "NX");
+        const results = await pipe.exec();
+        if (results == null) throw new Error("redis pipeline failed");
+        return results.map(([err, res]) => {
+          if (err) return false;
+          return res === "OK" || res === true || typeof res === "number";
+        });
+      } catch {
+        /* fall back to the in-memory window */
+      }
+    }
+    const now = Date.now();
+    return keys.map((key) => {
+      const last = this.seen.get(key);
+      if (last !== undefined && now - last < VIEW_WINDOW_MS) return false;
+      this.markDone(key, now);
+      return true;
+    });
+  }
+
+  /** Drops entries older than the window (memory fallback only). */
   prune(now: number = Date.now()): void {
     for (const [key, at] of this.seen) {
       if (now - at >= VIEW_WINDOW_MS) this.seen.delete(key);
