@@ -60,6 +60,13 @@ export const loginSchema = z.object({
 });
 export type Login = z.infer<typeof loginSchema>;
 
+/** Re-acceptance body for the current Terms of Use version (login flow). The
+ *  server only accepts the exact current version. */
+export const acceptTermsSchema = z.object({
+  version: z.string().trim().min(1).max(20),
+});
+export type AcceptTerms = z.infer<typeof acceptTermsSchema>;
+
 export const verifyEmailSchema = z.object({
   token: z.string().trim().min(20).max(128),
 });

@@ -22,8 +22,10 @@ export default function LoginPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await login(email, password);
-      router.push("/profile");
+      const me = await login(email, password);
+      // If the terms were updated since the last consent, stay on this screen —
+      // the TermsReAcceptGate overlay will ask for the new consent first.
+      if (!me.termsRequired) router.push("/profile");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kirishda xatolik yuz berdi");
     } finally {
@@ -47,7 +49,7 @@ export default function LoginPage() {
       if (user.quickLogin) {
         setQuickStatus("Profilni to'liq to'ldirish tavsiya etiladi.");
       }
-      router.push("/profile");
+      if (!user.termsRequired) router.push("/profile");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Tezkor kirishda xatolik yuz berdi");
       setQuickStatus(null);

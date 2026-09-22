@@ -7,6 +7,7 @@ import {
   banCreateSchema,
   quoteCreateSchema,
   contentUpdateSchema,
+  acceptTermsSchema,
 } from "../../schemas.js";
 
 describe("adminAuthSchema", () => {
@@ -19,6 +20,18 @@ describe("adminAuthSchema", () => {
   it("rejects non-object input", () => {
     expect(parseZod(adminAuthSchema, undefined)).toBeNull();
     expect(parseZod(adminAuthSchema, "nope")).toBeNull();
+  });
+});
+
+describe("acceptTermsSchema", () => {
+  it("accepts a version string and trims it", () => {
+    expect(parseZod(acceptTermsSchema, { version: " 1.1 " })).toEqual({ version: "1.1" });
+  });
+
+  it("rejects missing, empty or over-long versions", () => {
+    expect(parseZod(acceptTermsSchema, {})).toBeNull();
+    expect(parseZod(acceptTermsSchema, { version: "   " })).toBeNull();
+    expect(parseZod(acceptTermsSchema, { version: "x".repeat(21) })).toBeNull();
   });
 });
 

@@ -109,4 +109,51 @@ describe("E2E: password reset flow", () => {
     const row = await prisma.user.findUnique({ where: { email } });
     expect(row?.role).toBe("ADMIN");
   });
+
+  it("requires re-accepting the terms when the accepted version is outdated", async () => {
+    const email = `${unique("terms")}@example.com`;
+    const reg = await request(base, "POST", "/api/auth/register", {
+      body: { email, password: "TermPass123!" },
+    });
+    expect(reg.status).toBe(201);
+    expect(reg.json.user.acceptedTermsVersion).toBe(config.currentTermsVersion);
+    expect(reg.json.user.termsRequired).toBe(false);
+
+    // Simulate an account that accepted an older version before the update.
+    await prisma.user.update({ where: { email }, data: { acceptedTermsVersion: "0.1" } });
+
+    const login = await request(base, "POST", "/api/auth/login", {
+      body: { email, password: "TermPass123!" },
+    });
+    expect(login.status).toBe(200);
+    expect(login.json.user.termsRequired).toBe(true);
+    expect(login.json.user.currentTermsVersion).toBe(config.currentTermsVersion);
+
+    // Accepting a version other than the current one is rejected.
+    const wrong = await request(base, "POST", "/api/auth/accept-terms", {
+      token: login.json.token,
+      body: { version: "nope" },
+    });
+    expect(wrong.status).toBe(400);
+
+    // The guard is lifted as soon as the current version is accepted.
+    const accept = await request(base, "POST", "/api/auth/accept-terms", {
+      token: login.json.token,
+      body: { version: config.currentTermsVersion },
+    });
+    expect(accept.status).toBe(200);
+    expect(accept.json.user.termsRequired).toBe(false);
+
+    const login2 = await request(base, "POST", "/api/auth/login", {
+      body: { email, password: "TermPass123!" },
+    });
+    expect(login2.json.user.termsRequired).toBe(false);
+  });
+
+  it("requires auth for accept-terms", async () => {
+    const res = await request(base, "POST", "/api/auth/accept-terms", {
+      body: { version: config.currentTermsVersion },
+    });
+    expect(res.status).toBe(401);
+  });
 });

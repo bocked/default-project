@@ -27,6 +27,7 @@ import {
   validateBody,
   registerSchema,
   loginSchema,
+  acceptTermsSchema,
   verifyEmailSchema,
   resendVerificationSchema,
   forgotPasswordSchema,
@@ -37,6 +38,7 @@ import {
   upgradeAccountSchema,
   type Register,
   type Login,
+  type AcceptTerms,
   type VerifyEmail,
   type ResendVerification,
   type ForgotPassword,
@@ -66,6 +68,9 @@ interface SafeUser {
   customWatermark: string | null;
   isSuperApproved: boolean;
   superApprovedAt: Date | null;
+  acceptedTermsVersion: string | null;
+  termsRequired: boolean;
+  currentTermsVersion: string;
   createdAt: Date;
 }
 
@@ -79,7 +84,7 @@ function roleForEmail(email: string | null, current: UserRole): UserRole {
   return current;
 }
 
-function toUser(user: SafeUser): SafeUser {
+function toUser(user: Omit<SafeUser, "termsRequired" | "currentTermsVersion">): SafeUser {
   return {
     id: user.id,
     email: user.email,
@@ -97,6 +102,9 @@ function toUser(user: SafeUser): SafeUser {
     customWatermark: user.customWatermark,
     isSuperApproved: user.isSuperApproved,
     superApprovedAt: user.superApprovedAt,
+    acceptedTermsVersion: user.acceptedTermsVersion,
+    termsRequired: user.acceptedTermsVersion !== config.currentTermsVersion,
+    currentTermsVersion: config.currentTermsVersion,
     createdAt: user.createdAt,
   };
 }
@@ -129,6 +137,7 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
       name: body.name ?? null,
       nickname: body.nickname ?? null,
       role: roleForEmail(body.email, "USER"),
+      acceptedTermsVersion: config.currentTermsVersion,
     },
   });
   await issueVerification(user.email!);
@@ -230,6 +239,25 @@ authRouter.post("/reset-password", validateBody(resetPasswordSchema), async (_re
 // GET /api/auth/me
 authRouter.get("/me", requireAuth, (req, res) => {
   res.json({ user: toUser(req.user!) });
+});
+
+// POST /api/auth/accept-terms - record consent for the current Terms of Use
+// version. Login responses flag `termsRequired` when the account accepted an
+// older version; the client must call this before letting the user in.
+authRouter.post("/accept-terms", requireAuth, validateBody(acceptTermsSchema), async (req, res) => {
+  const body = res.locals.body as AcceptTerms;
+  if (body.version !== config.currentTermsVersion) {
+    res.status(400).json({
+      error: "Qoidalarning eski versiyasi. Yangi shartlarga rozilik bering",
+      code: "TERMS_VERSION_MISMATCH",
+    });
+    return;
+  }
+  const updated = await prisma.user.update({
+    where: { id: req.user!.id },
+    data: { acceptedTermsVersion: config.currentTermsVersion },
+  });
+  res.json({ ok: true, user: toUser(updated) });
 });
 
 // PATCH /api/auth/me - update real name / nickname
@@ -386,6 +414,7 @@ authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), asy
       email: body.email,
       passwordHash: await hashPassword(body.password),
       quickLogin: false,
+      acceptedTermsVersion: config.currentTermsVersion,
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.nickname !== undefined ? { nickname: body.nickname } : {}),
       role: roleForEmail(body.email, user.role),

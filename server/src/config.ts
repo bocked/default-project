@@ -58,6 +58,10 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
   // Public frontend origin, used to build email verification links.
   appUrl: process.env.APP_URL ?? "http://localhost:3000",
+  // Terms of Use version users must accept. Bump whenever the /terms text is
+  // updated: accounts with an older acceptedTermsVersion must re-consent on
+  // their next login before they can use their profile.
+  currentTermsVersion: (process.env.CURRENT_TERMS_VERSION ?? "1.1").trim(),
   // Email verification token lifetime in hours.
   verificationTokenHours: num(process.env.VERIFICATION_TOKEN_HOURS, 24),
 

@@ -21,6 +21,11 @@ export interface User {
   customWatermark?: string | null;
   isSuperApproved?: boolean;
   superApprovedAt?: string | null;
+  /** Terms of Use version this account last accepted, and whether the current
+   *  version still needs to be accepted before the profile can be used. */
+  acceptedTermsVersion?: string | null;
+  termsRequired?: boolean;
+  currentTermsVersion?: string;
   createdAt: string;
 }
 

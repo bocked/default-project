@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { TermsModal, type TermsView } from "@/components/TermsModal";
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -12,11 +13,17 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [nickname, setNickname] = useState("");
+  const [accepted, setAccepted] = useState(false);
+  const [termsView, setTermsView] = useState<TermsView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
+    if (!accepted) {
+      setError("Davom etish uchun Foydalanish shartlari va Maxfiylik siyosatiga rozilik bering");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -78,9 +85,29 @@ export default function RegisterPage() {
 
           {error && <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
 
+          <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+            <input
+              type="checkbox"
+              checked={accepted}
+              onChange={(e) => setAccepted(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800"
+            />
+            <span>
+              Men{" "}
+              <button type="button" onClick={() => setTermsView("terms")} className="font-semibold text-blue-600 hover:underline dark:text-blue-400">
+                Foydalanish shartlariga
+              </button>{" "}
+              va{" "}
+              <button type="button" onClick={() => setTermsView("privacy")} className="font-semibold text-blue-600 hover:underline dark:text-blue-400">
+                Maxfiylik siyosatiga
+              </button>{" "}
+              roziman
+            </span>
+          </label>
+
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || !accepted}
             className="w-full min-h-[44px] rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50 dark:hover:bg-blue-500"
           >
             {submitting ? "Yaratilmoqda..." : "Ro&apos;yxatdan o&apos;tish"}
@@ -93,6 +120,8 @@ export default function RegisterPage() {
             Kirish
           </Link>
         </p>
+
+        {termsView !== null && <TermsModal open initialView={termsView} onClose={() => setTermsView(null)} />}
       </div>
     </div>
   );

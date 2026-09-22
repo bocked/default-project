@@ -5,6 +5,8 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { SiteShell } from "@/components/SiteShell";
 import { ToastProvider } from "@/components/ToastProvider";
+import { CookieConsentGate } from "@/components/CookieConsentGate";
+import { TermsReAcceptGate } from "@/components/TermsReAcceptGate";
 import { PwaRegister } from "@/components/PwaRegister";
 import { InstallPwa } from "@/components/InstallPwa";
 import { PageViewTracker } from "@/components/PageViewTracker";
@@ -59,6 +61,8 @@ export default function RootLayout({
         <PageViewTracker />
         <ToastProvider>
           <AuthProvider>
+            <CookieConsentGate />
+            <TermsReAcceptGate />
             <SiteShell>{children}</SiteShell>
           </AuthProvider>
         </ToastProvider>
