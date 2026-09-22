@@ -39,6 +39,12 @@ export default function ProfilePage() {
       .catch(() => setCategories([]));
   }, [user]);
 
+  // If a SUPER_ADMIN approved this account elsewhere, the cached session is
+  // stale until refetched — refresh once on mount so posting unlocks at once.
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
   async function resendVerification(): Promise<void> {
     if (!user?.email) return;
     setResending(true);
@@ -115,6 +121,16 @@ export default function ProfilePage() {
 
   const pendingCount = quotes.filter((q) => q.status === "PENDING").length;
 
+  // Mirrors the server's profileCanPost: anyone verified, VIP, manually
+  // approved by a SUPER_ADMIN, or holding an admin role can post.
+  const canPost =
+    user.emailVerified ||
+    user.phoneVerified ||
+    user.isSuperApproved ||
+    user.role === "ADMIN" ||
+    user.role === "SUPER_ADMIN" ||
+    isPremiumActive(user);
+
   return (
     <div className="space-y-6">
       <section>
@@ -136,7 +152,9 @@ export default function ProfilePage() {
               <p className="text-xs text-amber-700 dark:text-amber-400">
                 {user.phoneVerified
                   ? "Profil Telegram orqali faollashtirilgan, email tasdiqlash hali kutilmoqda."
-                  : "Iqtibos qo'shishdan oldin emailingizni tasdiqlang yoki Telegram orqali faollashtiring."}
+                  : canPost
+                    ? "Iqtibos joylashingiz mumkin — email/Telegram tasdiqlash profilni to'liq qilish uchun eslatib turadi."
+                    : "Iqtibos qo'shishdan oldin emailingizni tasdiqlang yoki Telegram orqali faollashtiring."}
               </p>
             </div>
             <button
@@ -241,7 +259,7 @@ export default function ProfilePage() {
 
       <PremiumCard user={user} onSaved={refresh} />
 
-      {(user.emailVerified || user.phoneVerified || user.isSuperApproved) && categories.length > 0 && (
+      {canPost && categories.length > 0 && (
         <QuoteForm categories={categories} onCreated={handleCreated} />
       )}
 

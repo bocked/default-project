@@ -71,6 +71,41 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
     expect(adminQuote.status).toBe("APPROVED");
   });
 
+  it("super-approve unlocks posting for unverified users; ordinary ADMIN is forbidden", async () => {
+    const email = `${unique("superok")}@example.com`;
+    const password = "s3cret-password";
+    const reg = await request(base, "POST", "/api/auth/register", { body: { email, password } });
+    expect(reg.status).toBe(201);
+    const id = reg.json.user.id;
+
+    // A plain ADMIN session must NOT be able to super-approve (403).
+    const adminLogin = await request(base, "POST", "/api/auth/login", {
+      body: { email: "mirabbostolqinjonov@gmail.com", password: "admin-password" },
+    });
+    expect(adminLogin.status).toBe(200);
+    expect(adminLogin.json.user.role).toBe("ADMIN");
+    const forbidden = await request(base, "POST", `/api/admin/users/${id}/super-approve`, {
+      token: adminLogin.json.token,
+    });
+    expect(forbidden.status).toBe(403);
+
+    // The ADMIN_PASSWORD master key is allowed to super-approve.
+    const approve = await request(base, "POST", `/api/admin/users/${id}/super-approve`, { token: ADMIN });
+    expect(approve.status).toBe(200);
+
+    const me = await request(base, "GET", "/api/auth/me", { token: reg.json.token });
+    expect(me.json.user.isSuperApproved).toBe(true);
+
+    // Unverified user can now post without email/telegram verification.
+    const post = await request(base, "POST", "/api/quotes", {
+      token: reg.json.token,
+      body: { text: "Super tasdiqlangan iqtibos.", categorySlug: "motivatsiya", tags: [], anonymous: true },
+    });
+    expect(post.status).toBe(201);
+    const q = await prisma.quote.findFirstOrThrow({ where: { text: "Super tasdiqlangan iqtibos." } });
+    expect(q.status).toBe("APPROVED");
+  });
+
   it("lists users and supports block/unblock/delete/restore + bulk", async () => {
     const idA = await makeUser(`${unique("ua")}@example.com`);
     const idB = await makeUser(`${unique("ub")}@example.com`);

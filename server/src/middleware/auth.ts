@@ -65,15 +65,15 @@ export function requireVerified(req: Request, res: Response, next: NextFunction)
 
 /** Gate for actions that require a fully registered profile (e.g. posting
  *  quotes). Telegram quick-login accounts (no email/password yet) must upgrade
- *  first, then pass the same email/phone verification as everyone else —
- *  unless a SUPER_ADMIN manually approved them (isSuperApproved) or they are
- *  VIP. Admins are trusted and never gated. */
+ *  first — unless a SUPER_ADMIN manually approved them. Once past the quick-login
+ *  gate they pass the same email/phone verification as everyone else — unless
+ *  super-approved or VIP. Admins are trusted and never gated. */
 export function requireFullUser(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  if (req.user.quickLogin) {
+  if (req.user.quickLogin && !req.user.isSuperApproved) {
     res.status(403).json({
       error: "Iqtibos joylash uchun profilni to'liq ro'yxatdan o'tkazing",
       code: "UPGRADE_REQUIRED",
