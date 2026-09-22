@@ -2,20 +2,59 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
 import { TermsModal, type TermsView } from "./TermsModal";
 
 type Phase = "mounting" | "prompt" | "denied" | "accepted";
 
-/** Mandatory cookie + terms consent overlay shown on every full page load
- *  (Refresh/F5). "Rozimasman" blurs and blocks the whole page until consented. */
+// Stored value is the Terms of Use version accepted on this device. When the
+// site bumps the version (e.g. "1.1" -> "1.2") the consent is asked again.
+const CONSENT_KEY = "cookieConsent";
+
+function storedConsentVersion(): string | null {
+  try {
+    return window.localStorage.getItem(CONSENT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveConsentVersion(version: string): void {
+  try {
+    window.localStorage.setItem(CONSENT_KEY, version);
+  } catch {
+    /* storage unavailable — ask again next load */
+  }
+}
+
+/** Cookie + terms consent: asked once per device, and again only when the
+ *  Terms of Use version changes. "Rozimasman" blurs and blocks the whole page. */
 export function CookieConsentGate() {
   const { user } = useAuth();
   const [phase, setPhase] = useState<Phase>("mounting");
+  const [termsVersion, setTermsVersion] = useState<string | null>(null);
   const [modal, setModal] = useState<TermsView | null>(null);
 
   useEffect(() => {
-    const id = window.setTimeout(() => setPhase("prompt"), 60);
-    return () => window.clearTimeout(id);
+    let cancelled = false;
+    const id = window.setTimeout(() => {
+      void api<{ termsVersion?: string }>("/api/settings")
+        .then((d) => {
+          if (cancelled) return;
+          const version = typeof d.termsVersion === "string" ? d.termsVersion : null;
+          if (!version) return;
+          setTermsVersion(version);
+          setPhase(storedConsentVersion() === version ? "accepted" : "prompt");
+        })
+        .catch(() => {
+          // Cannot verify the current version — do not nag or mis-record consent.
+          if (!cancelled) setPhase("accepted");
+        });
+    }, 60);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
   }, []);
 
   // When the logged-in user must re-accept updated terms, the TermsReAcceptGate
@@ -69,7 +108,10 @@ export function CookieConsentGate() {
             </button>
             <button
               type="button"
-              onClick={() => setPhase("accepted")}
+              onClick={() => {
+                if (termsVersion) saveConsentVersion(termsVersion);
+                setPhase("accepted");
+              }}
               className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
             >
               Roziman

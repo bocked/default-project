@@ -34,7 +34,7 @@ export default function CookiesPage() {
             <strong>Test mode banner dismissal:</strong> Test rejimi bannerini yopganingizda, tanlovingiz localStorage da saqlanib, keyingi tashriflarda banner ko&apos;rinmaydi.
           </li>
           <li>
-            <strong>Cookie consent (rozilik):</strong> Cookie bannerini qabul qilinganda, tanlovingiz localStorage da saqlanib, banner yana ko&apos;rinmaydi.
+            <strong>Cookie consent (rozilik):</strong> Cookie bannerini qabul qilinganda, tanlovingiz localStorage da saqlanib, shu qurilmada bir marta so&apos;raladi. Foydalanish shartlari yangilanganida (versiya o&apos;zgarganda) rozilik qayta so&apos;raladi.
           </li>
         </ul>
       </section>

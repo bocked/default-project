@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { recordActivity } from "../lib/activity.js";
 import { trackPageView } from "../lib/analytics.js";
 import { validateBody, publicFeedbackSchema, type PublicFeedback } from "../schemas.js";
+import { config } from "../config.js";
 
 export const siteRouter = Router();
 
@@ -22,7 +23,8 @@ siteRouter.get("/announcements", async (_req, res) => {
   }
 });
 
-// GET /api/settings - public site settings (site name, social links, meta).
+// GET /api/settings - public site settings (site name, social links, meta)
+// plus the current Terms of Use version used for consent checks.
 siteRouter.get("/settings", async (_req, res) => {
   try {
     const settings = await prisma.siteSetting.findMany({
@@ -30,7 +32,10 @@ siteRouter.get("/settings", async (_req, res) => {
       orderBy: { key: "asc" },
       select: { key: true, value: true },
     });
-    res.json({ settings: Object.fromEntries(settings.map((s) => [s.key, s.value])) });
+    res.json({
+      settings: Object.fromEntries(settings.map((s) => [s.key, s.value])),
+      termsVersion: config.currentTermsVersion,
+    });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }
