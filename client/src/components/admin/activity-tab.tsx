@@ -23,7 +23,7 @@ const ACTIONS: Record<string, { label: string; tone: "blue" | "emerald" | "slate
   FEEDBACK: { label: "Shikoyat", tone: "rose" },
 };
 
-export default function AdminActivityPage() {
+export function AdminActivityTab() {
   const [activities, setActivities] = useState<AdminActivityEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");

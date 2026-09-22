@@ -3,14 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { AdminCard, Badge, EmptyState, ErrorNote, PageTitle } from "@/components/admin-ui";
-import type { AdminLogEntry, AuditLogEntry } from "@/lib/types";
-
-const levelTone: Record<AdminLogEntry["level"], "slate" | "amber" | "rose"> = {
-  info: "slate",
-  warn: "amber",
-  ban: "rose",
-  delete: "rose",
-};
+import type { AuditLogEntry } from "@/lib/types";
 
 const actionLabel: Record<string, string> = {
   "quote.approve": "Iqtibos tasdiqlandi",
@@ -35,30 +28,26 @@ const actionLabel: Record<string, string> = {
   "content.update": "Kontent yangilandi",
 };
 
-export default function AdminLogsPage() {
-  const [live, setLive] = useState<AdminLogEntry[]>([]);
+export function AdminAuditLogsTab() {
   const [audit, setAudit] = useState<AuditLogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void api<{ logs: AdminLogEntry[] }>("/api/admin/logs")
-      .then((d) => setLive(d.logs))
-      .catch(() => setError("Loglarni yuklab bo'lmadi"));
     void api<{ logs: AuditLogEntry[] }>("/api/admin/audit-logs")
       .then((d) => setAudit(d.logs))
-      .catch(() => {});
+      .catch(() => setError("Loglarni yuklab bo'lmadi"));
   }, []);
 
   return (
-    <div className="space-y-6">
-      <PageTitle title="Loglar" subtitle="Admin amallari auditi va jonli hodisalar." />
+    <div className="space-y-4">
+      <PageTitle
+        title="Admin audit loglar"
+        subtitle="Barcha muhim admin amallari (tasdiqlash, bloklash, o'chirish va boshqalar)."
+      />
       {error && <ErrorNote text={error} />}
 
-      <section>
-        <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">
-          Audit (barcha muhim admin amallari)
-        </h2>
-        {audit.length === 0 && <EmptyState text="Audit yozuvlari yo'q." />}
+      {audit.length === 0 && <EmptyState text="Audit yozuvlari yo'q." />}
+      {audit.length > 0 && (
         <AdminCard className="overflow-x-auto p-0">
           <table className="w-full min-w-[680px] text-left text-sm">
             <thead>
@@ -91,27 +80,7 @@ export default function AdminLogsPage() {
             </tbody>
           </table>
         </AdminCard>
-      </section>
-
-      <section>
-        <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">
-          Jonli hodisalar (xotira)
-        </h2>
-        {live.length === 0 && <EmptyState text="Jonli hodisalar yo'q." />}
-        <AdminCard>
-          <div className="space-y-2">
-            {live.map((log) => (
-              <div key={log.id} className="flex items-start gap-2 text-xs">
-                <span className="mt-0.5 shrink-0 text-slate-400 dark:text-slate-500">
-                  {new Date(log.time).toLocaleString("uz-UZ")}
-                </span>
-                <Badge tone={levelTone[log.level]}>{log.level}</Badge>
-                <span className="text-slate-600 dark:text-slate-300">{log.message}</span>
-              </div>
-            ))}
-          </div>
-        </AdminCard>
-      </section>
+      )}
     </div>
   );
 }

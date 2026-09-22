@@ -22,7 +22,7 @@ interface BanRecord {
 
 type Tab = "ip" | "telegram";
 
-export default function AdminBansPage() {
+export function AdminBansTab() {
   const [tab, setTab] = useState<Tab>("ip");
   const [ips, setIps] = useState<BanRecord[]>([]);
   const [tgUsers, setTgUsers] = useState<TelegramBanUser[]>([]);

@@ -27,7 +27,7 @@ const STATUS: Record<string, { label: string; tone: "amber" | "blue" | "emerald"
   RESOLVED: { label: "Yechilgan", tone: "emerald" },
 };
 
-export default function AdminFeedbackPage() {
+export function AdminFeedbackTab() {
   const [feedback, setFeedback] = useState<AdminFeedback[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState(false);

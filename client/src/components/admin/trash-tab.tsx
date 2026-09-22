@@ -18,7 +18,7 @@ const statusTone: Record<QuoteStatus, "amber" | "emerald" | "rose"> = {
   REJECTED: "rose",
 };
 
-export default function AdminTrashPage() {
+export function AdminTrashTab() {
   const [quotes, setQuotes] = useState<AdminQuote[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [busy, setBusy] = useState(false);

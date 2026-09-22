@@ -22,7 +22,7 @@ const CHANNELS: Record<string, string> = {
   ALL: "Hammasi",
 };
 
-export default function AdminAnnouncementsPage() {
+export function AdminAnnouncementsTab() {
   const [announcements, setAnnouncements] = useState<AdminAnnouncement[]>([]);
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");

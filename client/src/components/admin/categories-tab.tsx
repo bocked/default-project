@@ -13,7 +13,7 @@ import {
 } from "@/components/admin-ui";
 import type { Category } from "@/lib/types";
 
-export default function AdminCategoriesPage() {
+export function AdminCategoriesTab() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

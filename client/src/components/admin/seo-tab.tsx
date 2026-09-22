@@ -20,7 +20,7 @@ const PRESETS = [
   { page: "rules", label: "Qoidalar" },
 ];
 
-export default function AdminSeoPage() {
+export function AdminSeoTab() {
   const [rules, setRules] = useState<SeoRule[]>([]);
   const [page, setPage] = useState("home");
   const [title, setTitle] = useState("");
@@ -107,7 +107,7 @@ export default function AdminSeoPage() {
   return (
     <div className="space-y-4">
       <PageTitle
-        title="SEO sozlamalari"
+        title="SEO qoidalari"
         subtitle="Har bir sahifa, bo'lim yoki iqtibos uchun meta-teglar."
         actions={
           <AdminButton variant="slate" disabled={busy} onClick={resetForm}>

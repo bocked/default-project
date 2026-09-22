@@ -47,7 +47,7 @@ interface EditDraft {
   telegramUrl: string;
 }
 
-export default function AdminQuotesPage() {
+export function AdminQuotesTab() {
   const [quotes, setQuotes] = useState<AdminQuote[]>([]);
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -304,8 +304,10 @@ export default function AdminQuotesPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <Badge tone={statusTone[quote.status]}>{statusLabel[quote.status]}</Badge>
-                    {todayId === quote.id && <Badge tone="emerald">Bugun ko&apos;rsatilmoqda</Badge>}
-                    {pinnedId === quote.id && todayId !== quote.id && <Badge tone="blue">Kun iqtibosiga tayinlangan</Badge>}
+                    {todayId === quote.id && <Badge tone="emerald">★ Bugun ko&apos;rsatilmoqda</Badge>}
+                    {pinnedId === quote.id && todayId !== quote.id && (
+                      <Badge tone="blue">★ Kun iqtibosiga tayinlangan</Badge>
+                    )}
                     <span>{quote.category.name}</span>
                     <span>{new Date(quote.createdAt).toLocaleDateString("uz-UZ")}</span>
                     {quote.anonymous && <Badge tone="slate">Anonim</Badge>}
@@ -380,7 +382,7 @@ export default function AdminQuotesPage() {
                           disabled={busy || pinning === quote.id}
                           onClick={() => void pinQod(quote, true)}
                         >
-                          {pinning === quote.id ? "O'chirilmoqda..." : "Kun iqtibosidan olib tashlash"}
+                          {pinning === quote.id ? "O'chirilmoqda..." : "★ Kun iqtibosidan olib tashlash"}
                         </AdminButton>
                       ) : (
                         <AdminButton
@@ -388,7 +390,7 @@ export default function AdminQuotesPage() {
                           disabled={busy || pinning === quote.id}
                           onClick={() => void pinQod(quote, false)}
                         >
-                          {pinning === quote.id ? "Tayinlanmoqda..." : "Kun iqtibosi qilish"}
+                          {pinning === quote.id ? "Tayinlanmoqda..." : "★ Kun iqtibosi qilish"}
                         </AdminButton>
                       ))}
                     <AdminButton variant="ghost" disabled={busy} onClick={() => void remove(quote.id)}>

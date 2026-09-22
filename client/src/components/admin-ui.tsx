@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 /** Small shared primitives for the admin console. All text is Uzbek. */
 
 export function AdminCard({
@@ -164,5 +166,36 @@ export function ErrorNote({ text }: { text: string }) {
     <p className="rounded-xl bg-rose-50 p-4 text-sm text-rose-600 dark:bg-rose-950/40 dark:text-rose-300">
       {text}
     </p>
+  );
+}
+
+export function AdminTabs({
+  tabs,
+  active,
+  baseUrl,
+}: {
+  tabs: Array<{ id: string; label: string }>;
+  active: string;
+  baseUrl: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {tabs.map((t) => {
+        const isActive = t.id === active;
+        return (
+          <Link
+            key={t.id}
+            href={t.id === tabs[0]?.id ? baseUrl : `${baseUrl}?tab=${encodeURIComponent(t.id)}`}
+            className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
+              isActive
+                ? "border-blue-600 bg-blue-600 text-white"
+                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600"
+            }`}
+          >
+            {t.label}
+          </Link>
+        );
+      })}
+    </div>
   );
 }

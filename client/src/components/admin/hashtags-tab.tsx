@@ -13,7 +13,7 @@ import {
 } from "@/components/admin-ui";
 import type { AdminTag } from "@/lib/types";
 
-export default function AdminHashtagsPage() {
+export function AdminHashtagsTab() {
   const [tags, setTags] = useState<AdminTag[]>([]);
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);

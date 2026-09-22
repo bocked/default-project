@@ -49,7 +49,7 @@ export default function AdminDashboard() {
         subtitle="Sayt faoliyati va moderatsiya holati."
         actions={
           <Link
-            href="/admin/quotes"
+            href="/admin/content?tab=quotes"
             className="rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
           >
             Kutilayotgan iqtiboslar
@@ -129,7 +129,7 @@ export default function AdminDashboard() {
         <AdminCard className="lg:col-span-2">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-900 dark:text-white">So&apos;nggi hodisalar</h2>
-            <Link href="/admin/logs" className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
+            <Link href="/admin/audit?tab=logs" className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
               Barchasi
             </Link>
           </div>

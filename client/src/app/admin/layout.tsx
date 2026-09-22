@@ -7,20 +7,12 @@ import { useAuth } from "@/lib/auth";
 
 const NAV = [
   { href: "/admin", label: "Boshqaruv paneli", exact: true },
-  { href: "/admin/quotes", label: "Iqtiboslar" },
-  { href: "/admin/users", label: "Foydalanuvchilar" },
-  { href: "/admin/categories", label: "Bo'limlar" },
-  { href: "/admin/hashtags", label: "Heshteglar" },
-  { href: "/admin/bans", label: "Qora ro'yxat" },
-  { href: "/admin/announcements", label: "E'lonlar" },
-  { href: "/admin/feedback", label: "Shikoyatlar" },
-  { href: "/admin/settings", label: "Sozlamalar" },
-  { href: "/admin/seo", label: "SEO" },
-  { href: "/admin/activity", label: "Faollik" },
-  { href: "/admin/backup", label: "Zaxira" },
   { href: "/admin/content", label: "Kontent" },
-  { href: "/admin/logs", label: "Loglar" },
-  { href: "/admin/trash", label: "Arxiv" },
+  { href: "/admin/users", label: "Foydalanuvchilar" },
+  { href: "/admin/communication", label: "Muloqot" },
+  { href: "/admin/settings", label: "Sozlamalar" },
+  { href: "/admin/audit", label: "Audit" },
+  { href: "/admin/backup", label: "Zaxira" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
