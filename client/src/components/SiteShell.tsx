@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
 import { AnnouncementsBanner } from "./AnnouncementsBanner";
+import { BackButton } from "./BackButton";
 import { NavBar } from "./NavBar";
 import { WwwUzTracker } from "./WwwUzTracker";
 
@@ -12,6 +13,14 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   // Admin console gets a wider content area so tables and sidebars fit.
   const isAdmin = pathname?.startsWith("/admin") ?? false;
   const [footer, setFooter] = useState("Iqtibosim — fikrlarni to'playdigan joy");
+  // `usePathname` is null during static prerender, so only show the back
+  // button after hydration to keep server and client markup identical.
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setMounted(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
 
   useEffect(() => {
     void api<{ content: Record<string, string> }>("/api/content")
@@ -27,6 +36,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
       <AnnouncementsBanner />
       <NavBar />
       <main className={`mx-auto w-full flex-1 px-4 py-4 sm:py-6 ${isAdmin ? "max-w-6xl" : "max-w-3xl"}`}>
+        {mounted && pathname !== "/" && <BackButton />}
         {children}
       </main>
       <footer className="border-t border-slate-200 py-4 text-center text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
