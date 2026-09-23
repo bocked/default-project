@@ -208,9 +208,15 @@ export async function verifyResendAtStartup(): Promise<boolean> {
   }
   try {
     // Lightweight auth probe: listing domains validates the key without burning
-    // one of the free-tier sends. Bounded by EMAIL_SEND_TIMEOUT_MS.
+    // one of the free-tier sends. Bounded by EMAIL_SEND_TIMEOUT_MS. A
+    // send-only/restricted key lacks management scopes but can still deliver —
+    // report it as ready instead of a scary 401.
     const probe = await withTimeout(client.domains.list(), EMAIL_SEND_TIMEOUT_MS, "Resend API javob bermadi (Timeout)");
     if (probe.error) {
+      if (probe.error.name === "restricted_api_key") {
+        console.log("✅ Resend API tayyor! (kalit send-only — domains boshqaruvi cheklangan)");
+        return true;
+      }
       throw new Error(probe.error.message ?? "Resend API xatosi");
     }
     console.log("✅ Resend API tayyor!");
