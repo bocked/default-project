@@ -31,6 +31,7 @@ import {
   EMAIL_SEND_TIMEOUT_MS,
   EmailSandboxError,
   resendSandboxRecipientAllowed,
+  type EmailSendResult,
 } from "../lib/email.js";
 import { issueEmailVerification } from "../lib/verifyEmail.js";
 import { logger } from "../lib/logger.js";
@@ -352,42 +353,66 @@ authRouter.post("/send-otp", requireAuth, authBruteLimiter, async (req, res) => 
 
 // POST /api/auth/forgot-password - email a 6-digit OTP reset code + a fallback
 // reset link. Unknown emails answer 404 so the UI can say "ro'yxatdan
-// o'tilmagan". Both the code and token are stored SHA-256 hashed with a
-// 15-minute resetTokenExpiry.
+// o'tilmagan". The code + token are stored SHA-256 hashed under resetTokenExpiry
+// (15 min). Every step is logged so a "kod yetib bormayapti" report can be
+// traced end-to-end from the terminal.
 authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswordSchema), async (_req, res) => {
   const body = res.locals.body as ForgotPassword;
-  const user = await prisma.user.findUnique({ where: { email: body.email } });
+  const userEmail = body.email;
+  console.log("[FORGOT PASSWORD] So'rov qabul qilindi:", userEmail);
+
+  const user = await prisma.user.findUnique({ where: { email: userEmail } });
   if (!user || !user.email) {
+    console.log("[FORGOT PASSWORD] Foydalanuvchi topilmadi:", userEmail);
     res.status(404).json({ success: false, message: "Ushbu email bilan ro'yxatdan o'tilmagan" });
     return;
   }
+  console.log("[FORGOT PASSWORD] Foydalanuvchi topildi:", user.email);
+
   const token = generatePasswordResetToken();
   const code = generatePasswordResetCode();
-  await prisma.user.update({
-    where: { email: user.email },
-    data: {
-      resetPasswordToken: hashPasswordResetToken(token),
-      resetPasswordCodeHash: hashPasswordResetCode(code),
-      resetTokenExpiry: passwordResetExpiry(),
-    },
-  });
   try {
-    const sent = await withTimeout(
+    await prisma.user.update({
+      where: { email: user.email },
+      data: {
+        resetPasswordToken: hashPasswordResetToken(token),
+        resetPasswordCodeHash: hashPasswordResetCode(code),
+        resetTokenExpiry: passwordResetExpiry(),
+      },
+    });
+  } catch (err) {
+    console.error("❌ [FORGOT PASSWORD DB ERROR]:", err);
+    res.status(500).json({ success: false, message: "Parolni tiklashda xatolik yuz berdi. Qayta urinib ko'ring." });
+    return;
+  }
+  console.log("[FORGOT PASSWORD] OTP yaratildi va resetTokenExpiry (15 daqiqa) bilan saqlandi");
+
+  const senderEmail = config.sendFrom;
+  console.log(`[FORGOT PASSWORD] OTP yuborilmoqda: ${user.email} | Sender: ${senderEmail}`);
+
+  let sent: EmailSendResult;
+  try {
+    sent = await withTimeout(
       sendPasswordResetEmail(user.email, token, code),
       EMAIL_SEND_TIMEOUT_MS,
       "Resend API javob bermadi (Timeout)",
     );
-    if (!sent.ok) {
-      console.error("❌ FORGOT PASSWORD EMAIL ERROR:", sent.error);
-      res.status(500).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi" });
-      return;
-    }
   } catch (err) {
-    console.error("❌ FORGOT PASSWORD EMAIL ERROR:", err);
-    res.status(500).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi" });
+    console.error("❌ [RESEND FORGOT PASSWORD ERROR]:", JSON.stringify({ message: err instanceof Error ? err.message : String(err) }, null, 2));
+    res.status(400).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi." });
     return;
   }
-  res.json({ ok: true, message: "Parolni tiklash kodi pochtangizga yuborildi" });
+  if (!sent.ok) {
+    console.error("❌ [RESEND FORGOT PASSWORD ERROR]:", JSON.stringify({ message: sent.error }, null, 2));
+    res.status(400).json({
+      success: false,
+      message: sent.error ?? "Pochtaga xat yuborishda xatolik yuz berdi.",
+    });
+    return;
+  }
+
+  console.log("✅ [RESEND SUCCESS]:", { id: sent.messageId ?? null, to: user.email, from: senderEmail });
+  res.json({ success: true, ok: true, message: "Parolni tiklash kodi pochtangizga yuborildi!" });
 });
 
 // POST /api/auth/reset-password - redeem either the emailed link token or the
