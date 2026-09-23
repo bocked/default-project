@@ -129,7 +129,9 @@ Cookie — bu sizning qurilmangizga (kompyuter, telefon, planshet) sayt tashrif 
 
 ## 3. Uchinchi tomon cookie fayllari
 
-Hozirda sayt uchinchi tomon cookie fayllaridan (Google Analytics, reklama tarmoqlari, kuzatuv tizimlari) foydalanmaydi. Kelajakda shunday xizmatlar qo'shilganda, bu bo'lim yangilanadi va sizdan alohida rozilik so'raladi.
+Sayt rasmiy WWW.UZ statistikasi (www.uz hisoblagichi) dan foydalanadi. U faqat cookie roziligini berganingizdan so'ng ishga tushadi, smart_top cookie faylini o'rnatadi va www.uz serveriga anonim statistik ma'lumot yuboradi. Rozilik bermasangiz, hisoblagich ishga tushmaydi.
+
+Google Analytics yoki reklama tarmoqlari kabi boshqa uchinchi tomon kuzatuv tizimlari ishlatilmaydi. Kelajakda shunday xizmatlar qo'shilganda, bu bo'lim yangilanadi va sizdan alohida rozilik so'raladi.
 
 ## 4. Cookie fayllarini boshqarish
 

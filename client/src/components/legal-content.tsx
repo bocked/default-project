@@ -129,7 +129,10 @@ export function CookieContent() {
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">3. Uchinchi tomon cookie fayllari</h2>
         <p className="text-slate-600 dark:text-slate-300">
-          Hozirda sayt uchinchi tomon cookie fayllaridan (Google Analytics, reklama tarmoqlari, kuzatuv tizimlari) foydalanmaydi. Kelajakda shunday xizmatlar qo&apos;shilganda, bu bo&apos;lim yangilanadi va sizdan alohida rozilik so&apos;raladi.
+          Sayt rasmiy WWW.UZ statistikasi (www.uz hisoblagichi) dan foydalanadi. U faqat cookie roziligini berganingizdan so&apos;ng ishga tushadi, <code>smart_top</code> cookie faylini o&apos;rnatadi va www.uz serveriga anonim statistik ma&apos;lumot yuboradi. Rozilik bermasangiz, hisoblagich ishga tushmaydi.
+        </p>
+        <p className="text-slate-600 dark:text-slate-300">
+          Google Analytics yoki reklama tarmoqlari kabi boshqa uchinchi tomon kuzatuv tizimlari ishlatilmaydi. Kelajakda shunday xizmatlar qo&apos;shilganda, bu bo&apos;lim yangilanadi va sizdan alohida rozilik so&apos;raladi.
         </p>
       </section>
 

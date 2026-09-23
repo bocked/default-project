@@ -3,11 +3,13 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { config } from "@/lib/config";
+import { hasStoredConsent } from "./CookieConsentGate";
 
 /** Fires a page-view analytics beacon on every navigation. Unique visitors and
  *  bots are handled server-side (Redis, 24h window); this just reports that a
  *  real page was opened by the browser. Admin pages are excluded so internal
- *  usage does not skew public audience stats. */
+ *  usage does not skew public audience stats. Only fires after the visitor
+ *  accepted the cookie policy. */
 export function PageViewTracker() {
   const pathname = usePathname();
 
@@ -15,6 +17,7 @@ export function PageViewTracker() {
     if (typeof pathname !== "string" || pathname.startsWith("/admin")) return;
     // Small delay so rapid route changes during hydration skip the beacon.
     const timer = window.setTimeout(() => {
+      if (!hasStoredConsent()) return;
       void fetch(`${config.url}/api/pageview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

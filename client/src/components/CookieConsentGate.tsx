@@ -11,6 +11,12 @@ type Phase = "mounting" | "prompt" | "denied" | "accepted";
 // site bumps the version (e.g. "1.1" -> "1.2") the consent is asked again.
 const CONSENT_KEY = "cookieConsent";
 
+/** True once the visitor accepted the current cookie policy on this device.
+ *  Third-party tracking (WWW.UZ counter) and analytics are only allowed then. */
+export function hasStoredConsent(): boolean {
+  return storedConsentVersion() !== null;
+}
+
 function storedConsentVersion(): string | null {
   try {
     return window.localStorage.getItem(CONSENT_KEY);
