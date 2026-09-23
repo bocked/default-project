@@ -282,94 +282,117 @@ export function AdminUsersTab() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1.5">
-                        {u.role === "SUPER_ADMIN"
-                          ? u.id === me?.id && (
-                              <span className="py-1 text-xs text-slate-400 dark:text-slate-500">O&apos;zingiz</span>
-                            )
-                          : u.role === "ADMIN"
-                            ? u.id === me?.id && (
-                                <span className="py-1 text-xs text-slate-400 dark:text-slate-500">O&apos;zingiz</span>
-                              )
-                            : (
-                              <AdminActionMenu
-                                label="Amallar"
-                                header={
-                                  <AdminSelect
-                                    value={vipDays[u.id] ?? "30"}
-                                    onChange={(e) => setVipDays((prev) => ({ ...prev, [u.id]: e.target.value }))}
-                                    className="w-full py-1 text-xs"
-                                  >
-                                    <option value="7">7 kun</option>
-                                    <option value="30">30 kun</option>
-                                    <option value="365">1 yil</option>
-                                    <option value="forever">Umrbod</option>
-                                  </AdminSelect>
-                                }
-                                items={[
-                                  ...(me?.role === "SUPER_ADMIN"
-                                    ? u.isSuperApproved
+                        {u.id === me?.id ? (
+                          <span className="py-1 text-xs text-slate-400 dark:text-slate-500">O&apos;zingiz</span>
+                        ) : (
+                          <AdminActionMenu
+                            label="Amallar"
+                            header={
+                              <AdminSelect
+                                value={vipDays[u.id] ?? "30"}
+                                onChange={(e) => setVipDays((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                                className="w-full py-1 text-xs"
+                              >
+                                <option value="7">7 kun</option>
+                                <option value="30">30 kun</option>
+                                <option value="365">1 yil</option>
+                                <option value="forever">Umrbod</option>
+                              </AdminSelect>
+                            }
+                            items={[
+                              // Role management on every non-self row: promote to
+                              // ADMIN, demote to USER, or (for a SUPER_ADMIN actor)
+                              // grant the SUPER_ADMIN role. The server pins the chosen
+                              // role in `roleOverride` so config auto-promotion can
+                              // never silently restore a revoked role.
+                              ...(u.role === "SUPER_ADMIN" && me?.role !== "SUPER_ADMIN"
+                                ? []
+                                : [
+                                    ...(me?.role === "SUPER_ADMIN" && u.role !== "SUPER_ADMIN"
                                       ? [
                                           {
-                                            label: "Super tasdiqlashni olib tashlash",
-                                            danger: true,
+                                            label: "Super admin qilish",
                                             disabled: busy,
-                                            onClick: () => void revokeSuperApproval(u),
+                                            onClick: () => void runRole(u, "SUPER_ADMIN"),
                                           },
                                         ]
-                                      : [
-                                          {
-                                            label: "⚡ Super tasdiqlash",
-                                            disabled: busy,
-                                            onClick: () => void runAction(`/api/admin/users/${u.id}/super-approve`),
-                                          },
-                                        ]
-                                    : []),
-                                  ...(isPremiumActive(u)
-                                    ? [
-                                        {
-                                          label: "VIP uzaytirish",
+                                      : []),
+                                    u.role === "USER"
+                                      ? {
+                                          label: "Admin qilish",
                                           disabled: busy,
-                                          onClick: () => void grantPremium(u),
-                                        },
-                                        {
-                                          label: "VIP olib tashlash",
+                                          onClick: () => void runRole(u, "ADMIN"),
+                                        }
+                                      : {
+                                          label: "Foydalanuvchiga tushirish",
                                           danger: true,
                                           disabled: busy,
-                                          onClick: () => void revokePremium(u),
+                                          onClick: () => void runRole(u, "USER"),
                                         },
-                                      ]
-                                    : [
-                                        {
-                                          label: "VIP berish",
-                                          disabled: busy,
-                                          onClick: () => void grantPremium(u),
-                                        },
-                                      ]),
-                                  {
-                                    label: "Admin qilish",
-                                    disabled: busy,
-                                    onClick: () => void runRole(u, "ADMIN"),
-                                  },
-                                  u.blocked
-                                    ? {
-                                        label: "Blokdan chiqarish",
+                                  ]),
+                              ...(me?.role === "SUPER_ADMIN"
+                                ? u.isSuperApproved
+                                  ? [
+                                      {
+                                        label: "Super tasdiqlashni olib tashlash",
+                                        danger: true,
                                         disabled: busy,
-                                        onClick: () => void runAction(`/api/admin/users/${u.id}/unblock`),
-                                      }
-                                    : {
-                                        label: "Bloklash",
-                                        disabled: busy,
-                                        onClick: () => void runAction(`/api/admin/users/${u.id}/block`),
+                                        onClick: () => void revokeSuperApproval(u),
                                       },
-                                  {
-                                    label: "Arxivga",
-                                    danger: true,
-                                    disabled: busy,
-                                    onClick: () => void runAction(`/api/admin/users/${u.id}/delete`),
-                                  },
-                                ]}
-                              />
-                            )}
+                                    ]
+                                  : [
+                                      {
+                                        label: "⚡ Super tasdiqlash",
+                                        disabled: busy,
+                                        onClick: () => void runAction(`/api/admin/users/${u.id}/super-approve`),
+                                      },
+                                    ]
+                                : []),
+                              ...(isPremiumActive(u)
+                                ? [
+                                    {
+                                      label: "VIP uzaytirish",
+                                      disabled: busy,
+                                      onClick: () => void grantPremium(u),
+                                    },
+                                    {
+                                      label: "VIP olib tashlash",
+                                      danger: true,
+                                      disabled: busy,
+                                      onClick: () => void revokePremium(u),
+                                    },
+                                  ]
+                                : [
+                                    {
+                                      label: "VIP berish",
+                                      disabled: busy,
+                                      onClick: () => void grantPremium(u),
+                                    },
+                                  ]),
+                              ...(u.role === "USER"
+                                ? [
+                                    u.blocked
+                                      ? {
+                                          label: "Blokdan chiqarish",
+                                          disabled: busy,
+                                          onClick: () => void runAction(`/api/admin/users/${u.id}/unblock`),
+                                        }
+                                      : {
+                                          label: "Bloklash",
+                                          disabled: busy,
+                                          onClick: () => void runAction(`/api/admin/users/${u.id}/block`),
+                                        },
+                                    {
+                                      label: "Arxivga",
+                                      danger: true,
+                                      disabled: busy,
+                                      onClick: () => void runAction(`/api/admin/users/${u.id}/delete`),
+                                    },
+                                  ]
+                                : []),
+                            ]}
+                          />
+                        )}
                       </div>
                     </td>
                   </tr>

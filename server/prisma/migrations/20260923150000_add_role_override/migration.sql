@@ -1,0 +1,2 @@
+-- Manual role pin from the admin panel. When set, config-based auto-promotion (ADMIN_EMAILS / SUPER_ADMIN_EMAILS on login and at boot) never overrides it, so revoking an admin status sticks.
+ALTER TABLE "User" ADD COLUMN "roleOverride" "UserRole";

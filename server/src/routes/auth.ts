@@ -147,8 +147,11 @@ interface SafeUser {
 }
 
 /** SUPER_ADMIN_EMAILS outranks ADMIN_EMAILS; never demotes an existing
- *  SUPER_ADMIN at login (only ever promotes). */
-function roleForEmail(email: string | null, current: UserRole): UserRole {
+ *  SUPER_ADMIN at login (only ever promotes). A manual roleOverride (set by the
+ *  admin panel) pins the role and wins over the config lists, so a revoked
+ *  admin status is never silently restored. */
+function roleForEmail(email: string | null, current: UserRole, override: UserRole | null = null): UserRole {
+  if (override) return override;
   if (!email) return current;
   const normalized = email.toLowerCase();
   if (config.superAdminEmails.includes(normalized)) return "SUPER_ADMIN";
@@ -248,7 +251,8 @@ authRouter.post("/login", authBruteLimiter, validateBody(loginSchema), async (_r
   }
   // Promote admin emails lazily so the account gets ADMIN/SUPER_ADMIN even if
   // it was created before the email was listed (or by the register endpoint).
-  const targetRole = roleForEmail(user.email, user.role);
+  // A manual roleOverride from the admin panel pins the role instead.
+  const targetRole = roleForEmail(user.email, user.role, user.roleOverride);
   const current =
     targetRole !== user.role
       ? await prisma.user.update({ where: { id: user.id }, data: { role: targetRole } })
@@ -647,7 +651,7 @@ authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), asy
       acceptedTermsVersion: termsVersion,
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.nickname !== undefined ? { nickname: body.nickname } : {}),
-      role: roleForEmail(body.email, user.role),
+      role: roleForEmail(body.email, user.role, user.roleOverride),
     },
   });
   await issueEmailVerification(updated.email!);

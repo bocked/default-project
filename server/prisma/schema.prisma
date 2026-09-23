@@ -96,6 +96,10 @@ model User {
   name                        String? // real name (private, admin-only)
   nickname                    String?
   role                        UserRole        @default(USER)
+  // Manual role pin set by the admin panel. When present it wins over the
+  // config-based ADMIN_EMAILS/SUPER_ADMIN_EMAILS auto-promotion (login + boot),
+  // so a revoked admin status stays revoked until changed again.
+  roleOverride                UserRole?
   emailVerified               Boolean         @default(false)
   emailVerifiedAt             DateTime?
   emailVerificationToken      String?         @unique

@@ -719,7 +719,12 @@ adminRouter.delete("/users/:id", async (req, res) => {
   }
 });
 
-// PATCH /api/admin/users/:id/role - grant or revoke the ADMIN role.
+// PATCH /api/admin/users/:id/role - grant, demote or fully revoke admin rights.
+// The chosen role is pinned in `roleOverride`, so config-based auto-promotion
+// (ADMIN_EMAILS / SUPER_ADMIN_EMAILS on login and at boot) can never silently
+// restore a revoked role. Self-change is blocked; only a SUPER_ADMIN may grant
+// or revoke the SUPER_ADMIN role (self-protection: one super admin cannot be
+// locked out by a lesser admin).
 adminRouter.patch("/users/:id/role", validateBody(userRoleUpdateSchema), async (req, res) => {
   try {
     const { role } = res.locals.body as UserRoleUpdate;
@@ -728,16 +733,19 @@ adminRouter.patch("/users/:id/role", validateBody(userRoleUpdateSchema), async (
       res.status(404).json({ error: "Foydalanuvchi topilmadi" });
       return;
     }
-    if (target.role === "SUPER_ADMIN") {
-      res.status(403).json({ error: "Super admin rolini o'zgartirib bo'lmaydi" });
-      return;
-    }
     const actorId = adminId(req);
     if (actorId && target.id === actorId) {
       res.status(400).json({ error: "O'zingizning rolingizni o'zgartira olmaysiz" });
       return;
     }
-    const user = await prisma.user.update({ where: { id: target.id }, data: { role } });
+    if ((target.role === "SUPER_ADMIN" || role === "SUPER_ADMIN") && req.admin?.role !== "SUPER_ADMIN" && req.admin?.role !== "ADMIN_PASSWORD") {
+      res.status(403).json({ error: "Super admin rolini faqat super admin o'zgartira oladi" });
+      return;
+    }
+    const user = await prisma.user.update({
+      where: { id: target.id },
+      data: { role, roleOverride: role },
+    });
     await recordAudit({
       adminId: actorId,
       adminEmail: adminEmail(req),
