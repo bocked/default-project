@@ -1,7 +1,22 @@
-import type { Quote } from "@/lib/types";
+import { quoteMarks } from "@/lib/quoteStyles";
+import type { Quote, QuoteCustomStyles } from "@/lib/types";
 
 const SERIF = "Georgia, 'Times New Roman', serif";
 const SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+
+/** Canvas-safe stacks for the VIP custom style fonts (mirrors quoteStyles.ts). */
+const FONT_STACKS: Record<NonNullable<QuoteCustomStyles["fontFamily"]>, string> = {
+  serif: SERIF,
+  sans: SANS,
+  mono: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
+  calligraphic: "'Segoe Script', 'Brush Script MT', 'Comic Sans MS', cursive",
+};
+
+const BORDER_COLORS: Record<Exclude<NonNullable<QuoteCustomStyles["border"]>, "none">, string> = {
+  gold: "#d4af37",
+  silver: "#b6b8ba",
+  neon: "#22d3ee",
+};
 
 const COLORS = {
   white: "#ffffff",
@@ -214,9 +229,14 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
  * page stylesheets and web fonts on many devices and produces a blank PNG.
  * Canvas text is rasterized from installed system fonts, so the output is
  * deterministic everywhere. Likes/views, author and hashtags are omitted.
+ *
+ * The VIP `quote.customStyles` (font, colour, alignment, border, quote marks,
+ * texture, size) take precedence over the theme, so the downloaded PNG matches
+ * the card the visitor composed in the quote form.
  */
 export async function renderQuoteImage(quote: Quote, opts: QuoteImageOptions = {}): Promise<Blob> {
   const theme = opts.theme;
+  const styles = quote.customStyles ?? null;
   const canvas = document.createElement("canvas");
   const scale = 2;
   canvas.width = SIZE * scale;
@@ -225,21 +245,22 @@ export async function renderQuoteImage(quote: Quote, opts: QuoteImageOptions = {
   if (!ctx) throw new Error("Canvas 2D not supported");
   ctx.scale(scale, scale);
 
-  // Premium fonts are loaded from a font-face (next/font) at runtime; wait for
-  // them so wrapText() measures the same family the renderer will paint with.
-  if (theme && theme.quoteFont !== SERIF && typeof document !== "undefined" && "fonts" in document) {
+  // Fonts are loaded from a font-face (next/font) at runtime; wait for the
+  // active family so wrapText() measures the same stack the renderer paints.
+  const quoteFont = () => (styles?.fontFamily ? FONT_STACKS[styles.fontFamily] : theme?.quoteFont ?? SERIF);
+  const fontToLoad = styles?.fontFamily ? FONT_STACKS[styles.fontFamily] : theme?.quoteFont;
+  if (fontToLoad && fontToLoad !== SERIF && typeof document !== "undefined" && "fonts" in document) {
     try {
-      await (document as Document & { fonts?: FontFaceSet }).fonts?.load(`normal 26px ${theme.quoteFont}`);
+      await (document as Document & { fonts?: FontFaceSet }).fonts?.load(`normal 26px ${fontToLoad}`);
     } catch {
       // keep going with the system fallback if the font is unavailable
     }
   }
 
-  const quoteFont = () => theme?.quoteFont ?? SERIF;
   const watermark = opts.watermark?.trim() || "yerlikoglon.uz";
 
   // Palette: VIP themes swap the whole card look, everything else stays the
-  // classic white card.
+  // classic white card. Per-quote custom styles then override individual slots.
   const palette = theme
     ? {
         white: theme.gradient[0],
@@ -250,7 +271,26 @@ export async function renderQuoteImage(quote: Quote, opts: QuoteImageOptions = {
         pillText: theme.chipText,
         watermark: theme.watermarkColor,
       }
-    : COLORS;
+    : { ...COLORS };
+  if (styles?.textColor) palette.ink = styles.textColor;
+
+  // Card fill: an explicit background wins, then the texture, then the theme
+  // gradient, then the classic white card.
+  let cardFill: string | CanvasGradient = palette.white;
+  if (styles?.cardBg) cardFill = styles.cardBg;
+  else if (styles?.texture === "paper") cardFill = "#fdfcf7";
+  else if (styles?.texture === "glass") cardFill = "#ffffff";
+  else if (theme) {
+    const gradient = ctx.createLinearGradient(MARGIN, MARGIN, SIZE - MARGIN, SIZE - MARGIN);
+    gradient.addColorStop(0, theme.gradient[0]);
+    gradient.addColorStop(1, theme.gradient[1]);
+    cardFill = gradient;
+  }
+
+  const hasCustomBorder = styles?.border != null && styles.border !== "none";
+  const borderColor =
+    styles?.border && styles.border !== "none" ? BORDER_COLORS[styles.border] : palette.border;
+  const borderWidth = hasCustomBorder ? 2 : 1;
 
   const centerX = SIZE / 2;
 
@@ -261,10 +301,18 @@ export async function renderQuoteImage(quote: Quote, opts: QuoteImageOptions = {
   const quoteMaxHeight = middleHeight - CHIP_H - GAP_CHIP_QUOTE;
 
   // Pick the largest quote font whose wrapped lines fit, then spread short
-  // quotes across the available height so the card stays balanced.
+  // quotes across the available height so the card stays balanced. An explicit
+  // custom font-size tunes the preferred size (scaled to the 1080px card).
+  const preferredSize = styles?.fontSize
+    ? Math.max(20, Math.min(72, Math.round(styles.fontSize * 2.7)))
+    : null;
+  const sizeCandidates =
+    preferredSize && !QUOTE_SIZES.includes(preferredSize)
+      ? [preferredSize, ...QUOTE_SIZES.filter((s) => s < preferredSize)]
+      : QUOTE_SIZES;
   let quoteFontSize = 20;
   let quoteLines: string[] = [];
-  for (const size of QUOTE_SIZES) {
+  for (const size of sizeCandidates) {
     ctx.font = `normal ${size}px ${quoteFont()}`;
     const lines = wrapText(ctx, quote.text, CONTENT_W);
     if (lines.length * size * 1.5 <= quoteMaxHeight) {
@@ -291,21 +339,38 @@ export async function renderQuoteImage(quote: Quote, opts: QuoteImageOptions = {
   ctx.shadowBlur = 24;
   ctx.shadowOffsetY = 10;
   roundedRect(ctx, MARGIN, MARGIN, CARD, CARD, RADIUS);
-  if (theme) {
-    const gradient = ctx.createLinearGradient(MARGIN, MARGIN, SIZE - MARGIN, SIZE - MARGIN);
-    gradient.addColorStop(0, theme.gradient[0]);
-    gradient.addColorStop(1, theme.gradient[1]);
-    ctx.fillStyle = gradient;
-  } else {
-    ctx.fillStyle = palette.white;
-  }
+  ctx.fillStyle = cardFill;
   ctx.fill();
   ctx.restore();
 
+  // Paper texture: faint ruled lines clipped to the card, only over the plain
+  // paper background (an explicit cardBg overrides the texture).
+  if (styles?.texture === "paper" && !styles.cardBg) {
+    ctx.save();
+    roundedRect(ctx, MARGIN, MARGIN, CARD, CARD, RADIUS);
+    ctx.clip();
+    ctx.strokeStyle = "rgba(59,130,246,0.08)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let py = MARGIN + 26; py < SIZE - MARGIN; py += 26) {
+      ctx.moveTo(MARGIN, py);
+      ctx.lineTo(SIZE - MARGIN, py);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Card border, in the custom colour (with a soft glow for neon) when set.
+  ctx.save();
+  if (hasCustomBorder && styles?.border === "neon") {
+    ctx.shadowColor = "rgba(34,211,238,0.55)";
+    ctx.shadowBlur = 16;
+  }
   roundedRect(ctx, MARGIN + 0.5, MARGIN + 0.5, CARD - 1, CARD - 1, RADIUS);
-  ctx.strokeStyle = palette.border;
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = borderWidth;
   ctx.stroke();
+  ctx.restore();
 
   // Brand row: quote-glyph box + "Iqtibosim" on the left.
   const headerMidY = PAD + HEADER_H / 2;
@@ -350,29 +415,39 @@ export async function renderQuoteImage(quote: Quote, opts: QuoteImageOptions = {
   ctx.textBaseline = "middle";
   ctx.fillText(categoryText, centerX, groupTop + CHIP_H / 2);
 
-  // Quote text, centered, accent quotation marks on the first and last line.
+  // Quote text with the configured alignment; accent quotation marks are drawn
+  // inline on the first and last line (none when the style disables them).
+  const alignment = styles?.alignment ?? "center";
+  const [openMark, closeMark] = quoteMarks(styles);
   const quoteTop = groupTop + CHIP_H + GAP_CHIP_QUOTE;
+  const contentRight = PAD + CONTENT_W;
   ctx.font = `normal ${quoteFontSize}px ${quoteFont()}`;
   ctx.textBaseline = "top";
   ctx.textAlign = "left";
   let y = quoteTop;
   for (let i = 0; i < quoteLines.length; i++) {
     const line = quoteLines[i];
-    const openWidth = i === 0 ? ctx.measureText("\u201C").width : 0;
-    const closeWidth = i === quoteLines.length - 1 ? ctx.measureText("\u201D").width : 0;
-    const total = ctx.measureText(line).width + openWidth + closeWidth;
-    let x = centerX - total / 2;
-    if (i === 0) {
+    const open = i === 0 ? openMark : "";
+    const close = i === quoteLines.length - 1 ? closeMark : "";
+    const openW = open ? ctx.measureText(open).width : 0;
+    const closeW = close ? ctx.measureText(close).width : 0;
+    const lineW = ctx.measureText(line).width;
+    const blockW = openW + lineW + closeW;
+    let x;
+    if (alignment === "left") x = PAD;
+    else if (alignment === "right") x = contentRight - blockW;
+    else x = centerX - blockW / 2;
+    if (open) {
       ctx.fillStyle = palette.blue;
-      ctx.fillText("\u201C", x, y);
-      x += openWidth;
+      ctx.fillText(open, x, y);
+      x += openW;
     }
     ctx.fillStyle = palette.ink;
     ctx.fillText(line, x, y);
-    x += ctx.measureText(line).width;
-    if (i === quoteLines.length - 1) {
+    x += lineW;
+    if (close) {
       ctx.fillStyle = palette.blue;
-      ctx.fillText("\u201D", x, y);
+      ctx.fillText(close, x, y);
     }
     y += quoteLineHeight;
   }
