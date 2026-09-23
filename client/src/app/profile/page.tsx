@@ -9,6 +9,7 @@ import { Avatar } from "@/components/Avatar";
 import { QuoteCard } from "@/components/QuoteCard";
 import { QuoteForm } from "@/components/QuoteForm";
 import { isPremiumActive, formatPremiumExpiry } from "@/lib/premium";
+import { useToast } from "@/components/ToastProvider";
 import type { Category, Quote, Quiz, QuizResultSummary, User } from "@/lib/types";
 
 type ProfileTab = "quotes" | "tests" | "liked" | "settings";
@@ -320,6 +321,7 @@ function LikedTab() {
 }
 
 function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<User | null> }) {
+  const toast = useToast();
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
   const [tgSession, setTgSession] = useState<{ botUsername: string; start: string } | null>(null);
@@ -348,8 +350,11 @@ function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<Use
         body: { email: user.email },
       });
       setResendMessage("Tasdiqlash havolasi emailingizga yuborildi.");
+      toast.success("Kod pochtangizga yuborildi!");
     } catch (err) {
-      setResendMessage(err instanceof Error ? err.message : "Xatolik yuz berdi");
+      const message = err instanceof Error ? err.message : "Xatolik yuz berdi";
+      setResendMessage(message);
+      toast.error(message);
     } finally {
       setResending(false);
     }

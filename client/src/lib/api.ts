@@ -125,7 +125,12 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
           const nextToken = await tryRefreshToken();
           if (nextToken) continue; // loop again with the fresh token
         }
-        const message = typeof data?.error === "string" ? data.error : `So'rov bajarilmadi (${res.status})`;
+        const message =
+          typeof data?.error === "string"
+            ? data.error
+            : typeof data?.message === "string"
+              ? data.message
+              : `So'rov bajarilmadi (${res.status})`;
         throw new ApiError(message, res.status, typeof data?.code === "string" ? data.code : undefined);
       }
       return data as T;

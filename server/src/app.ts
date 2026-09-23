@@ -29,6 +29,12 @@ import { tryEnsureDefaultContent } from "./lib/content.js";
 import { tryEnsurePolicyBaseline, tryEnsurePolicyDrafts } from "./lib/policies.js";
 import { initSentry, setupSentryErrorHandler, captureException } from "./lib/sentry.js";
 
+/** Masks secrets for the startup log while still confirming they were set. */
+function maskSecret(value: string, visible = 2): string {
+  if (value.length <= visible * 2) return "*".repeat(value.length);
+  return `${value.slice(0, visible)}${"*".repeat(value.length - visible * 2)}${value.slice(-visible)}`;
+}
+
 export function originAllowed(origin: string): boolean {
   const origins = config.corsOrigins;
   if (origins.includes("*")) return true;
@@ -204,6 +210,18 @@ export async function startServer(): Promise<void> {
   if (process.env.NODE_ENV === "production" && config.adminPassword === "change-me") {
     logger.warn("ADMIN_PASSWORD is still the default value. Change it in production!");
   }
+
+  // Startup sanity check: confirm SMTP was loaded from .env. The app password is
+  // masked so the secret never reaches the logs — only that it was set.
+  logger.info(
+    {
+      smtpHost: config.smtpHost || "(not set — offline transcript mode)",
+      smtpPort: config.smtpPort,
+      smtpUser: config.smtpUser || "(not set)",
+      smtpPass: config.smtpPass ? maskSecret(config.smtpPass) : "(not set)",
+    },
+    "smtp env loaded",
+  );
 
   const { server, io } = createApp();
 

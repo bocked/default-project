@@ -20,6 +20,27 @@ export interface EmailRecord {
  */
 export const emailTranscript: EmailRecord[] = [];
 
+// Outbound SMTP calls (connect / verify / send) are bounded to this many ms so
+// a stuck or unreachable mail server never leaves an API route hanging.
+export const SMTP_SEND_TIMEOUT_MS = 10000;
+
+// Verified once per process; a wrong Gmail app-password must fail fast instead
+// of surfacing as a vague send error on every attempt.
+let transportVerified = false;
+
+/** Hard wall-clock cap on an async operation. nodemailer has its own
+ *  socket/connection timeouts; this guarantee exists for callers that await an
+ *  email-sending route so they can answer 500 instead of hanging forever. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 let transporter: Transporter | null = null;
 
 /** Best-effort persistence of an EmailLog row; failures here must never break
@@ -56,6 +77,9 @@ function getTransporter(): Transporter | null {
         port: config.smtpPort,
         secure: config.smtpSecure,
         auth: config.smtpUser ? { user: config.smtpUser, pass: config.smtpPass } : undefined,
+        connectionTimeout: SMTP_SEND_TIMEOUT_MS,
+        greetingTimeout: SMTP_SEND_TIMEOUT_MS,
+        socketTimeout: SMTP_SEND_TIMEOUT_MS,
       });
     }
     return transporter;
@@ -130,13 +154,30 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
     return true;
   }
   try {
-    const info = await transport.sendMail({
-      from: config.smtpFrom,
-      to: input.to,
-      subject: input.subject,
-      text: input.text,
-      html: input.html,
-    });
+    // Check the SMTP connection/credentials before sending so a wrong password
+    // or an unreachable server fails fast (done once per process lifetime).
+    if (!transportVerified) {
+      await withTimeout(transport.verify(), SMTP_SEND_TIMEOUT_MS, "smtp verify");
+      transportVerified = true;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error({ err, to: input.to }, "failed to verify smtp connection");
+    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message.slice(0, 500) });
+    return false;
+  }
+  try {
+    const info = await withTimeout(
+      transport.sendMail({
+        from: config.smtpFrom,
+        to: input.to,
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+      }),
+      SMTP_SEND_TIMEOUT_MS,
+      "smtp sendMail",
+    );
     logger.info({ to: input.to, subject: input.subject, messageId: info.messageId }, "email sent");
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS, messageId: info.messageId });
     return true;

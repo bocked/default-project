@@ -23,8 +23,9 @@ import {
   hashQuickLoginSessionId,
   quickLoginSessionExpiry,
 } from "../lib/tokens.js";
-import { sendPasswordResetEmail } from "../lib/email.js";
+import { sendPasswordResetEmail, withTimeout, SMTP_SEND_TIMEOUT_MS } from "../lib/email.js";
 import { issueEmailVerification } from "../lib/verifyEmail.js";
+import { logger } from "../lib/logger.js";
 import { authBruteLimiter } from "../lib/rateLimit.js";
 import { getBotUsername, sendAdminNotification } from "../lib/telegram.js";
 import { recordActivity } from "../lib/activity.js";
@@ -279,7 +280,15 @@ authRouter.post("/resend-verification", authBruteLimiter, validateBody(resendVer
   const body = res.locals.body as ResendVerification;
   const user = await prisma.user.findUnique({ where: { email: body.email } });
   if (user && !user.emailVerified && user.email) {
-    await issueEmailVerification(user.email);
+    try {
+      await withTimeout(issueEmailVerification(user.email), SMTP_SEND_TIMEOUT_MS, "email verification send");
+    } catch (err) {
+      // A stuck/failed SMTP connection must fail fast as a 500, never leave the
+      // client's "Yuborilmoqda..." button hanging.
+      logger.warn({ err, to: body.email }, "resend-verification: email delivery failed");
+      res.status(500).json({ success: false, message: "Email yuborishda xatolik yuz berdi" });
+      return;
+    }
   }
   res.json({ ok: true });
 });
@@ -298,7 +307,13 @@ authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswor
         resetPasswordExpiresAt: passwordResetExpiry(),
       },
     });
-    await sendPasswordResetEmail(user.email, token);
+    try {
+      await withTimeout(sendPasswordResetEmail(user.email, token), SMTP_SEND_TIMEOUT_MS, "password reset email");
+    } catch (err) {
+      // Anti-enumeration: still answer ok, but a stuck SMTP must not hang the
+      // caller — log and move on.
+      logger.warn({ err, to: body.email }, "forgot-password: email delivery failed");
+    }
   }
   res.json({ ok: true });
 });
