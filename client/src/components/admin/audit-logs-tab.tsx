@@ -49,8 +49,8 @@ export function AdminAuditLogsTab() {
 
       {audit.length === 0 && <EmptyState text="Audit yozuvlari yo'q." />}
       {audit.length > 0 && (
-        <AdminCard className="overflow-x-auto p-0">
-          <table className="w-full min-w-[520px] text-left text-sm">
+        <AdminCard className="p-0">
+          <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                 <th className="px-4 py-3">Vaqt</th>
@@ -63,10 +63,10 @@ export function AdminAuditLogsTab() {
             <tbody>
               {audit.map((log) => (
                 <tr key={log.id} className="border-b border-slate-100 last:border-0 dark:border-slate-800/60">
-                  <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
                     {new Date(log.createdAt).toLocaleString("uz-UZ")}
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-700 dark:text-slate-300">
+                  <td className="break-all px-4 py-3 text-xs text-slate-700 dark:text-slate-300">
                     {log.adminEmail ?? "—"}
                   </td>
                   <td className="px-4 py-3 text-xs">

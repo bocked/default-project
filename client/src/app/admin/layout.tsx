@@ -64,7 +64,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           })}
         </nav>
       </aside>
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1">
+        <main className="mx-auto w-full max-w-7xl">{children}</main>
+      </div>
     </div>
   );
 }

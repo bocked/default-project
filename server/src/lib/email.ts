@@ -11,16 +11,16 @@ export interface EmailRecord {
 }
 
 /**
- * In-memory transcript of every email "sent" while SMTP is not configured
- * (local development and the E2E suite). Tests use this to read the raw
- * verification link instead of actually delivering mail.
+ * In-memory transcript of every email "sent" while SMTP is not configured or
+ * during the E2E suite (NODE_ENV=test). Tests use this to read the raw
+ * verification link/OTP instead of actually delivering mail.
  */
 export const emailTranscript: EmailRecord[] = [];
 
 let transporter: Transporter | null = null;
 
 function getTransporter(): Transporter | null {
-  if (config.smtpHost) {
+  if (config.smtpHost && process.env.NODE_ENV !== "test") {
     if (!transporter) {
       transporter = nodemailer.createTransport({
         host: config.smtpHost,
@@ -112,28 +112,33 @@ function verificationUrl(token: string): string {
   return `${config.appUrl.replace(/\/$/, "")}/verify-email?token=${encodeURIComponent(token)}`;
 }
 
-export function sendVerificationEmail(to: string, token: string): Promise<boolean> {
+export function sendVerificationEmail(to: string, token: string, code?: string): Promise<boolean> {
   const link = verificationUrl(token);
+  const codeBlock = code ? ["", "Yoki email kodini quyida kiriting (muddat: 1 soat):", code] : [];
   const text = [
-    "Iqtibosimga xush kelibsiz!",
+    "yerlikoglon.uz saytiga xush kelibsiz!",
     "",
     "Email manzilingizni tasdiqlash uchun quyidagi havolani oching:",
     link,
+    ...codeBlock,
     "",
     "Agar siz ro'yxatdan o'tmagan bo'lsangiz, bu xabarni e'tiborsiz qoldiring.",
   ].join("\n");
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
-    <h2 style="color:#0f172a">Iqtibosim</h2>
+    <h2 style="color:#0f172a">yerlikoglon.uz</h2>
     <p style="color:#334155;line-height:1.6">Email manzilingizni tasdiqlash uchun quyidagi tugmani bosing:</p>
     <p style="margin:24px 0">
       <a href="${link}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block">Emailni tasdiqlash</a>
     </p>
+    ${code ? `
+    <p style="color:#334155;line-height:1.6">Yoki ushbu 6 xonali kodni saytda kiriting (muddat: 1 soat):</p>
+    <p style="font-size:28px;font-weight:bold;letter-spacing:6px;color:#0f172a;background:#f1f5f9;padding:12px 16px;border-radius:10px;text-align:center;margin:16px 0">${escapeHtml(code)}</p>` : ""}
     <p style="font-size:13px;color:#94a3b8">Agar tugma ishlamasa, ushbu havolani oching: ${link}</p>
   </div>`;
 
-  return sendEmail({ to, subject: "Iqtibosim — emailni tasdiqlang", text, html });
+  return sendEmail({ to, subject: "yerlikoglon.uz — emailni tasdiqlang", text, html });
 }
 
 function resetPasswordUrl(token: string): string {

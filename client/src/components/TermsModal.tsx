@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { TermsContent, PrivacyContent } from "./legal-content";
+import { TermsContent, PrivacyContent, CookieContent } from "./legal-content";
 import { PolicyText } from "./policy-content";
 import type { PolicyResponse } from "@/lib/types";
 
-export type TermsView = "terms" | "privacy";
+export type TermsView = "terms" | "privacy" | "cookies";
 
 interface TermsModalProps {
   open: boolean;
@@ -22,6 +22,7 @@ export function TermsModal({ open, onClose, initialView = "terms", title = "Qoid
   const [view, setView] = useState<TermsView>(initialView);
   const [terms, setTerms] = useState<PolicyResponse["policy"] | null>(null);
   const [privacy, setPrivacy] = useState<PolicyResponse["policy"] | null>(null);
+  const [cookies, setCookies] = useState<PolicyResponse["policy"] | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -29,10 +30,12 @@ export function TermsModal({ open, onClose, initialView = "terms", title = "Qoid
     void Promise.all([
       api<PolicyResponse>("/api/policies?type=TERMS").catch(() => null),
       api<PolicyResponse>("/api/policies?type=PRIVACY").catch(() => null),
-    ]).then(([t, p]) => {
+      api<PolicyResponse>("/api/policies?type=COOKIES").catch(() => null),
+    ]).then(([t, p, c]) => {
       if (cancelled) return;
       if (t) setTerms(t.policy);
       if (p) setPrivacy(p.policy);
+      if (c) setCookies(c.policy);
     });
     return () => {
       cancelled = true;
@@ -54,7 +57,7 @@ export function TermsModal({ open, onClose, initialView = "terms", title = "Qoid
 
   if (!open) return null;
 
-  const current = view === "terms" ? terms : privacy;
+  const current = view === "terms" ? terms : view === "privacy" ? privacy : cookies;
   const versionLine = current
     ? `Versiya ${current.version}${current.publishedAt ? ` · ${new Date(current.publishedAt).toLocaleDateString("uz-UZ")}` : ""}`
     : "Versiya 1.1 · 2026-yil sentyabr";
@@ -99,6 +102,9 @@ export function TermsModal({ open, onClose, initialView = "terms", title = "Qoid
           <button type="button" onClick={() => setView("privacy")} className={tabClass(view === "privacy")}>
             Maxfiylik siyosati
           </button>
+          <button type="button" onClick={() => setView("cookies")} className={tabClass(view === "cookies")}>
+            Cookie qoidalari
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -108,10 +114,16 @@ export function TermsModal({ open, onClose, initialView = "terms", title = "Qoid
             ) : (
               <TermsContent />
             )
-          ) : privacy ? (
-            <PolicyText content={privacy.content} />
+          ) : view === "privacy" ? (
+            privacy ? (
+              <PolicyText content={privacy.content} />
+            ) : (
+              <PrivacyContent modal />
+            )
+          ) : cookies ? (
+            <PolicyText content={cookies.content} />
           ) : (
-            <PrivacyContent modal />
+            <CookieContent />
           )}
         </div>
 
@@ -122,6 +134,9 @@ export function TermsModal({ open, onClose, initialView = "terms", title = "Qoid
             </a>
             <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline dark:text-blue-400">
               Maxfiylik siyosati
+            </a>
+            <a href="/cookies" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline dark:text-blue-400">
+              Cookie qoidalari
             </a>
           </div>
           <button

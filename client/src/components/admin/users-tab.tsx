@@ -220,8 +220,8 @@ export function AdminUsersTab() {
       {!busy && users.length === 0 && <EmptyState text="Foydalanuvchilar topilmadi." />}
 
       {users.length > 0 && (
-        <AdminCard className="overflow-x-auto p-0">
-          <table className="w-full min-w-[560px] text-left text-sm">
+        <AdminCard className="p-0">
+          <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                 <th className="px-4 py-3">
@@ -234,8 +234,8 @@ export function AdminUsersTab() {
                 </th>
                 <th className="px-4 py-3">Foydalanuvchi</th>
                 <th className="px-4 py-3">Holat</th>
-                <th className="hidden px-4 py-3 md:table-cell">Telegram / Telefon</th>
-                <th className="hidden px-4 py-3 md:table-cell">Ro&apos;yxat</th>
+                <th className="hidden px-4 py-3 lg:table-cell">Telegram / Telefon</th>
+                <th className="hidden px-4 py-3 lg:table-cell">Ro&apos;yxat</th>
                 <th className="px-4 py-3 text-right">Harakatlar</th>
               </tr>
             </thead>
@@ -249,14 +249,14 @@ export function AdminUsersTab() {
                     <td className="px-4 py-3">
                       <Checkbox checked={selected.has(u.id)} onChange={() => toggle(u.id)} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="min-w-0 px-4 py-3">
                       <Link
                         href={`/user?id=${u.id}`}
-                        className="font-medium text-slate-900 hover:text-blue-600 hover:underline dark:text-white dark:hover:text-blue-400"
+                        className="block break-all font-medium text-slate-900 hover:text-blue-600 hover:underline dark:text-white dark:hover:text-blue-400"
                       >
                         {u.email ?? u.telegramUsername ?? u.telegramId ?? "Telegram foydalanuvchisi"}
                       </Link>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                      <p className="break-words text-xs text-slate-500 dark:text-slate-400">
                         {[u.name, u.nickname ? `@${u.nickname}` : null].filter(Boolean).join(" · ") ||
                           "Ism kiritilmagan"}
                       </p>
@@ -273,11 +273,11 @@ export function AdminUsersTab() {
                         {u.phoneVerified && <Badge tone="emerald">Telefon</Badge>}
                       </div>
                     </td>
-                    <td className="hidden px-4 py-3 text-xs text-slate-500 dark:text-slate-400 md:table-cell">
+                    <td className="hidden px-4 py-3 text-xs text-slate-500 dark:text-slate-400 lg:table-cell">
                       <p>{u.telegramId ?? "—"}</p>
                       <p>{u.phoneNumber ?? "—"}</p>
                     </td>
-                    <td className="hidden px-4 py-3 text-xs text-slate-500 dark:text-slate-400 md:table-cell">
+                    <td className="hidden px-4 py-3 text-xs text-slate-500 dark:text-slate-400 lg:table-cell">
                       {new Date(u.createdAt).toLocaleDateString("uz-UZ")}
                     </td>
                     <td className="px-4 py-3">

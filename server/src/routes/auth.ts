@@ -9,6 +9,9 @@ import {
   generateEmailVerificationToken,
   hashEmailVerificationToken,
   emailVerificationExpiry,
+  generateEmailVerifyCode,
+  hashEmailVerifyCode,
+  emailVerifyCodeExpiry,
   generatePasswordResetToken,
   hashPasswordResetToken,
   passwordResetExpiry,
@@ -120,17 +123,21 @@ async function toUser(
   };
 }
 
-/** Issues a fresh verification token, persists its digest, emails the link. */
+/** Issues a fresh verification token + 6-digit OTP, persists both digests,
+ *  emails them together. Either one can be redeemed at /verify-email. */
 async function issueVerification(email: string): Promise<void> {
   const token = generateEmailVerificationToken();
+  const code = generateEmailVerifyCode();
   await prisma.user.update({
     where: { email },
     data: {
       emailVerificationToken: hashEmailVerificationToken(token),
       emailVerificationExpiresAt: emailVerificationExpiry(),
+      emailVerifyCodeHash: hashEmailVerifyCode(code),
+      emailVerifyCodeExpiresAt: emailVerifyCodeExpiry(),
     },
   });
-  await sendVerificationEmail(email, token);
+  await sendVerificationEmail(email, token, code);
 }
 
 // POST /api/auth/register
@@ -183,18 +190,45 @@ authRouter.post("/login", validateBody(loginSchema), async (_req, res) => {
   res.json({ token: signAuthToken(user.id), user: await toUser(current) });
 });
 
-// POST /api/auth/verify-email
+// POST /api/auth/verify-email - redeem either the emailed link token or the
+// 6-digit OTP code; both mark emailVerified once matched & unexpired.
 authRouter.post("/verify-email", validateBody(verifyEmailSchema), async (_req, res) => {
   const body = res.locals.body as VerifyEmail;
-  const digest = hashEmailVerificationToken(body.token);
-  const user = await prisma.user.findFirst({ where: { emailVerificationToken: digest } });
-  if (!user || !user.emailVerificationExpiresAt || user.emailVerificationExpiresAt < new Date()) {
-    res.status(400).json({ error: "Tasdiqlash tokeni yaroqsiz yoki muddati o'tgan" });
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        body.token
+          ? { emailVerificationToken: hashEmailVerificationToken(body.token) }
+          : undefined,
+        body.email && body.code
+          ? { email: body.email, emailVerifyCodeHash: hashEmailVerifyCode(body.code) }
+          : undefined,
+      ].filter(Boolean) as Record<string, unknown>[],
+    },
+  });
+  const valid =
+    user &&
+    ((body.token &&
+      user.emailVerificationExpiresAt &&
+      user.emailVerificationExpiresAt >= new Date()) ||
+      (body.email &&
+        body.code &&
+        user.emailVerifyCodeHash === hashEmailVerifyCode(body.code) &&
+        user.emailVerifyCodeExpiresAt &&
+        user.emailVerifyCodeExpiresAt >= new Date()));
+  if (!user || !valid) {
+    res.status(400).json({ error: "Tasdiqlash kodi/havolasi yaroqsiz yoki muddati o'tgan" });
     return;
   }
   await prisma.user.update({
     where: { id: user.id },
-    data: { emailVerified: true, emailVerificationToken: null, emailVerificationExpiresAt: null },
+    data: {
+      emailVerified: true,
+      emailVerificationToken: null,
+      emailVerificationExpiresAt: null,
+      emailVerifyCodeHash: null,
+      emailVerifyCodeExpiresAt: null,
+    },
   });
   res.json({ ok: true });
 });

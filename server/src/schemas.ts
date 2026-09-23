@@ -67,9 +67,21 @@ export const acceptTermsSchema = z.object({
 });
 export type AcceptTerms = z.infer<typeof acceptTermsSchema>;
 
-export const verifyEmailSchema = z.object({
-  token: z.string().trim().min(20).max(128),
-});
+/** Verifies email with either the emailed link token or the 6-digit OTP code.
+ *  Exactly one method must be supplied. */
+export const verifyEmailSchema = z
+  .object({
+    token: z.string().trim().min(20).max(128).optional(),
+    email: email.optional(),
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, { message: "Kod 6 xonali bo'lishi kerak" })
+      .optional(),
+  })
+  .refine((v) => (v.token ? !v.email && !v.code : Boolean(v.email && v.code)), {
+    message: "Havola token yoki email+kod juftligi kerak",
+  });
 export type VerifyEmail = z.infer<typeof verifyEmailSchema>;
 
 export const resendVerificationSchema = z.object({

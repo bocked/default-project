@@ -40,6 +40,20 @@ export function emailVerificationExpiry(): Date {
   return new Date(Date.now() + config.verificationTokenHours * 60 * 60 * 1000);
 }
 
+/** 6-digit email-verification OTP shown in the same mail as the link token. */
+export function generateEmailVerifyCode(): string {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+}
+
+export function hashEmailVerifyCode(code: string): string {
+  return crypto.createHash("sha256").update(code).digest("hex");
+}
+
+/** OTP lifetime — shorter than the link so a stale code cannot be reused. */
+export function emailVerifyCodeExpiry(): Date {
+  return new Date(Date.now() + 60 * 60 * 1000);
+}
+
 // ---------------------------------------------------------------------------
 // Password reset tokens
 // ---------------------------------------------------------------------------

@@ -66,13 +66,15 @@ export const config = {
   verificationTokenHours: num(process.env.VERIFICATION_TOKEN_HOURS, 24),
 
   // SMTP (nodemailer). Leave SMTP_HOST empty to fall back to a console
-  // logger + in-memory transcript (dev/test mode).
+  // logger + in-memory transcript (dev/test mode). Gmail's email verification
+  // OTPs use the credentials in .env (`SMTP_HOST=smtp.gmail.com`, port 465).
   smtpHost: process.env.SMTP_HOST ?? "",
   smtpPort: num(process.env.SMTP_PORT, 587),
-  smtpSecure: bool(process.env.SMTP_SECURE, false),
+  // Port 465 defaults to TLS (secure). SMTP_SECURE explicitly overrides it.
+  smtpSecure: process.env.SMTP_SECURE !== undefined ? bool(process.env.SMTP_SECURE, false) : num(process.env.SMTP_PORT, 587) === 465,
   smtpUser: process.env.SMTP_USER ?? "",
   smtpPass: process.env.SMTP_PASS ?? "",
-  smtpFrom: process.env.SMTP_FROM ?? "Iqtibosim <noreply@yerlikoglon.uz>",
+  smtpFrom: process.env.EMAIL_FROM ?? process.env.SMTP_FROM ?? "yerlikoglon.uz <noreply@yerlikoglon.uz>",
   // Brevo transactional HTTP API (preferred over SMTP: works from hosts whose
   // egress to Brevo SMTP is blocked, e.g. Render free tier). Leave empty to
   // fall back to nodemailer SMTP.

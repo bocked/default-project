@@ -135,8 +135,8 @@ export function AdminCategoriesTab() {
 
       {!busy && categories.length === 0 && <EmptyState text="Bo&apos;limlar topilmadi." />}
 
-      <AdminCard className="overflow-x-auto p-0">
-        <table className="w-full min-w-[520px] text-left text-sm">
+      <AdminCard className="p-0">
+        <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
               <th className="hidden px-4 py-3 md:table-cell">ID</th>

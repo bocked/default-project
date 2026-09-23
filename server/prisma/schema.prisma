@@ -102,6 +102,10 @@ model User {
   telegramVerifyChatId        String?
   telegramVerifyCode          String?
   telegramVerifyCodeExpiresAt DateTime?
+  // Pending email verification: the 6-digit OTP code (digest) sent alongside
+  // the /verify-email link token. Either one verifies.
+  emailVerifyCodeHash         String?
+  emailVerifyCodeExpiresAt    DateTime?
   // Premium (VIP): isPremium may stay true after premiumExpiresAt passes —
   // gate "active" with premiumExpiresAt at read time, not just isPremium.
   isPremium                   Boolean         @default(false)

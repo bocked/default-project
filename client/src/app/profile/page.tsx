@@ -326,6 +326,9 @@ function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<Use
   const [tgCode, setTgCode] = useState("");
   const [tgBusy, setTgBusy] = useState(false);
   const [tgMessage, setTgMessage] = useState<string | null>(null);
+  const [emailOtp, setEmailOtp] = useState("");
+  const [emailOtpBusy, setEmailOtpBusy] = useState(false);
+  const [emailOtpMessage, setEmailOtpMessage] = useState<string | null>(null);
 
   const canPost =
     user.emailVerified ||
@@ -349,6 +352,25 @@ function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<Use
       setResendMessage(err instanceof Error ? err.message : "Xatolik yuz berdi");
     } finally {
       setResending(false);
+    }
+  }
+
+  async function submitEmailOtp(event: React.FormEvent): Promise<void> {
+    event.preventDefault();
+    if (!user?.email || !/^\d{6}$/.test(emailOtp)) return;
+    setEmailOtpBusy(true);
+    setEmailOtpMessage(null);
+    try {
+      await api<{ ok: boolean }>("/api/auth/verify-email", {
+        method: "POST",
+        body: { email: user.email, code: emailOtp },
+      });
+      setEmailOtp("");
+      await onSaved();
+    } catch (err) {
+      setEmailOtpMessage(err instanceof Error ? err.message : "Kod noto'g'ri");
+    } finally {
+      setEmailOtpBusy(false);
     }
   }
 
@@ -430,6 +452,34 @@ function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<Use
               </button>
             </div>
             {resendMessage && <p className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">{resendMessage}</p>}
+
+            <form onSubmit={submitEmailOtp} className="mt-3 flex flex-wrap items-end gap-2">
+              <div className="min-w-[160px] flex-1">
+                <label className="mb-1 block text-xs font-medium text-amber-800 dark:text-amber-300">
+                  Emaildagi 6 xonali kod
+                </label>
+                <input
+                  value={emailOtp}
+                  onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputMode="numeric"
+                  pattern="\d{6}"
+                  required
+                  maxLength={6}
+                  placeholder="000000"
+                  className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm tracking-[0.3em] outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-amber-600 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={emailOtpBusy || !/^\d{6}$/.test(emailOtp)}
+                className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 dark:hover:bg-emerald-500"
+              >
+                {emailOtpBusy ? "Tekshirilmoqda..." : "Kodni tasdiqlash"}
+              </button>
+            </form>
+            {emailOtpMessage && (
+              <p className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">{emailOtpMessage}</p>
+            )}
 
             <div className="mt-3 border-t border-amber-200 pt-3 dark:border-amber-500/30">
               <div className="flex flex-wrap items-center justify-between gap-3">
