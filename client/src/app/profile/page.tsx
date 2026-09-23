@@ -345,18 +345,18 @@ function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<Use
     setResending(true);
     setResendMessage(null);
     try {
-      await api<{ ok: boolean }>("/api/auth/resend-verification", {
+      // Authenticated: the server looks the session up, no body needed.
+      const res = await api<{ success: boolean; message: string }>("/api/auth/send-otp", {
         method: "POST",
-        body: { email: user.email },
       });
-      setResendMessage("Tasdiqlash havolasi emailingizga yuborildi.");
-      toast.success("Kod pochtangizga yuborildi!");
+      setResendMessage(res.message);
+      toast.success(res.message);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Xatolik yuz berdi";
       setResendMessage(message);
       toast.error(message);
     } finally {
-      setResending(false);
+      setResending(false); // Tugma har qanday holatda ham "Yuborilmoqda..."dan chiqadi
     }
   }
 

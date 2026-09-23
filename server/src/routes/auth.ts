@@ -180,6 +180,18 @@ async function toUser(
   };
 }
 
+/** Sends the email verification OTP with a hard ~7s cap. Throws when the email
+ *  could not be delivered (SMTP timeout/failure recorded), so the calling route
+ *  can answer a real 500 instead of an eternal pending request. */
+async function sendVerificationTo(email: string): Promise<void> {
+  const sent = await withTimeout(
+    issueEmailVerification(email),
+    SMTP_SEND_TIMEOUT_MS,
+    "SMTP server javob bermadi (Timeout)",
+  );
+  if (!sent) throw new Error("Email yuborishda xatolik yuz berdi");
+}
+
 // POST /api/auth/register
 authRouter.post("/register", authBruteLimiter, validateBody(registerSchema), async (_req, res) => {
   const body = res.locals.body as Register;
@@ -281,16 +293,42 @@ authRouter.post("/resend-verification", authBruteLimiter, validateBody(resendVer
   const user = await prisma.user.findUnique({ where: { email: body.email } });
   if (user && !user.emailVerified && user.email) {
     try {
-      await withTimeout(issueEmailVerification(user.email), SMTP_SEND_TIMEOUT_MS, "email verification send");
+      await sendVerificationTo(user.email);
     } catch (err) {
       // A stuck/failed SMTP connection must fail fast as a 500, never leave the
       // client's "Yuborilmoqda..." button hanging.
+      const message = err instanceof Error ? err.message : "Email yuborishda xatolik yuz berdi";
       logger.warn({ err, to: body.email }, "resend-verification: email delivery failed");
-      res.status(500).json({ success: false, message: "Email yuborishda xatolik yuz berdi" });
+      res.status(500).json({ success: false, message });
       return;
     }
   }
   res.json({ ok: true });
+});
+
+// POST /api/auth/send-otp - re-send the email verification OTP to the current
+// session's inbox. Authenticated variant of resend-verification: the listener
+// clicks "Yuborilmoqda..." in Settings and is guaranteed a terminal response
+// within ~7s (success toast, or a 500 with the real SMTP reason).
+authRouter.post("/send-otp", requireAuth, authBruteLimiter, async (req, res) => {
+  const user = req.user!;
+  if (!user.email) {
+    res.status(400).json({ success: false, message: "Bu hisobda email mavjud emas" });
+    return;
+  }
+  if (user.emailVerified) {
+    res.json({ success: true, message: "Email allaqachon tasdiqlangan" });
+    return;
+  }
+  try {
+    await sendVerificationTo(user.email);
+    res.json({ success: true, message: "Kod pochtaga yuborildi!" });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Email yuborishda xatolik yuz berdi";
+    console.error("OTP send error:", err);
+    logger.warn({ err, to: user.email }, "send-otp: email delivery failed");
+    res.status(500).json({ success: false, message });
+  }
 });
 
 // POST /api/auth/forgot-password - email a time-limited reset link. Always
@@ -308,7 +346,7 @@ authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswor
       },
     });
     try {
-      await withTimeout(sendPasswordResetEmail(user.email, token), SMTP_SEND_TIMEOUT_MS, "password reset email");
+      await withTimeout(sendPasswordResetEmail(user.email, token), SMTP_SEND_TIMEOUT_MS, "SMTP server javob bermadi (Timeout)");
     } catch (err) {
       // Anti-enumeration: still answer ok, but a stuck SMTP must not hang the
       // caller — log and move on.

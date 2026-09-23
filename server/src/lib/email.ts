@@ -20,21 +20,25 @@ export interface EmailRecord {
  */
 export const emailTranscript: EmailRecord[] = [];
 
-// Outbound SMTP calls (connect / verify / send) are bounded to this many ms so
-// a stuck or unreachable mail server never leaves an API route hanging.
-export const SMTP_SEND_TIMEOUT_MS = 10000;
+// Nodemailer's own socket/connection boundaries: fail fast if Gmail does not
+// answer within 5s of opening/handshaking/transferring.
+export const SMTP_CONNECT_TIMEOUT_MS = 5000;
+
+// Hard wall-clock cap around the whole sendMail() race used by the auth routes
+// ("send-otp" / "resend-verification"): ~7s latest, then a clear 500.
+export const SMTP_SEND_TIMEOUT_MS = 7000;
 
 // Verified once per process; a wrong Gmail app-password must fail fast instead
 // of surfacing as a vague send error on every attempt.
 let transportVerified = false;
 
-/** Hard wall-clock cap on an async operation. nodemailer has its own
- *  socket/connection timeouts; this guarantee exists for callers that await an
- *  email-sending route so they can answer 500 instead of hanging forever. */
-export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+/** Rejects when `promise` does not settle within `ms`. `message` is thrown as-is
+ *  so routes can surface a user-facing reason ("SMTP server javob bermadi
+ *  (Timeout)") before the client's loading state gets stuck. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    timer = setTimeout(() => reject(new Error(message)), ms);
   });
   return Promise.race([promise, timeout]).finally(() => {
     if (timer) clearTimeout(timer);
@@ -77,14 +81,36 @@ function getTransporter(): Transporter | null {
         port: config.smtpPort,
         secure: config.smtpSecure,
         auth: config.smtpUser ? { user: config.smtpUser, pass: config.smtpPass } : undefined,
-        connectionTimeout: SMTP_SEND_TIMEOUT_MS,
-        greetingTimeout: SMTP_SEND_TIMEOUT_MS,
-        socketTimeout: SMTP_SEND_TIMEOUT_MS,
+        connectionTimeout: SMTP_CONNECT_TIMEOUT_MS, // 5s to open the socket
+        greetingTimeout: SMTP_CONNECT_TIMEOUT_MS, // 5s for the SMTP greeting
+        socketTimeout: SMTP_CONNECT_TIMEOUT_MS, // 5s of socket silence
       });
     }
     return transporter;
   }
   return null;
+}
+
+/** Startup self-test: pings the SMTP server with `verify()` so a wrong
+ *  SMTP_PASS or unreachable port is caught the moment the Express server boots,
+ *  not on the first user's send attempt. Returns true when the transport is
+ *  ready (or deliberately skipped in transcript/test mode). */
+export async function verifySmtpAtStartup(): Promise<boolean> {
+  const transport = getTransporter();
+  if (!transport) {
+    console.log("SMTP faol emas — offline transcript rejimi (SMTP sozlanmagan yoki test rejimida)");
+    return false;
+  }
+  try {
+    await withTimeout(transport.verify(), SMTP_SEND_TIMEOUT_MS, "SMTP verify timeout");
+    transportVerified = true;
+    console.log("✅ SMTP Server tayyor!");
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("❌ SMTP Ulanishda XATOLIK:", message);
+    return false;
+  }
 }
 
 /** Parses `"Iqtibosim <noreply@yerlikoglon.uz>"` into {name, email}. */
@@ -157,7 +183,7 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
     // Check the SMTP connection/credentials before sending so a wrong password
     // or an unreachable server fails fast (done once per process lifetime).
     if (!transportVerified) {
-      await withTimeout(transport.verify(), SMTP_SEND_TIMEOUT_MS, "smtp verify");
+      await withTimeout(transport.verify(), SMTP_SEND_TIMEOUT_MS, "SMTP verify timeout");
       transportVerified = true;
     }
   } catch (err) {
@@ -167,6 +193,8 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
     return false;
   }
   try {
+    // Overall 7s cap including the actual transaction, so a stalled Gmail never
+    // strands the requesting route in an eternal pending state.
     const info = await withTimeout(
       transport.sendMail({
         from: config.smtpFrom,
@@ -176,7 +204,7 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
         html: input.html,
       }),
       SMTP_SEND_TIMEOUT_MS,
-      "smtp sendMail",
+      "SMTP server javob bermadi (Timeout)",
     );
     logger.info({ to: input.to, subject: input.subject, messageId: info.messageId }, "email sent");
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS, messageId: info.messageId });

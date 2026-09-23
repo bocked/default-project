@@ -22,6 +22,7 @@ import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { flushAnalyticsToDb } from "./lib/analytics.js";
+import { verifySmtpAtStartup } from "./lib/email.js";
 import { logger } from "./lib/logger.js";
 import { apiLimiter, authLimiter } from "./lib/rateLimit.js";
 import { tryEnsureDefaultCategories } from "./lib/categories.js";
@@ -222,6 +223,11 @@ export async function startServer(): Promise<void> {
     },
     "smtp env loaded",
   );
+
+  // Live SMTP ping: a wrong Gmail app password or unreachable port must surface
+  // at boot ("✅ SMTP Server tayyor!" / "❌ SMTP Ulanishda XATOLIK: ...") rather
+  // than on the first user's send-otp click. Fire-and-forget, never blocks boot.
+  void verifySmtpAtStartup();
 
   const { server, io } = createApp();
 
