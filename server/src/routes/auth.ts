@@ -23,7 +23,7 @@ import {
   hashQuickLoginSessionId,
   quickLoginSessionExpiry,
 } from "../lib/tokens.js";
-import { sendPasswordResetEmail, withTimeout, SMTP_SEND_TIMEOUT_MS } from "../lib/email.js";
+import { sendPasswordResetEmail, withTimeout, EMAIL_SEND_TIMEOUT_MS } from "../lib/email.js";
 import { issueEmailVerification } from "../lib/verifyEmail.js";
 import { logger } from "../lib/logger.js";
 import { authBruteLimiter } from "../lib/rateLimit.js";
@@ -180,16 +180,16 @@ async function toUser(
   };
 }
 
-/** Sends the email verification OTP with a hard ~7s cap. Throws when the email
- *  could not be delivered (SMTP timeout/failure recorded), so the calling route
- *  can answer a real 500 instead of an eternal pending request. */
+/** Sends the email verification OTP with a hard ~8s cap. Throws when the email
+ *  could not be delivered (Resend failure/timeout recorded), so the calling
+ *  route can answer a real 500 instead of an eternal pending request. */
 async function sendVerificationTo(email: string): Promise<void> {
   const sent = await withTimeout(
     issueEmailVerification(email),
-    SMTP_SEND_TIMEOUT_MS,
-    "SMTP server javob bermadi (Timeout)",
+    EMAIL_SEND_TIMEOUT_MS,
+    "Resend API javob bermadi (Timeout)",
   );
-  if (!sent) throw new Error("Email yuborishda xatolik yuz berdi");
+  if (!sent) throw new Error("Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring.");
 }
 
 // POST /api/auth/register
@@ -295,11 +295,11 @@ authRouter.post("/resend-verification", authBruteLimiter, validateBody(resendVer
     try {
       await sendVerificationTo(user.email);
     } catch (err) {
-      // A stuck/failed SMTP connection must fail fast as a 500, never leave the
+      // A stalled/failed Resend call must fail fast as a 500, never leave the
       // client's "Yuborilmoqda..." button hanging.
-      const message = err instanceof Error ? err.message : "Email yuborishda xatolik yuz berdi";
+      console.error("Resend Email Error:", err);
       logger.warn({ err, to: body.email }, "resend-verification: email delivery failed");
-      res.status(500).json({ success: false, message });
+      res.status(500).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring." });
       return;
     }
   }
@@ -309,7 +309,7 @@ authRouter.post("/resend-verification", authBruteLimiter, validateBody(resendVer
 // POST /api/auth/send-otp - re-send the email verification OTP to the current
 // session's inbox. Authenticated variant of resend-verification: the listener
 // clicks "Yuborilmoqda..." in Settings and is guaranteed a terminal response
-// within ~7s (success toast, or a 500 with the real SMTP reason).
+// within ~8s (success toast, or a 500 with the real Resend reason).
 authRouter.post("/send-otp", requireAuth, authBruteLimiter, async (req, res) => {
   const user = req.user!;
   if (!user.email) {
@@ -324,10 +324,9 @@ authRouter.post("/send-otp", requireAuth, authBruteLimiter, async (req, res) => 
     await sendVerificationTo(user.email);
     res.json({ success: true, message: "Kod pochtaga yuborildi!" });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Email yuborishda xatolik yuz berdi";
-    console.error("OTP send error:", err);
+    console.error("Resend Email Error:", err);
     logger.warn({ err, to: user.email }, "send-otp: email delivery failed");
-    res.status(500).json({ success: false, message });
+    res.status(500).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring." });
   }
 });
 
@@ -346,7 +345,7 @@ authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswor
       },
     });
     try {
-      await withTimeout(sendPasswordResetEmail(user.email, token), SMTP_SEND_TIMEOUT_MS, "SMTP server javob bermadi (Timeout)");
+      await withTimeout(sendPasswordResetEmail(user.email, token), EMAIL_SEND_TIMEOUT_MS, "Resend API javob bermadi (Timeout)");
     } catch (err) {
       // Anti-enumeration: still answer ok, but a stuck SMTP must not hang the
       // caller — log and move on.

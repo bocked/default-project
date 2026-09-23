@@ -445,11 +445,9 @@ export type EmailType =
 export type EmailDeliveryStatus = "SUCCESS" | "FAILED";
 
 export interface EmailsHealth {
-  mode: "smtp" | "brevo" | "offline";
+  mode: "resend" | "offline";
   configured: boolean;
-  host: string | null;
-  port: number;
-  secure: boolean;
+  provider: string | null;
   from: string;
   sender: string;
   appUrl: string;

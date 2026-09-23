@@ -24,10 +24,10 @@ import type {
   EmailsHealth,
 } from "@/lib/types";
 
-type TabId = "smtp" | "logs" | "otp";
+type TabId = "resend" | "logs" | "otp";
 
 const TABS: Array<{ id: TabId; label: string }> = [
-  { id: "smtp", label: "SMTP holati" },
+  { id: "resend", label: "Resend holati" },
   { id: "logs", label: "Pochta jurnali" },
   { id: "otp", label: "OTP nazorati" },
 ];
@@ -42,7 +42,7 @@ const TYPE_LABELS: Record<EmailType, string> = {
 
 export default function EmailManagementPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<TabId>("smtp");
+  const [tab, setTab] = useState<TabId>("resend");
 
   if (!user) return null;
   if (user.role !== "SUPER_ADMIN") {
@@ -62,7 +62,7 @@ export default function EmailManagementPage() {
     <div className="space-y-6">
       <PageTitle
         title="Pochta Boshqaruvi"
-        subtitle="SMTP holati, email tarixi va faol OTP kodlarini nazorat qilish."
+        subtitle="Resend holati, email tarixi va faol OTP kodlarini nazorat qilish."
       />
       <div className="flex flex-wrap gap-1.5">
         {TABS.map((t) => (
@@ -81,7 +81,7 @@ export default function EmailManagementPage() {
         ))}
       </div>
 
-      {tab === "smtp" && <SmtpTab />}
+      {tab === "resend" && <ResendTab />}
       {tab === "logs" && <LogsTab />}
       {tab === "otp" && <OtpTab />}
     </div>
@@ -89,10 +89,10 @@ export default function EmailManagementPage() {
 }
 
 // ---------------------------------------------------------------------------
-// SMTP holati + Test + shablon preview
+// Resend holati + Test + shablon preview
 // ---------------------------------------------------------------------------
 
-function SmtpTab() {
+function ResendTab() {
   const { user } = useAuth();
   const [health, setHealth] = useState<EmailsHealth | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +109,7 @@ function SmtpTab() {
         if (!cancelled) setHealth(h);
       })
       .catch(() => {
-        if (!cancelled) setError("SMTP holatini olishda xatolik yuz berdi.");
+        if (!cancelled) setError("Resend holatini olishda xatolik yuz berdi.");
       });
     void api<{ templates: EmailTemplate[] }>("/api/admin/emails/templates")
       .then((r) => {
@@ -143,10 +143,8 @@ function SmtpTab() {
   }, [testTo]);
 
   const modeBadge =
-    health?.mode === "smtp" ? (
-      <Badge tone="emerald">SMTP</Badge>
-    ) : health?.mode === "brevo" ? (
-      <Badge tone="blue">Brevo API</Badge>
+    health?.mode === "resend" ? (
+      <Badge tone="emerald">Resend API</Badge>
     ) : (
       <Badge tone="slate">O&apos;chirilgan</Badge>
     );
@@ -155,7 +153,7 @@ function SmtpTab() {
     <div className="space-y-4">
       <AdminCard>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">SMTP ulanish holati</h2>
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Resend ulanish holati</h2>
           {modeBadge}
         </div>
         {error && (
@@ -165,9 +163,7 @@ function SmtpTab() {
         )}
         {health && (
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <HealthRow label="Xost" value={health.host ?? "(sozlanmagan)"} />
-            <HealthRow label="Port" value={String(health.port)} />
-            <HealthRow label="Shifrlash" value={health.secure ? "TLS/SSL" : "Yo&apos;q"} />
+            <HealthRow label="Provayder" value={health.provider ?? "(sozlanmagan)"} />
             <HealthRow label="Jo&apos;natuvchi" value={health.from || "(—)"} />
             <HealthRow label="Rejim" value={health.testMode ? "Sinov rejimi (hech narsa yuborilmaydi)" : "Jonli jo&apos;natish"} />
           </div>
@@ -177,7 +173,7 @@ function SmtpTab() {
       <AdminCard>
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Sinov xati yuborish</h2>
         <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-          Belgilangan manzilga real SMTP orqali sinov xati jo&apos;natiladi. Bo&apos;sh qoldirilsa, sizning
+          Belgilangan manzilga real Resend orqali sinov xati jo&apos;natiladi. Bo&apos;sh qoldirilsa, sizning
           emailingizga boradi.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">

@@ -1,4 +1,4 @@
-import nodemailer, { type Transporter } from "nodemailer";
+import { Resend } from "resend";
 import { EmailStatus, EmailType } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { config } from "../config.js";
@@ -14,26 +14,19 @@ export interface EmailRecord {
 }
 
 /**
- * In-memory transcript of every email "sent" while SMTP is not configured or
+ * In-memory transcript of every email "sent" while Resend is not configured or
  * during the E2E suite (NODE_ENV=test). Tests use this to read the raw
  * verification link/OTP instead of actually delivering mail.
  */
 export const emailTranscript: EmailRecord[] = [];
 
-// Nodemailer's own socket/connection boundaries: fail fast if Gmail does not
-// answer within 5s of opening/handshaking/transferring.
-export const SMTP_CONNECT_TIMEOUT_MS = 5000;
-
-// Hard wall-clock cap around the whole sendMail() race used by the auth routes
-// ("send-otp" / "resend-verification"): ~7s latest, then a clear 500.
-export const SMTP_SEND_TIMEOUT_MS = 7000;
-
-// Verified once per process; a wrong Gmail app-password must fail fast instead
-// of surfacing as a vague send error on every attempt.
-let transportVerified = false;
+// Hard wall-clock cap for every outbound Resend call (send / API probe). The
+// send-otp / forgot-password routes rely on this so a stalled provider never
+// leaves the client's "Yuborilmoqda..." button hanging.
+export const EMAIL_SEND_TIMEOUT_MS = 8000;
 
 /** Rejects when `promise` does not settle within `ms`. `message` is thrown as-is
- *  so routes can surface a user-facing reason ("SMTP server javob bermadi
+ *  so routes can surface a user-facing reason ("Resend API javob bermadi
  *  (Timeout)") before the client's loading state gets stuck. */
 export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -45,7 +38,17 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, message: string)
   });
 }
 
-let transporter: Transporter | null = null;
+let resendClient: Resend | null = null;
+
+/** Singleton Resend client. Returns null in test mode or when RESEND_API_KEY is
+ *  unset, so those environments fall back to the in-memory transcript. */
+function getResend(): Resend | null {
+  if (config.resendApiKey && process.env.NODE_ENV !== "test") {
+    if (!resendClient) resendClient = new Resend(config.resendApiKey);
+    return resendClient;
+  }
+  return null;
+}
 
 /** Best-effort persistence of an EmailLog row; failures here must never break
  *  the request that produced the mail. */
@@ -73,89 +76,6 @@ async function recordLog(entry: {
   }
 }
 
-function getTransporter(): Transporter | null {
-  if (config.smtpHost && process.env.NODE_ENV !== "test") {
-    if (!transporter) {
-      transporter = nodemailer.createTransport({
-        host: config.smtpHost,
-        port: config.smtpPort,
-        secure: config.smtpSecure,
-        auth: config.smtpUser ? { user: config.smtpUser, pass: config.smtpPass } : undefined,
-        connectionTimeout: SMTP_CONNECT_TIMEOUT_MS, // 5s to open the socket
-        greetingTimeout: SMTP_CONNECT_TIMEOUT_MS, // 5s for the SMTP greeting
-        socketTimeout: SMTP_CONNECT_TIMEOUT_MS, // 5s of socket silence
-      });
-    }
-    return transporter;
-  }
-  return null;
-}
-
-/** Startup self-test: pings the SMTP server with `verify()` so a wrong
- *  SMTP_PASS or unreachable port is caught the moment the Express server boots,
- *  not on the first user's send attempt. Returns true when the transport is
- *  ready (or deliberately skipped in transcript/test mode). */
-export async function verifySmtpAtStartup(): Promise<boolean> {
-  const transport = getTransporter();
-  if (!transport) {
-    console.log("SMTP faol emas — offline transcript rejimi (SMTP sozlanmagan yoki test rejimida)");
-    return false;
-  }
-  try {
-    await withTimeout(transport.verify(), SMTP_SEND_TIMEOUT_MS, "SMTP verify timeout");
-    transportVerified = true;
-    console.log("✅ SMTP Server tayyor!");
-    return true;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("❌ SMTP Ulanishda XATOLIK:", message);
-    return false;
-  }
-}
-
-/** Parses `"Iqtibosim <noreply@yerlikoglon.uz>"` into {name, email}. */
-function parseSender(from: string): { name: string; email: string } {
-  const match = from.match(/^(.*?)\s*<([^>]+)>$/);
-  if (match) return { name: match[1].trim(), email: match[2].trim() };
-  return { name: "", email: from.trim() };
-}
-
-async function sendViaBrevo(input: SendEmailInput, type: EmailType): Promise<boolean> {
-  try {
-    const sender = parseSender(config.smtpFrom);
-    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
-      method: "POST",
-      headers: {
-        "api-key": config.brevoApiKey,
-        "accept": "application/json",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        sender,
-        to: [{ email: input.to }],
-        subject: input.subject,
-        htmlContent: input.html,
-        textContent: input.text,
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      logger.error({ status: res.status, body, to: input.to }, "failed to send email (brevo api)");
-      await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: body.slice(0, 500) });
-      return false;
-    }
-    const data = (await res.json()) as { messageId?: string };
-    logger.info({ to: input.to, subject: input.subject, messageId: data.messageId }, "email sent (brevo api)");
-    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS, messageId: data.messageId });
-    return true;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err, to: input.to }, "failed to send email (brevo api)");
-    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message.slice(0, 500) });
-    return false;
-  }
-}
-
 export interface SendEmailInput {
   to: string;
   subject: string;
@@ -163,66 +83,85 @@ export interface SendEmailInput {
   html: string;
 }
 
-/** Sends a transactional email and records the outcome in EmailLog so the
- *  Super Admin dashboard can show delivery history. */
+/**
+ * Sends a transactional email through the Resend API (8s hard cap) and records
+ * the outcome in EmailLog so the Super Admin dashboard can show delivery
+ * history. Never throws: delivery problems are logged and reported as `false`
+ * so routes can answer a 500 instead of hanging.
+ */
 export async function sendEmail(input: SendEmailInput, type: EmailType = EmailType.ANNOUNCEMENT): Promise<boolean> {
   const record: EmailRecord = { ...input, at: new Date().toISOString(), type };
-  if (config.brevoApiKey) {
-    return sendViaBrevo(input, type);
-  }
-  const transport = getTransporter();
-  if (!transport) {
-    // No SMTP configured: log + keep a transcript for tests/dev.
+  const client = getResend();
+  if (!client) {
+    // No API key configured: log + keep a transcript for tests/dev.
     emailTranscript.push(record);
     const link = input.text.match(/https?:\/\/\S+/)?.[0];
-    logger.info({ to: input.to, subject: input.subject, link }, "email (not sent: SMTP not configured)");
+    logger.info({ to: input.to, subject: input.subject, link }, "email (not sent: Resend API not configured)");
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS });
     return true;
   }
   try {
-    // Check the SMTP connection/credentials before sending so a wrong password
-    // or an unreachable server fails fast (done once per process lifetime).
-    if (!transportVerified) {
-      await withTimeout(transport.verify(), SMTP_SEND_TIMEOUT_MS, "SMTP verify timeout");
-      transportVerified = true;
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err, to: input.to }, "failed to verify smtp connection");
-    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message.slice(0, 500) });
-    return false;
-  }
-  try {
-    // Overall 7s cap including the actual transaction, so a stalled Gmail never
-    // strands the requesting route in an eternal pending state.
-    const info = await withTimeout(
-      transport.sendMail({
-        from: config.smtpFrom,
-        to: input.to,
+    const result = await withTimeout(
+      client.emails.send({
+        from: config.sendFrom,
+        to: [input.to],
         subject: input.subject,
         text: input.text,
         html: input.html,
       }),
-      SMTP_SEND_TIMEOUT_MS,
-      "SMTP server javob bermadi (Timeout)",
+      EMAIL_SEND_TIMEOUT_MS,
+      "Resend API javob bermadi (Timeout)",
     );
-    logger.info({ to: input.to, subject: input.subject, messageId: info.messageId }, "email sent");
-    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS, messageId: info.messageId });
+    if (result.error) {
+      const message = result.error.message ?? "Resend xatosi";
+      logger.error({ err: result.error, to: input.to }, "failed to send email (resend api)");
+      await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message.slice(0, 500) });
+      return false;
+    }
+    const messageId = result.data?.id ?? null;
+    logger.info({ to: input.to, subject: input.subject, messageId }, "email sent (resend api)");
+    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS, messageId });
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err, to: input.to }, "failed to send email");
+    console.error("Resend Email Error:", err);
+    logger.error({ err, to: input.to }, "failed to send email (resend api)");
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message.slice(0, 500) });
     return false;
   }
 }
 
-/** SMTP connection self-test used by the Super Admin dashboard. Returns the
- *  raw delivery result so the UI can show either the messageId or the error. */
+/** Startup self-test: probes the Resend API with the configured key so a wrong
+ *  key or unreachable endpoint surfaces the moment the Express server boots,
+ *  not on the first user's send-otp click. Returns true when the API is ready
+ *  (or deliberately skipped in transcript/test mode). */
+export async function verifyResendAtStartup(): Promise<boolean> {
+  const client = getResend();
+  if (!client) {
+    console.log("Resend API faol emas — offline transcript rejimi (RESEND_API_KEY sozlanmagan yoki test rejimida)");
+    return false;
+  }
+  try {
+    // Lightweight auth probe: listing domains validates the key without burning
+    // one of the free-tier sends. Bounded by EMAIL_SEND_TIMEOUT_MS.
+    const probe = await withTimeout(client.domains.list(), EMAIL_SEND_TIMEOUT_MS, "Resend API javob bermadi (Timeout)");
+    if (probe.error) {
+      throw new Error(probe.error.message ?? "Resend API xatosi");
+    }
+    console.log("✅ Resend API tayyor!");
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("❌ Resend Ulanishda XATOLIK:", message);
+    return false;
+  }
+}
+
+/** Delivery result for the Super Admin dashboard test card. */
 export async function sendTestEmail(to: string): Promise<{ ok: boolean; messageId?: string | null; error?: string | null }> {
-  const subject = "yerlikoglon.uz — SMTP sinov xati";
+  const subject = "yerlikoglon.uz — Resend sinov xati";
   const text = [
-    "yerlikoglon.uz — SMTP sinov xati",
+    "yerlikoglon.uz — Resend sinov xati",
     "",
     "Agar bu xatni olgan bo'lsangiz, email xizmati to'g'ri ishlayapti.",
     "",
@@ -231,22 +170,16 @@ export async function sendTestEmail(to: string): Promise<{ ok: boolean; messageI
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
     <h2 style="color:#0f172a">yerlikoglon.uz</h2>
-    <p style="color:#16a34a;font-weight:bold">SMTP ishlayapti!</p>
+    <p style="color:#16a34a;font-weight:bold">Resend ishlayapti!</p>
     <p style="color:#334155;line-height:1.6">Bu email super admin "Pochta boshqaruvi" panelidan yuborilgan sinov xati.</p>
   </div>`;
 
   const sent = await sendEmail({ to, subject, text, html }, EmailType.TEST);
-  if (sent) {
-    const last = await prisma.emailLog.findFirst({
-      where: { type: EmailType.TEST },
-      orderBy: { createdAt: "desc" },
-    });
-    return { ok: true, messageId: last?.messageId ?? null };
-  }
   const last = await prisma.emailLog.findFirst({
     where: { type: EmailType.TEST },
     orderBy: { createdAt: "desc" },
   });
+  if (sent) return { ok: true, messageId: last?.messageId ?? null };
   return { ok: false, error: last?.error ?? "Noma'lum xatolik" };
 }
 

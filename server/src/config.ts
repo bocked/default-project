@@ -69,20 +69,13 @@ export const config = {
   // Long-lived refresh token lifetime in days (rotating HttpOnly cookie).
   refreshTokenDays: num(process.env.REFRESH_TOKEN_DAYS, 30),
 
-  // SMTP (nodemailer). Leave SMTP_HOST empty to fall back to a console
-  // logger + in-memory transcript (dev/test mode). Gmail's email verification
-  // OTPs use the credentials in .env (`SMTP_HOST=smtp.gmail.com`, port 465).
-  smtpHost: process.env.SMTP_HOST ?? "",
-  smtpPort: num(process.env.SMTP_PORT, 587),
-  // Port 465 defaults to TLS (secure). SMTP_SECURE explicitly overrides it.
-  smtpSecure: process.env.SMTP_SECURE !== undefined ? bool(process.env.SMTP_SECURE, false) : num(process.env.SMTP_PORT, 587) === 465,
-  smtpUser: process.env.SMTP_USER ?? "",
-  smtpPass: process.env.SMTP_PASS ?? "",
-  smtpFrom: process.env.EMAIL_FROM ?? process.env.SMTP_FROM ?? "yerlikoglon.uz <noreply@yerlikoglon.uz>",
-  // Brevo transactional HTTP API (preferred over SMTP: works from hosts whose
-  // egress to Brevo SMTP is blocked, e.g. Render free tier). Leave empty to
-  // fall back to nodemailer SMTP.
-  brevoApiKey: process.env.BREVO_API_KEY ?? "",
+  // Resend transactional email API (replaces the legacy SMTP/Brevo paths).
+  // Leave RESEND_API_KEY empty to fall back to a console logger + in-memory
+  // transcript (dev/test mode — no real mail is delivered).
+  resendApiKey: process.env.RESEND_API_KEY ?? "",
+  // Verified sender. onboarding@resend.dev is the Resend sandbox default until
+  // a custom domain is added to the account.
+  sendFrom: process.env.EMAIL_FROM ?? "yerlikoglon.uz <onboarding@resend.dev>",
 
   // Telegram moderation bot. Empty token disables outbound bot calls
   // (the webhook still processes incoming updates).

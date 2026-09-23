@@ -51,7 +51,7 @@ describe("E2E: super admin email management dashboard", () => {
   it("health reports the transport configuration without secrets", async () => {
     const res = await request(base, "GET", "/api/admin/emails/health", { token: SUPER });
     expect(res.status).toBe(200);
-    expect(["smtp", "brevo", "offline"]).toContain(res.json.mode);
+    expect(["resend", "offline"]).toContain(res.json.mode);
     expect(typeof res.json.configured).toBe("boolean");
     expect(res.json.from).toBeTruthy();
     expect(res.json).not.toHaveProperty("pass");
@@ -111,7 +111,7 @@ describe("E2E: super admin email management dashboard", () => {
     expect(reset.html).toContain("/reset-password");
   });
 
-  it("sends a live SMTP test email and records it (transcript mode here)", async () => {
+  it("sends a live Resend test email and records it (transcript mode here)", async () => {
     const email = `${unique("emtest")}@example.com`;
     const res = await request(base, "POST", "/api/admin/emails/test", {
       token: SUPER,

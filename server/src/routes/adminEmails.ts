@@ -20,8 +20,9 @@ import {
 /**
  * Super Admin email management dashboard backend. Mounted under the admin
  * router at /api/admin/emails and gated by requireSuperAdmin (an ADMIN role
- * alone gets 403). Provides SMTP health, delivery log browsing, template
- * previews, a live SMTP test and active-OTP monitor (masked, revoke/resend).
+ * alone gets 403). Provides Resend transport health, delivery log browsing,
+ * template previews, a live Resend test and active-OTP monitor (masked,
+ * revoke/resend).
  */
 export const adminEmailsRouter = Router();
 adminEmailsRouter.use(requireSuperAdmin);
@@ -30,13 +31,11 @@ adminEmailsRouter.use(requireSuperAdmin);
 // dashboard cards. Never reveals credentials, only whether the transport is on.
 adminEmailsRouter.get("/health", (_req, res) => {
   res.json({
-    mode: config.brevoApiKey ? "brevo" : config.smtpHost ? "smtp" : "offline",
-    configured: Boolean(config.smtpHost || config.brevoApiKey),
-    host: config.smtpHost || null,
-    port: config.smtpPort,
-    secure: config.smtpSecure,
-    from: config.smtpFrom,
-    sender: config.smtpFrom,
+    mode: config.resendApiKey ? "resend" : "offline",
+    configured: Boolean(config.resendApiKey),
+    provider: config.resendApiKey ? "resend" : null,
+    from: config.sendFrom,
+    sender: config.sendFrom,
     appUrl: config.appUrl,
     testMode: process.env.NODE_ENV === "test",
   });
