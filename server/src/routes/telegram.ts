@@ -20,6 +20,7 @@ import {
 } from "../lib/tokens.js";
 import { notifyQuoteModeration } from "../lib/notify.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
+import { executeAdminCommand } from "../lib/adminCommands.js";
 
 export const telegramRouter = Router();
 
@@ -51,6 +52,10 @@ telegramRouter.post("/webhook", async (req, res) => {
       await handleReply(update.message);
     } else if (typeof update?.message?.text === "string" && update.message.text.startsWith("/start")) {
       await handleStart(update.message);
+    } else if (typeof update?.message?.text === "string" && isAdminChat(update.message.chat?.id)) {
+      // Plain admin text messages become actionable prompts (approve, block,
+      // VIP, broadcast, …). Non-admin text is intentionally ignored.
+      await handleAdminText(update.message);
     } else {
       logger.warn(
         {
@@ -150,6 +155,22 @@ async function handleReply(msg: Record<string, any>): Promise<void> {
   void notifyQuoteModeration({ quoteId: quote.id, decision: "rejected", reason });
   void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
   addLog("warn", `Iqtibos rad etildi (Telegram): ${quote.text.slice(0, 40)}...`);
+}
+
+/**
+ * Admin prompt executor. Any plain text the admin sends (not a reply, not
+ * /start) is treated as a command — the bot runs it and confirms with a
+ * "✓ Topshiriq bajarildi: …" reply describing what was done.
+ */
+async function handleAdminText(msg: Record<string, any>): Promise<void> {
+  if (!isAdminChat(msg.chat?.id)) return;
+  const chatId: number | undefined = msg.chat?.id;
+  const text = String(msg.text ?? "").trim().slice(0, 2000);
+  if (chatId === undefined || !text) return;
+
+  const reply = await executeAdminCommand(text);
+  const sent = await sendTelegramMessage(chatId, reply, undefined, msg.message_id);
+  if (!sent) logger.warn({ chatId }, "admin command reply not delivered");
 }
 
 // ---------------------------------------------------------------------------

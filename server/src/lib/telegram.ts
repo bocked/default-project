@@ -180,10 +180,12 @@ export async function getBotUsername(): Promise<string | null> {
 export async function sendTelegramMessage(
   chatId: number | string,
   text: string,
-  replyMarkup?: ReplyKeyboard
+  replyMarkup?: ReplyKeyboard,
+  replyToMessageId?: number
 ): Promise<boolean> {
   const body: Record<string, unknown> = { chat_id: chatId, text };
   if (replyMarkup) body.reply_markup = replyMarkup;
+  if (replyToMessageId !== undefined) body.reply_to_message_id = replyToMessageId;
   const json = await apiCall<TelegramResult<{ message_id: number }>>("sendMessage", body);
   return json?.ok === true;
 }
