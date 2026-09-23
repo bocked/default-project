@@ -292,6 +292,7 @@ authRouter.post("/verify-email", validateBody(verifyEmailSchema), async (_req, r
     where: { id: user.id },
     data: {
       emailVerified: true,
+      emailVerifiedAt: new Date(),
       emailVerificationToken: null,
       emailVerificationExpiresAt: null,
       emailVerifyCodeHash: null,

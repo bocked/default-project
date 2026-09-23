@@ -430,6 +430,8 @@ function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<Use
 
   return (
     <div className="space-y-6">
+      {user.emailVerified && user.email && <VerifiedStatusCard user={user} />}
+
       {user.quickLogin ? (
         <UpgradeForm user={user} onSaved={onSaved} />
       ) : (
@@ -575,6 +577,40 @@ function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<Use
       <ProfileSettings user={user} onSaved={onSaved} />
 
       <PremiumCard user={user} onSaved={onSaved} />
+    </div>
+  );
+}
+
+/** Green confirmation badge shown in the settings tab whenever the account is
+ *  already email-verified (e.g. the auto-verified SUPER_ADMIN owner account). It
+ *  replaces the amber "Email hali tasdiqlanmagan" banner + OTP form entirely. */
+function VerifiedStatusCard({ user }: { user: User }) {
+  const vip = isPremiumActive(user);
+  const role = user.role;
+  const statusLine =
+    role === "SUPER_ADMIN"
+      ? "SUPER ADMIN / VIP Maqom faol"
+      : vip
+        ? "VIP Maqom faol"
+        : role === "ADMIN"
+          ? "Admin huquqi faol"
+          : "";
+
+  return (
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/30 dark:bg-emerald-950/30">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">🟢 Akkaunt tasdiqlangan</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-400">
+            Email tasdiqlangan — tasdiqlash talab qilinmaydi, barcha imkoniyatlar ochiq.
+          </p>
+        </div>
+      </div>
+      {statusLine && (
+        <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300">
+          ⭐ {statusLine}
+        </span>
+      )}
     </div>
   );
 }

@@ -168,7 +168,10 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
 
 /** Grants the ADMIN role to every configured admin email, then the SUPER_ADMIN
  *  role to configured super-admin emails (run last so SUPER_ADMIN wins when an
- *  email is listed in both). Best-effort. */
+ *  email is listed in both). Super-admins are also force-verified
+ *  (emailVerified + emailVerifiedAt) and given lifetime VIP (isPremium), so the
+ *  owner's account never sees the "email hali tasdiqlanmagan" banner and every
+ *  premium feature is unlocked at boot. Best-effort + idempotent. */
 async function promoteAdminEmails(): Promise<void> {
   if (config.adminEmails.length === 0 && config.superAdminEmails.length === 0) return;
   if (config.adminEmails.length > 0) {
@@ -183,10 +186,15 @@ async function promoteAdminEmails(): Promise<void> {
   if (config.superAdminEmails.length > 0) {
     const supers = await prisma.user.updateMany({
       where: { email: { in: config.superAdminEmails } },
-      data: { role: "SUPER_ADMIN" },
+      data: {
+        role: "SUPER_ADMIN",
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
+        isPremium: true,
+      },
     });
     if (supers.count > 0) {
-      logger.info(`granted SUPER_ADMIN role to ${supers.count} user(s)`);
+      logger.info(`auto-verified SUPER_ADMIN account(s): ${supers.count} (emailVerified + VIP granted)`);
     }
   }
 }
