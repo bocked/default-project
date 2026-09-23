@@ -40,6 +40,22 @@ const TYPE_LABELS: Record<EmailType, string> = {
   TEST: "Sinov",
 };
 
+const STATUS_LABELS: Record<EmailDeliveryStatus, string> = {
+  SUCCESS: "Muvaffaqiyatli",
+  SENT: "Yuborilgan",
+  DELIVERED: "Yetkazildi",
+  BOUNCED: "Qaytgan",
+  FAILED: "Xato",
+};
+
+const STATUS_TONES: Record<EmailDeliveryStatus, "blue" | "emerald" | "rose" | "slate" | "amber"> = {
+  SUCCESS: "emerald",
+  SENT: "slate",
+  DELIVERED: "blue",
+  BOUNCED: "amber",
+  FAILED: "rose",
+};
+
 export default function EmailManagementPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState<TabId>("resend");
@@ -167,6 +183,14 @@ function ResendTab() {
             <HealthRow label="Jo&apos;natuvchi" value={health.from || "(—)"} />
             <HealthRow label="Rejim" value={health.testMode ? "Sinov rejimi (hech narsa yuborilmaydi)" : "Jonli jo&apos;natish"} />
           </div>
+        )}
+        {health?.sandbox && (
+          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300">
+            Resend sandbox rejimi (domen hali tasdiqlanmagan): faqat{" "}
+            <span className="font-mono">{health.sandboxTo || "(birorta super admin)"}</span> manziliga xat
+            yuboriladi. Boshqa manzillar &apos;Test rejimida faqat administrator emailiga xat yuboriladi&apos;
+            xatoligi bilan rad etiladi.
+          </p>
         )}
       </AdminCard>
 
@@ -304,8 +328,11 @@ function LogsTab() {
         </AdminSelect>
         <AdminSelect value={status} onChange={(e) => changeStatus(e.target.value)} className="w-auto">
           <option value="">Barcha holatlar</option>
-          <option value="SUCCESS">Muvaffaqiyatli</option>
-          <option value="FAILED">Xato</option>
+          {(Object.keys(STATUS_LABELS) as EmailDeliveryStatus[]).map((s) => (
+            <option key={s} value={s}>
+              {STATUS_LABELS[s]}
+            </option>
+          ))}
         </AdminSelect>
         <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">Jami: {data?.total ?? 0}</span>
       </div>
@@ -355,9 +382,7 @@ function LogRow({ log }: { log: EmailLogEntry }) {
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         <Badge tone={log.type === "TEST" ? "slate" : "blue"}>{TYPE_LABELS[log.type]}</Badge>
-        <Badge tone={log.status === "SUCCESS" ? "emerald" : "rose"}>
-          {log.status === "SUCCESS" ? "Yuborildi" : "Xato"}
-        </Badge>
+        <Badge tone={STATUS_TONES[log.status]}>{STATUS_LABELS[log.status]}</Badge>
       </div>
     </div>
   );
@@ -371,6 +396,8 @@ function OtpTab() {
   const [otps, setOtps] = useState<ActiveOtp[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
   // Tick source for the countdown; Date.now() must live in the interval
   // callback (impure calls are not allowed inside the render body).
   const [now, setNow] = useState(0);
@@ -394,11 +421,55 @@ function OtpTab() {
     async (userId: string, action: "resend" | "revoke") => {
       setBusyId(userId);
       setError(null);
+      setNotice(null);
       try {
         await api<{ ok: boolean }>(`/api/admin/emails/otp/${userId}/${action}`, { method: "POST" });
         load();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Amal bajarilmadi");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [load]
+  );
+
+  // Reveals a freshly minted OTP so the Super Admin can read it aloud or send
+  // it over Telegram when the Resend sandbox could not reach the user.
+  const reveal = useCallback(
+    async (userId: string) => {
+      setBusyId(userId);
+      setError(null);
+      setNotice(null);
+      try {
+        const r = await api<{ ok: boolean; code: string; email: string }>(`/api/admin/emails/otp/${userId}/code`, {
+          method: "POST",
+        });
+        setRevealed((prev) => ({ ...prev, [userId]: r.code }));
+        setNotice(`Yangi OTP kod yaratildi va pochtaga qayta yuborildi.`);
+        load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Kodni ochishda xatolik yuz berdi");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [load]
+  );
+
+  // One-click SUPER_ADMIN approval: marks the user isSuperApproved so they can
+  // post without email/phone verification (same tool as the users table).
+  const superApprove = useCallback(
+    async (userId: string, email: string) => {
+      setBusyId(userId);
+      setError(null);
+      setNotice(null);
+      try {
+        await api<{ ok: boolean }>(`/api/admin/users/${userId}/super-approve`, { method: "POST" });
+        setNotice(`Hisob qo'lda tasdiqlandi: ${email}`);
+        load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Tasdiqlashda xatolik yuz berdi");
       } finally {
         setBusyId(null);
       }
@@ -412,6 +483,13 @@ function OtpTab() {
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Faol email tasdiqlash kodlari</h2>
         <span className="text-xs text-slate-500 dark:text-slate-400">Jami: {otps.length}</span>
       </div>
+      {notice && (
+        <div className="p-4">
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-300">
+            {notice}
+          </p>
+        </div>
+      )}
       {error && (
         <div className="p-4">
           <ErrorNote text={error} />
@@ -427,17 +505,39 @@ function OtpTab() {
           const secondsLeft = Math.max(0, Math.floor((new Date(o.expiresAt).getTime() - now) / 1000));
           const minutes = Math.floor(secondsLeft / 60);
           const seconds = secondsLeft % 60;
+          const code = revealed[o.userId];
           return (
             <div key={o.userId} className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{o.email}</p>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                  Kod: <span className="font-mono tracking-widest">{o.masked}</span> · muddat: {minutes}:{String(seconds).padStart(2, "0")}
-                </p>
+                {code ? (
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    Kod: <span className="font-mono text-base font-bold tracking-[0.3em] text-blue-700 dark:text-blue-300">{code}</span> · muddat:{" "}
+                    {minutes}:{String(seconds).padStart(2, "0")}
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    Kod: <span className="font-mono tracking-widest">{o.masked}</span> · muddat: {minutes}:{String(seconds).padStart(2, "0")}
+                  </p>
+                )}
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                <AdminButton
+                  variant="primary"
+                  disabled={busyId === o.userId}
+                  onClick={() => void reveal(o.userId)}
+                >
+                  Kodni ko&apos;rish
+                </AdminButton>
                 <AdminButton
                   variant="success"
+                  disabled={busyId === o.userId}
+                  onClick={() => void superApprove(o.userId, o.email)}
+                >
+                  Profilni tasdiqlash
+                </AdminButton>
+                <AdminButton
+                  variant="slate"
                   disabled={busyId === o.userId}
                   onClick={() => void act(o.userId, "resend")}
                 >

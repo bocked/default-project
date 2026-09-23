@@ -18,6 +18,7 @@ import { categoriesRouter, tagsRouter } from "./routes/catalog.js";
 import { contentRouter } from "./routes/content.js";
 import { siteRouter } from "./routes/site.js";
 import { telegramRouter } from "./routes/telegram.js";
+import { resendWebhookRouter } from "./routes/resendWebhook.js";
 import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
@@ -116,6 +117,9 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   // instead of using "*".
   app.use(cors({ origin: corsOrigin, credentials: true }));
   app.use(compression());
+  // Resend delivery webhook must consume the raw body BEFORE express.json()
+  // parses it, because the Svix HMAC covers the exact bytes as received.
+  app.use("/api/webhooks", resendWebhookRouter);
   app.use(express.json({ limit: "1mb" }));
   app.use(pinoHttp({ logger, autoLogging: options.autoLogging ?? config.logToConsole }));
 

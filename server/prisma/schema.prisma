@@ -55,6 +55,9 @@ enum EmailType {
 
 enum EmailStatus {
   SUCCESS
+  SENT
+  DELIVERED
+  BOUNCED
   FAILED
 }
 

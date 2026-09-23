@@ -23,7 +23,13 @@ import {
   hashQuickLoginSessionId,
   quickLoginSessionExpiry,
 } from "../lib/tokens.js";
-import { sendPasswordResetEmail, withTimeout, EMAIL_SEND_TIMEOUT_MS } from "../lib/email.js";
+import {
+  sendPasswordResetEmail,
+  withTimeout,
+  EMAIL_SEND_TIMEOUT_MS,
+  EmailSandboxError,
+  resendSandboxRecipientAllowed,
+} from "../lib/email.js";
 import { issueEmailVerification } from "../lib/verifyEmail.js";
 import { logger } from "../lib/logger.js";
 import { authBruteLimiter } from "../lib/rateLimit.js";
@@ -182,8 +188,12 @@ async function toUser(
 
 /** Sends the email verification OTP with a hard ~8s cap. Throws when the email
  *  could not be delivered (Resend failure/timeout recorded), so the calling
- *  route can answer a real 500 instead of an eternal pending request. */
+ *  route can answer a real 500 instead of an eternal pending request. Raises
+ *  EmailSandboxError when the Resend sandbox blocks a non-owner recipient, so
+ *  the route answers a clear "Test rejimida faqat administrator emailiga xat
+ *  yuboriladi" 400 instead of a confusing 500. */
 async function sendVerificationTo(email: string): Promise<void> {
+  if (!resendSandboxRecipientAllowed(email)) throw new EmailSandboxError();
   const sent = await withTimeout(
     issueEmailVerification(email),
     EMAIL_SEND_TIMEOUT_MS,
@@ -296,9 +306,14 @@ authRouter.post("/resend-verification", authBruteLimiter, validateBody(resendVer
       await sendVerificationTo(user.email);
     } catch (err) {
       // A stalled/failed Resend call must fail fast as a 500, never leave the
-      // client's "Yuborilmoqda..." button hanging.
+      // client's "Yuborilmoqda..." button hanging. A sandbox-blocked recipient
+      // answers 400 with the actionable reason instead.
       console.error("Resend Email Error:", err);
       logger.warn({ err, to: body.email }, "resend-verification: email delivery failed");
+      if (err instanceof EmailSandboxError) {
+        res.status(400).json({ success: false, message: err.message });
+        return;
+      }
       res.status(500).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring." });
       return;
     }
@@ -326,6 +341,10 @@ authRouter.post("/send-otp", requireAuth, authBruteLimiter, async (req, res) => 
   } catch (err) {
     console.error("Resend Email Error:", err);
     logger.warn({ err, to: user.email }, "send-otp: email delivery failed");
+    if (err instanceof EmailSandboxError) {
+      res.status(400).json({ success: false, message: err.message });
+      return;
+    }
     res.status(500).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring." });
   }
 });

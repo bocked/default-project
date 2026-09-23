@@ -442,7 +442,7 @@ export type EmailType =
   | "ANNOUNCEMENT"
   | "TEST";
 
-export type EmailDeliveryStatus = "SUCCESS" | "FAILED";
+export type EmailDeliveryStatus = "SUCCESS" | "SENT" | "DELIVERED" | "BOUNCED" | "FAILED";
 
 export interface EmailsHealth {
   mode: "resend" | "offline";
@@ -452,6 +452,8 @@ export interface EmailsHealth {
   sender: string;
   appUrl: string;
   testMode: boolean;
+  sandbox: boolean;
+  sandboxTo: string;
 }
 
 export interface EmailLogEntry {

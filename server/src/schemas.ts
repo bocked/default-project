@@ -410,7 +410,7 @@ export const emailLogQuerySchema = z.object({
   type: z
     .enum(["VERIFICATION", "PASSWORD_RESET", "QUOTE_MODERATION", "ANNOUNCEMENT", "TEST"])
     .optional(),
-  status: z.enum(["SUCCESS", "FAILED"]).optional(),
+  status: z.enum(["SUCCESS", "SENT", "DELIVERED", "BOUNCED", "FAILED"]).optional(),
 });
 export type EmailLogQuery = z.infer<typeof emailLogQuerySchema>;
 

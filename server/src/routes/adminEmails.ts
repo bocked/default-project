@@ -4,7 +4,7 @@ import { config } from "../config.js";
 import { requireSuperAdmin } from "../middleware/adminAuth.js";
 import { clientIp } from "../lib/ip.js";
 import { recordAudit } from "../lib/audit.js";
-import { issueEmailVerification } from "../lib/verifyEmail.js";
+import { issueEmailVerification, createEmailVerificationCode } from "../lib/verifyEmail.js";
 import {
   buildVerificationEmail,
   buildPasswordResetEmail,
@@ -38,6 +38,8 @@ adminEmailsRouter.get("/health", (_req, res) => {
     sender: config.sendFrom,
     appUrl: config.appUrl,
     testMode: process.env.NODE_ENV === "test",
+    sandbox: config.resendSandbox,
+    sandboxTo: config.resendSandboxTo,
   });
 });
 
@@ -192,4 +194,35 @@ adminEmailsRouter.post("/otp/:userId/resend", async (req, res) => {
     ip: clientIp(req.headers),
   });
   res.json({ ok: true, email: user.email });
+});
+
+// POST /api/admin/emails/otp/:userId/code - issue a fresh verification OTP and
+// return the PLAINTEXT code to the Super Admin. Used when a mail was lost or the
+// Resend sandbox cannot reach the user: the admin reads the code aloud or
+// forwards it over Telegram. Protected by requireSuperAdmin.
+adminEmailsRouter.post("/otp/:userId/code", async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.params.userId } });
+  if (!user) {
+    res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+    return;
+  }
+  if (!user.email) {
+    res.status(400).json({ error: "Bu hisobda email manzili yo'q" });
+    return;
+  }
+  if (user.emailVerified) {
+    res.status(400).json({ error: "Email allaqachon tasdiqlangan" });
+    return;
+  }
+  const { code } = await createEmailVerificationCode(user.email);
+  void recordAudit({
+    adminId: req.admin?.id ?? null,
+    adminEmail: req.admin?.email ?? null,
+    action: "email.otp.reveal",
+    targetType: "user",
+    targetId: user.id,
+    detail: user.email,
+    ip: clientIp(req.headers),
+  });
+  res.json({ ok: true, code, email: user.email });
 });

@@ -64,8 +64,9 @@ export const config = {
   currentTermsVersion: (process.env.CURRENT_TERMS_VERSION ?? "1.1").trim(),
   // Email verification token lifetime in minutes (max 15 recommended).
   verificationTokenMinutes: num(process.env.VERIFICATION_TOKEN_MINUTES, 15),
-  // 6-digit email OTP lifetime in minutes.
-  emailOtpMinutes: num(process.env.EMAIL_OTP_MINUTES, 15),
+  // 6-digit email OTP lifetime in minutes (kept short so a leaked code cannot
+  // be redeemed much later, and so admin-revealed codes stay relevant).
+  emailOtpMinutes: num(process.env.EMAIL_OTP_MINUTES, 10),
   // Long-lived refresh token lifetime in days (rotating HttpOnly cookie).
   refreshTokenDays: num(process.env.REFRESH_TOKEN_DAYS, 30),
 
@@ -76,6 +77,25 @@ export const config = {
   // Verified sender. onboarding@resend.dev is the Resend sandbox default until
   // a custom domain is added to the account.
   sendFrom: process.env.EMAIL_FROM ?? "yerlikoglon.uz <onboarding@resend.dev>",
+  // Resend sandbox mode: until a custom domain is verified, Resend only accepts
+  // mail to the account owner. Restricted because an "unverified domain" is far
+  // too easy to hit at runtime; the app answers with a clear "Test rejimida
+  // faqat administrator emailiga xat yuboriladi" instead of a confusing 5xx.
+  // Auto-detected from a @resend.dev sender, or forced via RESEND_SANDBOX=1.
+  resendSandbox:
+    process.env.RESEND_SANDBOX !== undefined
+      ? bool(process.env.RESEND_SANDBOX, false)
+      : (process.env.EMAIL_FROM ?? "").includes("@resend.dev"),
+  // The only recipient allowed while sandboxed. Defaults to the first
+  // SUPER_ADMIN_EMAILS entry so the project owner can always receive a test
+  // send; override with RESEND_SANDBOX_TO.
+  resendSandboxTo:
+    (process.env.RESEND_SANDBOX_TO ?? "").trim().toLowerCase() ||
+    (process.env.SUPER_ADMIN_EMAILS ?? "mirabbostolqinjonov@gmail.com").split(",")[0].trim().toLowerCase(),
+  // Resend webhook signing secret (issued by Resend when a webhook endpoint is
+  // created). Required by /api/webhooks/resend so delivery events can only be
+  // written by Resend itself.
+  resendWebhookSecret: process.env.RESEND_WEBHOOK_SECRET ?? "",
 
   // Telegram moderation bot. Empty token disables outbound bot calls
   // (the webhook still processes incoming updates).

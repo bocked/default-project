@@ -106,7 +106,7 @@ describe("E2E: super admin email management dashboard", () => {
     expect(res.json.templates.length).toBe(2);
     const verification = res.json.templates.find((t: { id: string }) => t.id === "verification");
     expect(verification.html).toContain("482719");
-    expect(verification.html).toContain("15 daqiqa");
+    expect(verification.html).toMatch(/muddat: \d+ daqiqa/);
     const reset = res.json.templates.find((t: { id: string }) => t.id === "password-reset");
     expect(reset.html).toContain("/reset-password");
   });

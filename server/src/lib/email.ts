@@ -3,6 +3,7 @@ import { EmailStatus, EmailType } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { config } from "../config.js";
 import { logger } from "./logger.js";
+import { sendAdminNotification } from "./telegram.js";
 
 export interface EmailRecord {
   to: string;
@@ -24,6 +25,36 @@ export const emailTranscript: EmailRecord[] = [];
 // send-otp / forgot-password routes rely on this so a stalled provider never
 // leaves the client's "Yuborilmoqda..." button hanging.
 export const EMAIL_SEND_TIMEOUT_MS = 8000;
+
+/** Raised when a send is blocked by Resend sandbox mode (unverified domain) and
+ *  the recipient is not the project owner. Routes surface this as a 400 with
+ *  the actionable Uzbek message instead of a generic 500. */
+export class EmailSandboxError extends Error {
+  constructor() {
+    super("Test rejimida faqat administrator emailiga xat yuboriladi");
+    this.name = "EmailSandboxError";
+  }
+}
+
+/** True when `to` may receive mail right now. Transcript/dev mode (no real
+ *  Resend API key, NODE_ENV=test) is never blocked so the e2e suite and local
+ *  development can keep reading the in-memory transcript. Only an actually
+ *  configured Resend sandbox (unverified @resend.dev sender) enforces the
+ *  owner-only rule. */
+export function resendSandboxRecipientAllowed(to: string): boolean {
+  if (!config.resendSandbox) return true;
+  if (!config.resendApiKey || process.env.NODE_ENV === "test") return true;
+  return to.trim().toLowerCase() === config.resendSandboxTo.trim().toLowerCase();
+}
+
+/** Fire-and-forget Telegram ping to the admin chat when a real Resend send
+ *  hard-fails or bounces. Never allowed to break the request that produced the
+ *  email. */
+function notifyDeliveryFailure(to: string, type: EmailType, error: string): void {
+  void sendAdminNotification(`❌ Email yuborilmadi (${type})\nKimga: ${to}\nXato: ${error.slice(0, 300)}`).catch((err) => {
+    logger.warn({ err }, "telegram delivery-failure notification failed");
+  });
+}
 
 /** Rejects when `promise` does not settle within `ms`. `message` is thrown as-is
  *  so routes can surface a user-facing reason ("Resend API javob bermadi
@@ -100,6 +131,20 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS });
     return true;
   }
+  if (!resendSandboxRecipientAllowed(input.to)) {
+    // Resend sandbox (unverified @resend.dev sender) rejects every recipient
+    // except the account owner. Record it as a FAILED delivery so the dashboard
+    // shows exactly why the mail never left, and hand the route a 400 reason.
+    const message = "Test rejimida faqat administrator emailiga xat yuboriladi";
+    console.error("❌ RESEND SANDBOX RESTRICTION:", {
+      to: input.to,
+      allowed: config.resendSandboxTo,
+      from: config.sendFrom,
+    });
+    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message });
+    notifyDeliveryFailure(input.to, type, message);
+    return false;
+  }
   try {
     const result = await withTimeout(
       client.emails.send({
@@ -114,19 +159,39 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
     );
     if (result.error) {
       const message = result.error.message ?? "Resend xatosi";
-      logger.error({ err: result.error, to: input.to }, "failed to send email (resend api)");
+      // Detailed, structure-first log: one glance at the console must reveal
+      // the provider status code, error name, exactly what we tried and who
+      // the failed recipient was.
+      console.error("❌ RESEND API ERROR:", {
+        statusCode: result.error.statusCode ?? null,
+        name: result.error.name ?? null,
+        message,
+        to: input.to,
+        from: config.sendFrom,
+        subject: input.subject,
+        type,
+      });
+      logger.error({ err: result.error, to: input.to, subject: input.subject, type }, "failed to send email (resend api)");
       await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message.slice(0, 500) });
+      notifyDeliveryFailure(input.to, type, message);
       return false;
     }
     const messageId = result.data?.id ?? null;
     logger.info({ to: input.to, subject: input.subject, messageId }, "email sent (resend api)");
-    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS, messageId });
+    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SENT, messageId });
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("Resend Email Error:", err);
-    logger.error({ err, to: input.to }, "failed to send email (resend api)");
+    console.error("❌ RESEND EMAIL ERROR:", {
+      error: message,
+      to: input.to,
+      from: config.sendFrom,
+      subject: input.subject,
+      type,
+    });
+    logger.error({ err, to: input.to, subject: input.subject }, "failed to send email (resend api)");
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message.slice(0, 500) });
+    notifyDeliveryFailure(input.to, type, message);
     return false;
   }
 }
@@ -191,7 +256,8 @@ function verificationUrl(token: string): string {
  *  used by the dashboard template preview with sample data. */
 export function buildVerificationEmail(token: string, code?: string): { subject: string; text: string; html: string } {
   const link = verificationUrl(token);
-  const codeBlock = code ? ["", "Yoki email kodini quyida kiriting (muddat: 15 daqiqa):", code] : [];
+  const otpMinutes = config.emailOtpMinutes;
+  const codeBlock = code ? ["", `Yoki email kodini quyida kiriting (muddat: ${otpMinutes} daqiqa):`, code] : [];
   const text = [
     "yerlikoglon.uz saytiga xush kelibsiz!",
     "",
@@ -210,7 +276,7 @@ export function buildVerificationEmail(token: string, code?: string): { subject:
       <a href="${link}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block">Emailni tasdiqlash</a>
     </p>
     ${code ? `
-    <p style="color:#334155;line-height:1.6">Yoki ushbu 6 xonali kodni saytda kiriting (muddat: 15 daqiqa):</p>
+    <p style="color:#334155;line-height:1.6">Yoki ushbu 6 xonali kodni saytda kiriting (muddat: ${otpMinutes} daqiqa):</p>
     <p style="font-size:28px;font-weight:bold;letter-spacing:6px;color:#0f172a;background:#f1f5f9;padding:12px 16px;border-radius:10px;text-align:center;margin:16px 0">${escapeHtml(code)}</p>` : ""}
     <p style="font-size:13px;color:#94a3b8">Agar tugma ishlamasa, ushbu havolani oching: ${link}</p>
   </div>`;
