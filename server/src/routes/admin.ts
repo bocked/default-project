@@ -1824,7 +1824,7 @@ async function broadcastEmail(title: string, message: string): Promise<number> {
   let sent = 0;
   for (const u of users) {
     if (!u.email) continue;
-    const ok = await sendEmail({ to: u.email, subject: `Iqtibosim — ${title}`, text, html });
+    const ok = (await sendEmail({ to: u.email, subject: `Iqtibosim — ${title}`, text, html })).ok;
     if (ok) sent += 1;
   }
   addLog("info", `Email e'lon: ${title} -> ${sent}/${users.length} foydalanuvchi`);

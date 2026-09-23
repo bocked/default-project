@@ -74,9 +74,9 @@ export const config = {
   // Leave RESEND_API_KEY empty to fall back to a console logger + in-memory
   // transcript (dev/test mode — no real mail is delivered).
   resendApiKey: process.env.RESEND_API_KEY ?? "",
-  // Verified sender. onboarding@resend.dev is the Resend sandbox default until
-  // a custom domain is added to the account.
-  sendFrom: process.env.EMAIL_FROM ?? "yerlikoglon.uz <onboarding@resend.dev>",
+  // Verified sender. no-reply@yerlikoglon.uz is the project's own domain,
+  // verified in Resend — production deliveries use it (override via EMAIL_FROM).
+  sendFrom: process.env.EMAIL_FROM ?? "yerlikoglon.uz <no-reply@yerlikoglon.uz>",
   // Resend sandbox mode: until a custom domain is verified, Resend only accepts
   // mail to the account owner. Restricted because an "unverified domain" is far
   // too easy to hit at runtime; the app answers with a clear "Test rejimida

@@ -187,11 +187,12 @@ async function toUser(
 }
 
 /** Sends the email verification OTP with a hard ~8s cap. Throws when the email
- *  could not be delivered (Resend failure/timeout recorded), so the calling
- *  route can answer a real 500 instead of an eternal pending request. Raises
- *  EmailSandboxError when the Resend sandbox blocks a non-owner recipient, so
- *  the route answers a clear "Test rejimida faqat administrator emailiga xat
- *  yuboriladi" 400 instead of a confusing 500. */
+ *  could not be delivered, carrying the provider's error message so the route
+ *  answers a real 400 with the reason (Resend failure/timeout recorded) instead
+ *  of an eternal pending request. Raises EmailSandboxError when the Resend
+ *  sandbox blocks a non-owner recipient, so the route answers a clear
+ *  "Test rejimida faqat administrator emailiga xat yuboriladi" 400 instead of a
+ *  confusing 500. */
 async function sendVerificationTo(email: string): Promise<void> {
   if (!resendSandboxRecipientAllowed(email)) throw new EmailSandboxError();
   const sent = await withTimeout(
@@ -199,7 +200,7 @@ async function sendVerificationTo(email: string): Promise<void> {
     EMAIL_SEND_TIMEOUT_MS,
     "Resend API javob bermadi (Timeout)",
   );
-  if (!sent) throw new Error("Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring.");
+  if (!sent.ok) throw new Error(sent.error ?? "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring.");
 }
 
 // POST /api/auth/register
@@ -305,16 +306,15 @@ authRouter.post("/resend-verification", authBruteLimiter, validateBody(resendVer
     try {
       await sendVerificationTo(user.email);
     } catch (err) {
-      // A stalled/failed Resend call must fail fast as a 500, never leave the
-      // client's "Yuborilmoqda..." button hanging. A sandbox-blocked recipient
-      // answers 400 with the actionable reason instead.
+      // A stalled/failed Resend call must fail fast as a 400 with the real
+      // reason, never leave the client's "Yuborilmoqda..." button hanging. A
+      // sandbox-blocked recipient answers 400 with the actionable reason too.
       console.error("Resend Email Error:", err);
       logger.warn({ err, to: body.email }, "resend-verification: email delivery failed");
-      if (err instanceof EmailSandboxError) {
-        res.status(400).json({ success: false, message: err.message });
-        return;
-      }
-      res.status(500).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring." });
+      res.status(400).json({
+        success: false,
+        message: err instanceof Error ? err.message : "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring.",
+      });
       return;
     }
   }
@@ -341,11 +341,10 @@ authRouter.post("/send-otp", requireAuth, authBruteLimiter, async (req, res) => 
   } catch (err) {
     console.error("Resend Email Error:", err);
     logger.warn({ err, to: user.email }, "send-otp: email delivery failed");
-    if (err instanceof EmailSandboxError) {
-      res.status(400).json({ success: false, message: err.message });
-      return;
-    }
-    res.status(500).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring." });
+    res.status(400).json({
+      success: false,
+      message: err instanceof Error ? err.message : "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring.",
+    });
   }
 });
 
@@ -364,7 +363,13 @@ authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswor
       },
     });
     try {
-      await withTimeout(sendPasswordResetEmail(user.email, token), EMAIL_SEND_TIMEOUT_MS, "Resend API javob bermadi (Timeout)");
+      const sent = await withTimeout(sendPasswordResetEmail(user.email, token), EMAIL_SEND_TIMEOUT_MS, "Resend API javob bermadi (Timeout)");
+      if (!sent.ok) {
+        // Anti-enumeration: still answer ok, but a failed delivery must not be
+        // silent — the full provider response is printed by sendEmail and the
+        // row lands in EmailLog as FAILED for the Super Admin dashboard.
+        logger.warn({ error: sent.error, to: body.email }, "forgot-password: email delivery failed");
+      }
     } catch (err) {
       // Anti-enumeration: still answer ok, but a stuck SMTP must not hang the
       // caller — log and move on.

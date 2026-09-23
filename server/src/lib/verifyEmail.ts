@@ -7,7 +7,7 @@ import {
   hashEmailVerifyCode,
   emailVerifyCodeExpiry,
 } from "./tokens.js";
-import { sendVerificationEmail } from "./email.js";
+import { sendVerificationEmail, type EmailSendResult } from "./email.js";
 
 /** Issues a fresh verification token + 6-digit OTP and persists both digests.
  *  Returns the plaintext OTP the way it was minted so the Super Admin can hand
@@ -31,9 +31,10 @@ export async function createEmailVerificationCode(email: string): Promise<{ toke
 /** Issues a fresh verification token + 6-digit OTP, persists both digests,
  *  emails them together. Either one can be redeemed at /verify-email. Reused
  *  by the auth routes and the Super Admin OTP resend endpoint.
- *  Returns whether the email was actually dispatched so callers can answer
- *  "sent" vs a hard 500 without hanging on a dead SMTP connection. */
-export async function issueEmailVerification(email: string): Promise<boolean> {
+ *  Returns the dispatch outcome (including the provider error message when the
+ *  delivery failed) so callers can answer "sent" vs a hard 400 with the real
+ *  reason — without hanging on a dead SMTP connection. */
+export async function issueEmailVerification(email: string): Promise<EmailSendResult> {
   const { token, code } = await createEmailVerificationCode(email);
   return sendVerificationEmail(email, token, code);
 }

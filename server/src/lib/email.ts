@@ -114,13 +114,23 @@ export interface SendEmailInput {
   html: string;
 }
 
+/** Outcome of a Resend dispatch. Carries the provider's error message so the
+ *  calling route can answer a human-readable 400 instead of a blind 500. */
+export interface EmailSendResult {
+  ok: boolean;
+  messageId?: string | null;
+  error?: string | null;
+}
+
 /**
  * Sends a transactional email through the Resend API (8s hard cap) and records
  * the outcome in EmailLog so the Super Admin dashboard can show delivery
- * history. Never throws: delivery problems are logged and reported as `false`
- * so routes can answer a 500 instead of hanging.
+ * history. Never throws: delivery problems are logged and reported as
+ * `ok:false` so routes can answer a 400 instead of hanging. The full Resend
+ * response (or error object) is printed to the console so a failed delivery is
+ * always diagnosable at a glance.
  */
-export async function sendEmail(input: SendEmailInput, type: EmailType = EmailType.ANNOUNCEMENT): Promise<boolean> {
+export async function sendEmail(input: SendEmailInput, type: EmailType = EmailType.ANNOUNCEMENT): Promise<EmailSendResult> {
   const record: EmailRecord = { ...input, at: new Date().toISOString(), type };
   const client = getResend();
   if (!client) {
@@ -129,7 +139,7 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
     const link = input.text.match(/https?:\/\/\S+/)?.[0];
     logger.info({ to: input.to, subject: input.subject, link }, "email (not sent: Resend API not configured)");
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS });
-    return true;
+    return { ok: true, messageId: null, error: null };
   }
   if (!resendSandboxRecipientAllowed(input.to)) {
     // Resend sandbox (unverified @resend.dev sender) rejects every recipient
@@ -143,7 +153,7 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
     });
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message });
     notifyDeliveryFailure(input.to, type, message);
-    return false;
+    return { ok: false, error: message };
   }
   try {
     const result = await withTimeout(
@@ -159,6 +169,9 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
     );
     if (result.error) {
       const message = result.error.message ?? "Resend xatosi";
+      // Full provider response first, so a copy-paste into a bug report shows
+      // the status code, name and message exactly as Resend sent it.
+      console.error("❌ RESEND DELIVERY ERROR:", result.error);
       // Detailed, structure-first log: one glance at the console must reveal
       // the provider status code, error name, exactly what we tried and who
       // the failed recipient was.
@@ -174,15 +187,17 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
       logger.error({ err: result.error, to: input.to, subject: input.subject, type }, "failed to send email (resend api)");
       await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message.slice(0, 500) });
       notifyDeliveryFailure(input.to, type, message);
-      return false;
+      return { ok: false, error: message };
     }
     const messageId = result.data?.id ?? null;
+    console.log("✅ EMAIL DELIVERED SUCCESSFULLY:", result.data);
     logger.info({ to: input.to, subject: input.subject, messageId }, "email sent (resend api)");
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SENT, messageId });
-    return true;
+    return { ok: true, messageId };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("❌ RESEND EMAIL ERROR:", {
+    console.error("❌ RESEND EMAIL ERROR:", err);
+    console.error("❌ RESEND DELIVERY ERROR:", {
       error: message,
       to: input.to,
       from: config.sendFrom,
@@ -192,7 +207,7 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
     logger.error({ err, to: input.to, subject: input.subject }, "failed to send email (resend api)");
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message.slice(0, 500) });
     notifyDeliveryFailure(input.to, type, message);
-    return false;
+    return { ok: false, error: message };
   }
 }
 
@@ -246,12 +261,8 @@ export async function sendTestEmail(to: string): Promise<{ ok: boolean; messageI
   </div>`;
 
   const sent = await sendEmail({ to, subject, text, html }, EmailType.TEST);
-  const last = await prisma.emailLog.findFirst({
-    where: { type: EmailType.TEST },
-    orderBy: { createdAt: "desc" },
-  });
-  if (sent) return { ok: true, messageId: last?.messageId ?? null };
-  return { ok: false, error: last?.error ?? "Noma'lum xatolik" };
+  if (sent.ok) return { ok: true, messageId: sent.messageId ?? null };
+  return { ok: false, error: sent.error ?? "Noma'lum xatolik" };
 }
 
 function verificationUrl(token: string): string {
@@ -290,7 +301,7 @@ export function buildVerificationEmail(token: string, code?: string): { subject:
   return { subject: "yerlikoglon.uz — emailni tasdiqlang", text, html };
 }
 
-export function sendVerificationEmail(to: string, token: string, code?: string): Promise<boolean> {
+export function sendVerificationEmail(to: string, token: string, code?: string): Promise<EmailSendResult> {
   const { subject, text, html } = buildVerificationEmail(token, code);
   return sendEmail({ to, subject, text, html }, EmailType.VERIFICATION);
 }
@@ -324,7 +335,7 @@ export function buildPasswordResetEmail(token: string): { subject: string; text:
   return { subject: "Iqtibosim — parolni tiklash", text, html };
 }
 
-export function sendPasswordResetEmail(to: string, token: string): Promise<boolean> {
+export function sendPasswordResetEmail(to: string, token: string): Promise<EmailSendResult> {
   const { subject, text, html } = buildPasswordResetEmail(token);
   return sendEmail({ to, subject, text, html }, EmailType.PASSWORD_RESET);
 }
@@ -336,7 +347,7 @@ const escapeHtml = (value: string): string =>
 export function sendQuoteModerationEmail(
   to: string,
   info: { decision: "approved" | "rejected"; reason?: string; text: string; displayAuthor: string }
-): Promise<boolean> {
+): Promise<EmailSendResult> {
   const approved = info.decision === "approved";
   const subject = approved ? "Iqtibosim — iqtibosingiz tasdiqlandi ✅" : "Iqtibosim — iqtibosingiz rad etildi";
   const text = [
