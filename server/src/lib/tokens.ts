@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import jwt from "jsonwebtoken";
+import jwt, { type SignOptions } from "jsonwebtoken";
 import { config } from "../config.js";
 
 export interface AuthTokenPayload {
@@ -8,8 +8,14 @@ export interface AuthTokenPayload {
   iat?: number;
 }
 
-export function signAuthToken(userId: string): string {
-  return jwt.sign({}, config.jwtSecret, { subject: userId, expiresIn: "7d" });
+export function signAuthToken(userId: string, opts?: { expiresIn?: SignOptions["expiresIn"] }): string {
+  // Short-lived access token; long sessions rely on the rotating HttpOnly
+  // refresh cookie minted at login/register and redeemed at /api/auth/refresh.
+  // A random jti guarantees two tokens minted in the same second differ.
+  return jwt.sign({ jti: crypto.randomUUID() }, config.jwtSecret, {
+    subject: userId,
+    expiresIn: opts?.expiresIn ?? "15m",
+  });
 }
 
 export function verifyAuthToken(token: string): AuthTokenPayload | null {
@@ -20,6 +26,28 @@ export function verifyAuthToken(token: string): AuthTokenPayload | null {
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Refresh tokens (HttpOnly cookie, rotating)
+// ---------------------------------------------------------------------------
+
+/** Opaque random value stored in an HttpOnly cookie. Rotated on every use. */
+export function generateRefreshToken(): string {
+  return crypto.randomBytes(48).toString("hex");
+}
+
+/** Only the SHA-256 digest is persisted (unique indexed on User). */
+export function hashRefreshToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+export function refreshTokenExpiry(): Date {
+  return new Date(Date.now() + config.refreshTokenDays * 24 * 60 * 60 * 1000);
+}
+
+export function refreshTokenMaxAgeMs(): number {
+  return config.refreshTokenDays * 24 * 60 * 60 * 1000;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,7 +65,7 @@ export function hashEmailVerificationToken(token: string): string {
 }
 
 export function emailVerificationExpiry(): Date {
-  return new Date(Date.now() + config.verificationTokenHours * 60 * 60 * 1000);
+  return new Date(Date.now() + config.verificationTokenMinutes * 60 * 1000);
 }
 
 /** 6-digit email-verification OTP shown in the same mail as the link token. */
@@ -49,9 +77,10 @@ export function hashEmailVerifyCode(code: string): string {
   return crypto.createHash("sha256").update(code).digest("hex");
 }
 
-/** OTP lifetime — shorter than the link so a stale code cannot be reused. */
+/** OTP lifetime — same short window as the link so a stale code cannot be
+ *  reused. */
 export function emailVerifyCodeExpiry(): Date {
-  return new Date(Date.now() + 60 * 60 * 1000);
+  return new Date(Date.now() + config.emailOtpMinutes * 60 * 1000);
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +97,7 @@ export function hashPasswordResetToken(token: string): string {
 }
 
 export function passwordResetExpiry(): Date {
-  return new Date(Date.now() + config.verificationTokenHours * 60 * 60 * 1000);
+  return new Date(Date.now() + config.verificationTokenMinutes * 60 * 1000);
 }
 
 // ---------------------------------------------------------------------------

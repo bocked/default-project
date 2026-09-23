@@ -430,3 +430,77 @@ export interface AdminPolicyTypeResponse {
   published: string;
   policies: AdminPolicy[];
 }
+
+// ---------------------------------------------------------------------------
+// Email management (Super Admin) — "Pochta Boshqaruvi"
+// ---------------------------------------------------------------------------
+
+export type EmailType =
+  | "VERIFICATION"
+  | "PASSWORD_RESET"
+  | "QUOTE_MODERATION"
+  | "ANNOUNCEMENT"
+  | "TEST";
+
+export type EmailDeliveryStatus = "SUCCESS" | "FAILED";
+
+export interface EmailsHealth {
+  mode: "smtp" | "brevo" | "offline";
+  configured: boolean;
+  host: string | null;
+  port: number;
+  secure: boolean;
+  from: string;
+  sender: string;
+  appUrl: string;
+  testMode: boolean;
+}
+
+export interface EmailLogEntry {
+  id: string;
+  type: EmailType;
+  to: string;
+  subject: string;
+  status: EmailDeliveryStatus;
+  messageId: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+export interface EmailLogResponse {
+  logs: EmailLogEntry[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface EmailTemplate {
+  id: string;
+  label: string;
+  subject: string;
+  text: string;
+  html: string;
+}
+
+export interface EmailTemplatesResponse {
+  templates: EmailTemplate[];
+}
+
+export interface ActiveOtp {
+  userId: string;
+  email: string;
+  masked: string;
+  issuedAt: string;
+  expiresAt: string;
+}
+
+export interface ActiveOtpResponse {
+  otps: ActiveOtp[];
+}
+
+export interface EmailTestResult {
+  ok: boolean;
+  to: string;
+  messageId: string | null;
+  error: string | null;
+}

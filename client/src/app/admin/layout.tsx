@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
-const NAV = [
+const NAV: Array<{ href: string; label: string; exact?: boolean; superOnly?: boolean }> = [
   { href: "/admin", label: "Boshqaruv paneli", exact: true },
   { href: "/admin/content", label: "Kontent" },
   { href: "/admin/quizzes", label: "Testlar" },
@@ -13,6 +13,7 @@ const NAV = [
   { href: "/admin/communication", label: "Muloqot" },
   { href: "/admin/settings", label: "Sozlamalar" },
   { href: "/admin/policies", label: "Siyosatlar" },
+  { href: "/admin/email-management", label: "📧 Pochta Boshqaruvi", superOnly: true },
   { href: "/admin/audit", label: "Audit" },
 ];
 
@@ -42,11 +43,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
+  const visibleNav = user.role === "SUPER_ADMIN" ? NAV : NAV.filter((item) => !item.superOnly);
+
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
       <aside className="lg:w-52 lg:shrink-0">
         <nav className="flex flex-wrap gap-1.5 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none lg:sticky lg:top-20 lg:flex-col">
-          {NAV.map((item) => {
+          {visibleNav.map((item) => {
             const active = item.exact ? pathname === item.href : pathname?.startsWith(item.href);
             return (
               <Link

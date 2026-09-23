@@ -18,7 +18,7 @@ afterAll(async () => {
 function otpFor(email: string): string {
   const record = [...emailTranscript].reverse().find((e) => e.to === email);
   expect(record).toBeDefined();
-  const match = /email kodini quyida kiriting \(muddat: 1 soat\):\n(\d{6})/.exec(record!.text);
+  const match = /email kodini quyida kiriting \(muddat: 15 daqiqa\):\n(\d{6})/.exec(record!.text);
   expect(match).not.toBeNull();
   return match![1];
 }

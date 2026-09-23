@@ -76,6 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     tokenStore.clear();
     setUser(null);
+    // Best-effort backend logout: revokes the refresh cookie server-side.
+    void api<{ ok: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => {});
   }, []);
 
   const refresh = useCallback(async (): Promise<User | null> => {

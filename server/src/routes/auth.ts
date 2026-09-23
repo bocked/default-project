@@ -6,12 +6,12 @@ import { requireAuth } from "../middleware/auth.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import {
   signAuthToken,
-  generateEmailVerificationToken,
+  generateRefreshToken,
+  hashRefreshToken,
+  refreshTokenExpiry,
+  refreshTokenMaxAgeMs,
   hashEmailVerificationToken,
-  emailVerificationExpiry,
-  generateEmailVerifyCode,
   hashEmailVerifyCode,
-  emailVerifyCodeExpiry,
   generatePasswordResetToken,
   hashPasswordResetToken,
   passwordResetExpiry,
@@ -23,7 +23,9 @@ import {
   hashQuickLoginSessionId,
   quickLoginSessionExpiry,
 } from "../lib/tokens.js";
-import { sendVerificationEmail, sendPasswordResetEmail } from "../lib/email.js";
+import { sendPasswordResetEmail } from "../lib/email.js";
+import { issueEmailVerification } from "../lib/verifyEmail.js";
+import { authBruteLimiter } from "../lib/rateLimit.js";
 import { getBotUsername, sendAdminNotification } from "../lib/telegram.js";
 import { recordActivity } from "../lib/activity.js";
 import { publishedPolicyVersion } from "../lib/policies.js";
@@ -55,6 +57,60 @@ import {
 } from "../schemas.js";
 
 export const authRouter = Router();
+
+// ---------------------------------------------------------------------------
+// HttpOnly refresh-token cookie helpers
+// ---------------------------------------------------------------------------
+
+const REFRESH_COOKIE = "refresh_token";
+
+/** Cookies are sent on the browser, not page requests — profile this when
+ *  moving to a same-origin deploy. Public pages never touch them. */
+function refreshCookieOptions() {
+  const secure = config.nodeEnv === "production";
+  const sameSite = (secure ? "none" : "lax") as "none" | "lax";
+  return { httpOnly: true, secure, sameSite, maxAge: refreshTokenMaxAgeMs(), path: "/" };
+}
+
+/** Same flags minus maxAge: express's clearCookie ignores maxAge and would
+ *  log a deprecation warning about it. */
+function refreshClearCookieOptions() {
+  const secure = config.nodeEnv === "production";
+  const sameSite = (secure ? "none" : "lax") as "none" | "lax";
+  return { httpOnly: true, secure, sameSite, path: "/" };
+}
+
+function parseCookies(header: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!header) return out;
+  for (const part of header.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (key && value) out[key] = decodeURIComponent(value);
+  }
+  return out;
+}
+
+function cookieRefreshToken(req: import("express").Request): string | null {
+  return parseCookies(req.headers.cookie)[REFRESH_COOKIE] ?? null;
+}
+
+/** Rotates and stores a fresh refresh digest on the user, then sets the
+ *  HttpOnly cookie with the raw value. Call on login/register/upgrade. */
+async function issueRefreshCookie(res: import("express").Response, userId: string): Promise<void> {
+  const raw = generateRefreshToken();
+  await prisma.user.update({
+    where: { id: userId },
+    data: { refreshTokenHash: hashRefreshToken(raw), refreshTokenExpiresAt: refreshTokenExpiry() },
+  });
+  res.cookie(REFRESH_COOKIE, raw, refreshCookieOptions());
+}
+
+function clearRefreshCookie(res: import("express").Response): void {
+  res.clearCookie(REFRESH_COOKIE, refreshClearCookieOptions());
+}
 
 interface SafeUser {
   id: string;
@@ -123,25 +179,8 @@ async function toUser(
   };
 }
 
-/** Issues a fresh verification token + 6-digit OTP, persists both digests,
- *  emails them together. Either one can be redeemed at /verify-email. */
-async function issueVerification(email: string): Promise<void> {
-  const token = generateEmailVerificationToken();
-  const code = generateEmailVerifyCode();
-  await prisma.user.update({
-    where: { email },
-    data: {
-      emailVerificationToken: hashEmailVerificationToken(token),
-      emailVerificationExpiresAt: emailVerificationExpiry(),
-      emailVerifyCodeHash: hashEmailVerifyCode(code),
-      emailVerifyCodeExpiresAt: emailVerifyCodeExpiry(),
-    },
-  });
-  await sendVerificationEmail(email, token, code);
-}
-
 // POST /api/auth/register
-authRouter.post("/register", validateBody(registerSchema), async (_req, res) => {
+authRouter.post("/register", authBruteLimiter, validateBody(registerSchema), async (_req, res) => {
   const body = res.locals.body as Register;
   const existing = await prisma.user.findUnique({ where: { email: body.email } });
   if (existing) {
@@ -159,16 +198,17 @@ authRouter.post("/register", validateBody(registerSchema), async (_req, res) => 
       acceptedTermsVersion: termsVersion,
     },
   });
-  await issueVerification(user.email!);
+  await issueEmailVerification(user.email!);
   // Best-effort: keep the admin informed about new registrations.
   const handle = [user.nickname, user.name].filter(Boolean).join(" / ") || user.email!;
   void sendAdminNotification(`🆕 Yangi foydalanuvchi ro'yxatdan o'tdi\n\n${user.email}${handle !== user.email ? `\n${handle}` : ""}`);
   void recordActivity({ userId: user.id, action: "REGISTER", detail: user.email! });
+  await issueRefreshCookie(res, user.id);
   res.status(201).json({ token: signAuthToken(user.id), user: await toUser(user, termsVersion) });
 });
 
 // POST /api/auth/login
-authRouter.post("/login", validateBody(loginSchema), async (_req, res) => {
+authRouter.post("/login", authBruteLimiter, validateBody(loginSchema), async (_req, res) => {
   const body = res.locals.body as Login;
   const user = await prisma.user.findUnique({ where: { email: body.email } });
   if (!user || !user.passwordHash || !(await verifyPassword(body.password, user.passwordHash))) {
@@ -187,6 +227,7 @@ authRouter.post("/login", validateBody(loginSchema), async (_req, res) => {
       ? await prisma.user.update({ where: { id: user.id }, data: { role: targetRole } })
       : user;
   void recordActivity({ userId: current.id, action: "LOGIN", detail: current.email ?? current.telegramUsername ?? "telegram" });
+  await issueRefreshCookie(res, current.id);
   res.json({ token: signAuthToken(user.id), user: await toUser(current) });
 });
 
@@ -234,18 +275,18 @@ authRouter.post("/verify-email", validateBody(verifyEmailSchema), async (_req, r
 });
 
 // POST /api/auth/resend-verification
-authRouter.post("/resend-verification", validateBody(resendVerificationSchema), async (_req, res) => {
+authRouter.post("/resend-verification", authBruteLimiter, validateBody(resendVerificationSchema), async (_req, res) => {
   const body = res.locals.body as ResendVerification;
   const user = await prisma.user.findUnique({ where: { email: body.email } });
   if (user && !user.emailVerified && user.email) {
-    await issueVerification(user.email);
+    await issueEmailVerification(user.email);
   }
   res.json({ ok: true });
 });
 
 // POST /api/auth/forgot-password - email a time-limited reset link. Always
 // answers ok so the endpoint cannot be used to enumerate registered emails.
-authRouter.post("/forgot-password", validateBody(forgotPasswordSchema), async (_req, res) => {
+authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswordSchema), async (_req, res) => {
   const body = res.locals.body as ForgotPassword;
   const user = await prisma.user.findUnique({ where: { email: body.email } });
   if (user && user.email) {
@@ -263,7 +304,7 @@ authRouter.post("/forgot-password", validateBody(forgotPasswordSchema), async (_
 });
 
 // POST /api/auth/reset-password - redeem the reset token and set a new password.
-authRouter.post("/reset-password", validateBody(resetPasswordSchema), async (_req, res) => {
+authRouter.post("/reset-password", authBruteLimiter, validateBody(resetPasswordSchema), async (_req, res) => {
   const body = res.locals.body as ResetPassword;
   const digest = hashPasswordResetToken(body.token);
   const user = await prisma.user.findFirst({ where: { resetPasswordToken: digest } });
@@ -440,6 +481,7 @@ authRouter.post("/telegram/quick/status", validateBody(telegramQuickSessionSchem
     // One token per completion: consume the session so it cannot be re-polled.
     await prisma.telegramQuickSession.delete({ where: { id: session.id } });
     void recordActivity({ userId: user.id, action: "LOGIN", detail: user.email ?? user.telegramUsername ?? "telegram" });
+    await issueRefreshCookie(res, user.id);
     res.json({ status: "COMPLETE", token: signAuthToken(user.id), user: await toUser(user) });
     return;
   }
@@ -474,7 +516,46 @@ authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), asy
       role: roleForEmail(body.email, user.role),
     },
   });
-  await issueVerification(updated.email!);
+  await issueEmailVerification(updated.email!);
   void recordActivity({ userId: updated.id, action: "REGISTER", detail: updated.email ?? "" });
+  await issueRefreshCookie(res, updated.id);
   res.json({ token: signAuthToken(updated.id), user: await toUser(updated, termsVersion) });
+});
+
+// ---------------------------------------------------------------------------
+// Refresh / logout (rotating HttpOnly cookie)
+// ---------------------------------------------------------------------------
+
+// POST /api/auth/refresh - redeem the HttpOnly refresh cookie for a new
+// short-lived access token. The cookie is rotated on every use; a revoked or
+// expired cookie returns 401 and is cleared on the client.
+authRouter.post("/refresh", async (req, res) => {
+  const raw = cookieRefreshToken(req);
+  if (!raw) {
+    res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
+    return;
+  }
+  const user = await prisma.user.findUnique({ where: { refreshTokenHash: hashRefreshToken(raw) } });
+  if (!user || user.blocked || !user.refreshTokenExpiresAt || user.refreshTokenExpiresAt < new Date()) {
+    clearRefreshCookie(res);
+    res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
+    return;
+  }
+  await issueRefreshCookie(res, user.id);
+  res.json({ token: signAuthToken(user.id) });
+});
+
+// POST /api/auth/logout - revoke the stored refresh digest and clear the
+// cookie. The access token itself is short-lived and simply ignored.
+authRouter.post("/logout", async (req, res) => {
+  const raw = cookieRefreshToken(req);
+  if (raw) {
+    const digest = hashRefreshToken(raw);
+    await prisma.user.updateMany({
+      where: { refreshTokenHash: digest },
+      data: { refreshTokenHash: null, refreshTokenExpiresAt: null },
+    });
+  }
+  clearRefreshCookie(res);
+  res.json({ ok: true });
 });

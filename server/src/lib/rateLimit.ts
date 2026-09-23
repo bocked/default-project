@@ -33,6 +33,18 @@ export const authLimiter = rateLimit({
   message: { error: "Too many requests" },
 });
 
+/** Tight per-IP guard on credential endpoints (register / login /
+ *  resend-verification / forgot-password / reset-password) — max 5 attempts
+ *  per 15 minutes so a throttling attacker cannot enumerate accounts or brute
+ *  force a password/OTP. */
+export const authBruteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});
+
 /** Skip when a trusted role (admin/super admin) is posting, so quote
  *  creation is never throttled for them. Runs after requireAuth. */
 const quoteSkip = (req: import("express").Request): boolean =>

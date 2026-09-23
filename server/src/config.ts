@@ -21,7 +21,7 @@ export const config = {
   isDev: (process.env.NODE_ENV ?? "development") !== "production",
   databaseUrl: process.env.DATABASE_URL ?? "postgresql://canvas:canvas@localhost:5432/canvas?schema=public",
   redisUrl: process.env.REDIS_URL ?? "",
-  corsOrigins: (process.env.CORS_ORIGINS ?? "*")
+  corsOrigins: (process.env.CORS_ORIGINS ?? "https://yerlikoglon.uz,https://*.yerlikoglon.uz")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
@@ -62,8 +62,12 @@ export const config = {
   // updated: accounts with an older acceptedTermsVersion must re-consent on
   // their next login before they can use their profile.
   currentTermsVersion: (process.env.CURRENT_TERMS_VERSION ?? "1.1").trim(),
-  // Email verification token lifetime in hours.
-  verificationTokenHours: num(process.env.VERIFICATION_TOKEN_HOURS, 24),
+  // Email verification token lifetime in minutes (max 15 recommended).
+  verificationTokenMinutes: num(process.env.VERIFICATION_TOKEN_MINUTES, 15),
+  // 6-digit email OTP lifetime in minutes.
+  emailOtpMinutes: num(process.env.EMAIL_OTP_MINUTES, 15),
+  // Long-lived refresh token lifetime in days (rotating HttpOnly cookie).
+  refreshTokenDays: num(process.env.REFRESH_TOKEN_DAYS, 30),
 
   // SMTP (nodemailer). Leave SMTP_HOST empty to fall back to a console
   // logger + in-memory transcript (dev/test mode). Gmail's email verification

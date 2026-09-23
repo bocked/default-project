@@ -44,9 +44,46 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Redeems the HttpOnly refresh cookie for a fresh short-lived access token.
+ * The raw cookie is set by the server on login/register (SameSite/credentials
+ * only work cross-origin on https). Deduplicated so concurrent 401s share one
+ * refresh round trip instead of hammering the endpoint.
+ */
+let refreshPromise: Promise<string | null> | null = null;
+
+async function tryRefreshToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${config.url}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+      });
+      if (!res.ok) return null;
+      const data = (await res.json().catch(() => null)) as { token?: string } | null;
+      if (data?.token) tokenStore.set(data.token);
+      return data?.token ?? null;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+      clearTimeout(timeoutId);
+    }
+  })();
+  return refreshPromise;
+}
+
 /** Typed fetch wrapper for the Iqtibosim API. Sends the stored JWT by default. */
 export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
   let lastError: ApiError | null = null;
+  // A 401 with a cookie-set session is retried once after rotating the access
+  // token; an explicit `options.token` never triggers the refresh flow.
+  let refreshed = false;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
@@ -83,6 +120,11 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
 
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       if (!res.ok) {
+        if (res.status === 401 && token && !options.token && !refreshed) {
+          refreshed = true;
+          const nextToken = await tryRefreshToken();
+          if (nextToken) continue; // loop again with the fresh token
+        }
         const message = typeof data?.error === "string" ? data.error : `So'rov bajarilmadi (${res.status})`;
         throw new ApiError(message, res.status, typeof data?.code === "string" ? data.code : undefined);
       }

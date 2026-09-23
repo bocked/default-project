@@ -392,6 +392,28 @@ export const quizRejectSchema = z.object({
 });
 export type QuizReject = z.infer<typeof quizRejectSchema>;
 
+// ---------------------------------------------------------------------------
+// Email management (Super Admin)
+// ---------------------------------------------------------------------------
+
+/** Optional recipient for a live SMTP test email; defaults to the admin's own
+ *  address when omitted. */
+export const emailTestSchema = z.object({
+  to: z.string().trim().toLowerCase().email().optional(),
+});
+export type EmailTest = z.infer<typeof emailTestSchema>;
+
+/** Pagination + filtering for the email log dashboard. */
+export const emailLogQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  type: z
+    .enum(["VERIFICATION", "PASSWORD_RESET", "QUOTE_MODERATION", "ANNOUNCEMENT", "TEST"])
+    .optional(),
+  status: z.enum(["SUCCESS", "FAILED"]).optional(),
+});
+export type EmailLogQuery = z.infer<typeof emailLogQuerySchema>;
+
 /**
  * Parses unknown socket/request data against a schema. Returns `null` when the
  * input does not match so callers can drop the event/request silently.

@@ -97,11 +97,17 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
           // from telegram.org.
           "script-src": ["'self'", "https://telegram.org"],
           "frame-src": ["https://telegram.org"],
+          // This API is not meant to be embedded anywhere. 0-blocks framing to
+          // prevent clickjacking against the authenticated admin endpoints.
+          "frame-ancestors": ["'none'"],
         },
       },
     })
   );
-  app.use(cors({ origin: corsOrigin }));
+  // API used from yerlikoglon.uz (and *.pages.dev previews); credentials are
+  // required for the HttpOnly refresh cookie, so CORS must echo the origin
+  // instead of using "*".
+  app.use(cors({ origin: corsOrigin, credentials: true }));
   app.use(compression());
   app.use(express.json({ limit: "1mb" }));
   app.use(pinoHttp({ logger, autoLogging: options.autoLogging ?? config.logToConsole }));

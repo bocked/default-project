@@ -43,6 +43,21 @@ enum QuizStatus {
   REJECTED
 }
 
+// Kind of transactional email that produced a row in EmailLog. The log powers
+// the Super Admin "Pochta Boshqaruvi" dashboard (history + delivery status).
+enum EmailType {
+  VERIFICATION
+  PASSWORD_RESET
+  QUOTE_MODERATION
+  ANNOUNCEMENT
+  TEST
+}
+
+enum EmailStatus {
+  SUCCESS
+  FAILED
+}
+
 model AdminLog {
   id         String   @id @default(uuid())
   adminId    String?
@@ -121,6 +136,10 @@ model User {
   acceptedTermsVersion        String?
   // Public avatar image URL shown on the profile and on the author's quotes.
   avatarUrl                   String?
+  // Rotating refresh token used to mint short-lived access tokens. Only the
+  // SHA-256 digest is stored; the raw value lives in an HttpOnly cookie.
+  refreshTokenHash            String?         @unique
+  refreshTokenExpiresAt       DateTime?
   createdAt                   DateTime        @default(now())
   updatedAt                   DateTime        @updatedAt
   // Moderation controls (admin panel).
@@ -385,4 +404,23 @@ model TelegramQuickSession {
   completedAt DateTime?
 
   @@index([status, createdAt])
+}
+
+// Delivery history of every transactional email (OTP verification, password
+// reset, moderation notifications, announcements, SMTP test messages). Status
+// mirrors what the transport reported; a FAILED row keeps the error for the
+// Super Admin email dashboard.
+model EmailLog {
+  id        String      @id @default(uuid())
+  type      EmailType
+  to        String
+  subject   String
+  status    EmailStatus
+  messageId String?
+  error     String?
+  createdAt DateTime    @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([type, createdAt(sort: Desc)])
+  @@index([to, createdAt(sort: Desc)])
 }

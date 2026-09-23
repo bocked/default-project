@@ -24,6 +24,7 @@ import {
 import type {
   ActivityPoint,
   AdminLogEntry,
+  AdminPolicyListResponse,
   AdminStats,
   Quote,
   TopQuotes,
@@ -38,6 +39,7 @@ export default function AdminDashboard() {
   const [topQuotes, setTopQuotes] = useState<TopQuotes | null>(null);
   const [visitorPoints, setVisitorPoints] = useState<VisitorPoint[]>([]);
   const [liveOnline, setLiveOnline] = useState<number | null>(null);
+  const [pendingPolicyDrafts, setPendingPolicyDrafts] = useState(0);
 
   useEffect(() => {
     void api<AdminStats>("/api/admin/stats").then(setStats).catch(() => setStats(null));
@@ -56,6 +58,9 @@ export default function AdminDashboard() {
     void api<{ points: VisitorPoint[] }>("/api/admin/stats/visitors?days=30")
       .then((d) => setVisitorPoints(d.points))
       .catch(() => setVisitorPoints([]));
+    void api<AdminPolicyListResponse>("/api/admin/policies")
+      .then((d) => setPendingPolicyDrafts(d.policies.filter((p) => !p.isApproved).length))
+      .catch(() => setPendingPolicyDrafts(0));
   }, []);
 
   // Keep dashboard numbers fresh (online + today's visitors/page views).
@@ -104,6 +109,20 @@ export default function AdminDashboard() {
           </Link>
         }
       />
+
+      {pendingPolicyDrafts > 0 && (
+        <Link
+          href="/admin/policies"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 transition hover:border-amber-300 dark:border-amber-500/30 dark:bg-amber-950/30 dark:hover:border-amber-500/50"
+        >
+          <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
+            ⚖️ Tasdiqlanishi kutilayotgan qonuniy hujjat(lar): {pendingPolicyDrafts}
+          </span>
+          <span className="text-xs font-semibold text-amber-700 underline dark:text-amber-400">
+            Ko&apos;rib chiqish →
+          </span>
+        </Link>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-2">
         <AdminCard>
