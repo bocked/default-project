@@ -6,7 +6,7 @@ import { prisma } from "../../src/lib/prisma.js";
 
 function resetLinkFor(email: string): string {
   const record = [...emailTranscript].reverse().find(
-    (r) => r.to === email && r.subject.includes("parolni tiklash")
+    (r) => r.to === email && r.subject.toLowerCase().includes("parolni tiklash")
   );
   if (!record) throw new Error(`no reset email found for ${email}`);
   return record.text.match(/https?:\/\/\S+/)?.[0] ?? "";
@@ -67,14 +67,50 @@ describe("E2E: password reset flow", () => {
     expect(reuse.status).toBe(400);
   });
 
-  it("does not reveal whether an email is registered", async () => {
+  it("answers 404 with a clear message for an unregistered email", async () => {
     const before = emailTranscript.length;
     const res = await request(base, "POST", "/api/auth/forgot-password", {
       body: { email: `${unique("ghost")}@example.com` },
     });
-    expect(res.status).toBe(200);
-    expect(res.json.ok).toBe(true);
+    expect(res.status).toBe(404);
+    expect(res.json.message).toBe("Ushbu email bilan ro'yxatdan o'tilmagan");
     expect(emailTranscript.length).toBe(before);
+  });
+
+  it("redeems the emailed 6-digit OTP code with email + code", async () => {
+    const email = `${unique("otp")}@example.com`;
+    const oldPass = "OldPass123!";
+    const newPass = "NewPass456!";
+
+    await request(base, "POST", "/api/auth/register", {
+      body: { email, password: oldPass, name: "Otp Tester" },
+    });
+
+    const forgot = await request(base, "POST", "/api/auth/forgot-password", { body: { email } });
+    expect(forgot.status).toBe(200);
+    expect(forgot.json.ok).toBe(true);
+
+    const record = [...emailTranscript].reverse().find(
+      (r) => r.to === email && r.subject.toLowerCase().includes("parolni tiklash")
+    );
+    expect(record).toBeDefined();
+    const code = record!.text.match(/(\d{6})/)?.[1];
+    expect(code).toBeTruthy();
+
+    const change = await request(base, "POST", "/api/auth/reset-password", {
+      body: { email, code, password: newPass },
+    });
+    expect(change.status).toBe(200);
+
+    const newLogin = await request(base, "POST", "/api/auth/login", {
+      body: { email, password: newPass },
+    });
+    expect(newLogin.status).toBe(200);
+
+    const wrongCode = await request(base, "POST", "/api/auth/reset-password", {
+      body: { email, code: "000000", password: "Another456!" },
+    });
+    expect(wrongCode.status).toBe(400);
   });
 
   it("rejects an invalid reset token", async () => {

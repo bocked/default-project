@@ -14,6 +14,8 @@ import {
   hashEmailVerifyCode,
   generatePasswordResetToken,
   hashPasswordResetToken,
+  generatePasswordResetCode,
+  hashPasswordResetCode,
   passwordResetExpiry,
   generateTelegramVerifyToken,
   hashTelegramVerifyToken,
@@ -348,44 +350,73 @@ authRouter.post("/send-otp", requireAuth, authBruteLimiter, async (req, res) => 
   }
 });
 
-// POST /api/auth/forgot-password - email a time-limited reset link. Always
-// answers ok so the endpoint cannot be used to enumerate registered emails.
+// POST /api/auth/forgot-password - email a 6-digit OTP reset code + a fallback
+// reset link. Unknown emails answer 404 so the UI can say "ro'yxatdan
+// o'tilmagan". Both the code and token are stored SHA-256 hashed with a
+// 15-minute resetTokenExpiry.
 authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswordSchema), async (_req, res) => {
   const body = res.locals.body as ForgotPassword;
   const user = await prisma.user.findUnique({ where: { email: body.email } });
-  if (user && user.email) {
-    const token = generatePasswordResetToken();
-    await prisma.user.update({
-      where: { email: user.email },
-      data: {
-        resetPasswordToken: hashPasswordResetToken(token),
-        resetPasswordExpiresAt: passwordResetExpiry(),
-      },
-    });
-    try {
-      const sent = await withTimeout(sendPasswordResetEmail(user.email, token), EMAIL_SEND_TIMEOUT_MS, "Resend API javob bermadi (Timeout)");
-      if (!sent.ok) {
-        // Anti-enumeration: still answer ok, but a failed delivery must not be
-        // silent — the full provider response is printed by sendEmail and the
-        // row lands in EmailLog as FAILED for the Super Admin dashboard.
-        logger.warn({ error: sent.error, to: body.email }, "forgot-password: email delivery failed");
-      }
-    } catch (err) {
-      // Anti-enumeration: still answer ok, but a stuck SMTP must not hang the
-      // caller — log and move on.
-      logger.warn({ err, to: body.email }, "forgot-password: email delivery failed");
-    }
+  if (!user || !user.email) {
+    res.status(404).json({ success: false, message: "Ushbu email bilan ro'yxatdan o'tilmagan" });
+    return;
   }
-  res.json({ ok: true });
+  const token = generatePasswordResetToken();
+  const code = generatePasswordResetCode();
+  await prisma.user.update({
+    where: { email: user.email },
+    data: {
+      resetPasswordToken: hashPasswordResetToken(token),
+      resetPasswordCodeHash: hashPasswordResetCode(code),
+      resetTokenExpiry: passwordResetExpiry(),
+    },
+  });
+  try {
+    const sent = await withTimeout(
+      sendPasswordResetEmail(user.email, token, code),
+      EMAIL_SEND_TIMEOUT_MS,
+      "Resend API javob bermadi (Timeout)",
+    );
+    if (!sent.ok) {
+      console.error("❌ FORGOT PASSWORD EMAIL ERROR:", sent.error);
+      res.status(500).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi" });
+      return;
+    }
+  } catch (err) {
+    console.error("❌ FORGOT PASSWORD EMAIL ERROR:", err);
+    res.status(500).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi" });
+    return;
+  }
+  res.json({ ok: true, message: "Parolni tiklash kodi pochtangizga yuborildi" });
 });
 
-// POST /api/auth/reset-password - redeem the reset token and set a new password.
+// POST /api/auth/reset-password - redeem either the emailed link token or the
+// email+code OTP pair and set a new bcrypt-hashed password. Clears the reset
+// fields so a token/code can never be replayed.
 authRouter.post("/reset-password", authBruteLimiter, validateBody(resetPasswordSchema), async (_req, res) => {
   const body = res.locals.body as ResetPassword;
-  const digest = hashPasswordResetToken(body.token);
-  const user = await prisma.user.findFirst({ where: { resetPasswordToken: digest } });
-  if (!user || !user.resetPasswordExpiresAt || user.resetPasswordExpiresAt < new Date()) {
-    res.status(400).json({ error: "Tiklash havolasi yaroqsiz yoki muddati o'tgan" });
+  let user: {
+    id: string;
+    email: string | null;
+    resetTokenExpiry: Date | null;
+    resetPasswordCodeHash?: string | null;
+  } | null = null;
+  if (body.token) {
+    user = await prisma.user.findFirst({
+      where: { resetPasswordToken: hashPasswordResetToken(body.token) },
+      select: { id: true, email: true, resetTokenExpiry: true },
+    });
+  } else if (body.email && body.code) {
+    user = await prisma.user.findUnique({
+      where: { email: body.email },
+      select: { id: true, email: true, resetPasswordCodeHash: true, resetTokenExpiry: true },
+    });
+    if (user && user.resetPasswordCodeHash !== hashPasswordResetCode(body.code)) {
+      user = null;
+    }
+  }
+  if (!user || !user.resetTokenExpiry || user.resetTokenExpiry < new Date()) {
+    res.status(400).json({ error: "Tiklash kodi/havolasi yaroqsiz yoki muddati o'tgan" });
     return;
   }
   await prisma.user.update({
@@ -393,7 +424,8 @@ authRouter.post("/reset-password", authBruteLimiter, validateBody(resetPasswordS
     data: {
       passwordHash: await hashPassword(body.password),
       resetPasswordToken: null,
-      resetPasswordExpiresAt: null,
+      resetPasswordCodeHash: null,
+      resetTokenExpiry: null,
     },
   });
   res.json({ ok: true });

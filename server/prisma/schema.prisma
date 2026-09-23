@@ -100,7 +100,8 @@ model User {
   emailVerificationToken      String?         @unique
   emailVerificationExpiresAt  DateTime?
   resetPasswordToken          String?         @unique
-  resetPasswordExpiresAt      DateTime?
+  resetPasswordCodeHash       String?
+  resetTokenExpiry            DateTime?
   // Telegram phone verification (private, admin-only).
   telegramId                  String?         @unique
   phoneNumber                 String?

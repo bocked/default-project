@@ -310,33 +310,39 @@ function resetPasswordUrl(token: string): string {
   return `${config.appUrl.replace(/\/$/, "")}/reset-password?token=${encodeURIComponent(token)}`;
 }
 
-/** Rendered content of the password reset email (also used for previews). */
-export function buildPasswordResetEmail(token: string): { subject: string; text: string; html: string } {
+/** Rendered content of the password reset email (also used for previews). The
+ *  mail leads with the 6-digit OTP code and carries a fallback link so either
+ *  method can be redeemed at /reset-password. */
+export function buildPasswordResetEmail(token: string, code?: string): { subject: string; text: string; html: string } {
   const link = resetPasswordUrl(token);
   const text = [
-    "Iqtibosim — parolni tiklash",
+    "yerlikoglon.uz — parolni tiklash",
     "",
-    "Parolingizni tiklash uchun quyidagi havolani oching:",
+    `Parolni tiklash uchun tasdiqlash kodi: ${code ?? ""}`.trim(),
+    "",
+    "Ushbu kod 15 daqiqa davomida amal qiladi. Agar buni siz so'ramagan bo'lsangiz, xabarga e'tibor bermang.",
+    "",
+    "Yoki quyidagi havola orqali ham tiklash mumkin:",
     link,
-    "",
-    "Bu havola vaqtinchalik bo'lib, bir marta ishlatiladi. Agar siz parol tiklashni so'ramagan bo'lsangiz, bu xabarni e'tiborsiz qoldiring.",
   ].join("\n");
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
-    <h2 style="color:#0f172a">Iqtibosim</h2>
-    <p style="color:#334155;line-height:1.6">Parolingizni tiklash uchun quyidagi tugmani bosing:</p>
-    <p style="margin:24px 0">
+    <h2 style="color:#0f172a">yerlikoglon.uz</h2>
+    <h3 style="color:#0f172a">Parolni tiklash uchun tasdiqlash kodi: <strong style="color:#2563eb;letter-spacing:4px">${escapeHtml(code ?? "")}</strong></h3>
+    <p style="color:#334155;line-height:1.6">Ushbu kod 15 daqiqa davomida amal qiladi. Agar buni siz so'ramagan bo'lsangiz, xabarga e'tibor bermang.</p>
+    <p style="font-size:13px;color:#94a3b8">Yoki quyidagi havola orqali ham tiklash mumkin:</p>
+    <p style="margin:16px 0">
       <a href="${link}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block">Parolni tiklash</a>
     </p>
     <p style="font-size:13px;color:#94a3b8">Bu havola vaqtinchalik bo'lib, bir marta ishlatiladi. Agar siz parol tiklashni so'ramagan bo'lsangiz, bu xabarni e'tiborsiz qoldiring.</p>
   </div>`;
 
-  return { subject: "Iqtibosim — parolni tiklash", text, html };
+  return { subject: "yerlikoglon.uz — Parolni tiklash kodi", text, html };
 }
 
-export function sendPasswordResetEmail(to: string, token: string): Promise<EmailSendResult> {
-  const { subject, text, html } = buildPasswordResetEmail(token);
+export function sendPasswordResetEmail(to: string, token: string, code?: string): Promise<EmailSendResult> {
+  const { subject, text, html } = buildPasswordResetEmail(token, code);
   return sendEmail({ to, subject, text, html }, EmailType.PASSWORD_RESET);
 }
 

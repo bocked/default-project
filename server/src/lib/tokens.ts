@@ -96,6 +96,16 @@ export function hashPasswordResetToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+/** 6-digit password-reset OTP shown in the reset email (mirrors the email
+ *  verification code). */
+export function generatePasswordResetCode(): string {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+}
+
+export function hashPasswordResetCode(code: string): string {
+  return crypto.createHash("sha256").update(code).digest("hex");
+}
+
 export function passwordResetExpiry(): Date {
   return new Date(Date.now() + config.verificationTokenMinutes * 60 * 1000);
 }

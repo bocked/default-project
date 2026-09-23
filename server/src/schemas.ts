@@ -94,10 +94,23 @@ export const forgotPasswordSchema = z.object({
 });
 export type ForgotPassword = z.infer<typeof forgotPasswordSchema>;
 
-export const resetPasswordSchema = z.object({
-  token: z.string().trim().min(20).max(128),
-  password: z.string().min(8).max(72),
-});
+/** Redeems a password reset with either the emailed link token or the 6-digit
+ *  OTP code (email + code). Exactly one method must be supplied, plus the new
+ *  password. */
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().trim().min(20).max(128).optional(),
+    email: email.optional(),
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, { message: "Kod 6 xonali bo'lishi kerak" })
+      .optional(),
+    password: z.string().min(8).max(72),
+  })
+  .refine((v) => (v.token ? !v.email && !v.code : Boolean(v.email && v.code)), {
+    message: "Havola token yoki email+kod juftligi kerak",
+  });
 export type ResetPassword = z.infer<typeof resetPasswordSchema>;
 
 export const updateProfileSchema = z.object({
