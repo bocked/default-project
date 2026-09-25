@@ -706,6 +706,63 @@ authRouter.post("/refresh", async (req, res) => {
   res.json({ token: signAuthToken(user.id) });
 });
 
+// POST /api/auth/me/delete - GDPR right-to-erasure: soft-delete the current
+// account and irreversibly anonymize every piece of personal data. The email
+// is replaced with a unique, non-resolving marker so the unique constraint
+// stays intact without leaking the original address; credentials and all
+// verification/reset digests are dropped. The user is flagged blocked so the
+// existing requireAuth 403 (ACCOUNT_BLOCKED) immediately invalidates any
+// outstanding access tokens, and the refresh cookie is revoked.
+authRouter.post("/me/delete", requireAuth, async (req, res) => {
+  const user = req.user!;
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      email: `deleted-${user.id}@deleted.local`,
+      passwordHash: null,
+      name: null,
+      nickname: null,
+      role: "USER",
+      roleOverride: null,
+      emailVerified: false,
+      emailVerifiedAt: null,
+      emailVerificationToken: null,
+      emailVerificationExpiresAt: null,
+      emailVerifyCodeHash: null,
+      emailVerifyCodeExpiresAt: null,
+      resetPasswordToken: null,
+      resetPasswordCodeHash: null,
+      resetTokenExpiry: null,
+      telegramId: null,
+      phoneNumber: null,
+      phoneVerified: false,
+      telegramUsername: null,
+      telegramFirstName: null,
+      telegramLastName: null,
+      quickLogin: false,
+      telegramVerifyToken: null,
+      telegramVerifyExpiresAt: null,
+      telegramVerifyChatId: null,
+      telegramVerifyCode: null,
+      telegramVerifyCodeExpiresAt: null,
+      isPremium: false,
+      premiumExpiresAt: null,
+      customWatermark: null,
+      isSuperApproved: false,
+      superApprovedAt: null,
+      avatarUrl: null,
+      refreshTokenHash: null,
+      refreshTokenExpiresAt: null,
+      blocked: true,
+      blockedAt: new Date(),
+      deletedAt: new Date(),
+    },
+  });
+  clearRefreshCookie(res);
+  logger.info({ userId: user.id }, "account self-deleted and anonymized (GDPR)");
+  res.json({ ok: true, message: "Hisobingiz o'chirildi" });
+});
+
 // POST /api/auth/logout - revoke the stored refresh digest and clear the
 // cookie. The access token itself is short-lived and simply ignored.
 authRouter.post("/logout", async (req, res) => {
