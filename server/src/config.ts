@@ -119,6 +119,18 @@ export const config = {
   // written by Resend itself.
   resendWebhookSecret: process.env.RESEND_WEBHOOK_SECRET ?? "",
 
+  // SMTP (nodemailer) transactional email — preferred over Resend when set.
+  // Works with any SMTP relay, e.g. Gmail using an App Password:
+  //   SMTP_HOST="smtp.gmail.com" SMTP_PORT=587 SMTP_SECURE=false
+  // Leave SMTP_HOST empty to keep Resend / the offline transcript fallback.
+  smtpHost: process.env.SMTP_HOST ?? "",
+  smtpPort: num(process.env.SMTP_PORT, 587),
+  smtpSecure: bool(process.env.SMTP_SECURE, false),
+  smtpUser: process.env.SMTP_USER ?? "",
+  smtpPass: process.env.SMTP_PASS ?? "",
+  // True when a real SMTP transport should back sendEmail().
+  smtpConfigured: Boolean(process.env.SMTP_HOST && process.env.SMTP_PASS),
+
   // Telegram moderation bot. Empty token disables outbound bot calls
   // (the webhook still processes incoming updates).
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? "",

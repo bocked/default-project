@@ -1,4 +1,6 @@
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
+import type { Transporter } from "nodemailer";
 import { EmailStatus, EmailType } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { config } from "../config.js";
@@ -81,6 +83,32 @@ function getResend(): Resend | null {
   return null;
 }
 
+/** Active email provider: SMTP when configured, otherwise Resend when a key is
+ *  present, otherwise the offline in-memory transcript. Test mode never wires a
+ *  real transport so the e2e suite keeps reading the transcript. */
+export function emailMode(): "smtp" | "resend" | "offline" {
+  if (config.smtpConfigured && process.env.NODE_ENV !== "test") return "smtp";
+  if (config.resendApiKey && process.env.NODE_ENV !== "test") return "resend";
+  return "offline";
+}
+
+let smtpTransporter: Transporter | null = null;
+
+/** Singleton nodemailer SMTP transport. Lazily built only when SMTP_* env vars
+ *  are configured (never in test mode). */
+function getSmtp(): Transporter | null {
+  if (!config.smtpConfigured || process.env.NODE_ENV === "test") return null;
+  if (!smtpTransporter) {
+    smtpTransporter = nodemailer.createTransport({
+      host: config.smtpHost,
+      port: config.smtpPort,
+      secure: config.smtpSecure,
+      auth: { user: config.smtpUser, pass: config.smtpPass },
+    });
+  }
+  return smtpTransporter;
+}
+
 /** Best-effort persistence of an EmailLog row; failures here must never break
  *  the request that produced the mail. */
 async function recordLog(entry: {
@@ -123,21 +151,34 @@ export interface EmailSendResult {
 }
 
 /**
- * Sends a transactional email through the Resend API (8s hard cap) and records
- * the outcome in EmailLog so the Super Admin dashboard can show delivery
- * history. Never throws: delivery problems are logged and reported as
- * `ok:false` so routes can answer a 400 instead of hanging. The full Resend
+ * Sends a transactional email through the active provider (SMTP > Resend) and
+ * records the outcome in EmailLog so the Super Admin dashboard can show
+ * delivery history. Never throws: delivery problems are logged and reported as
+ * `ok:false` so routes can answer a 400 instead of hanging. The full provider
  * response (or error object) is printed to the console so a failed delivery is
- * always diagnosable at a glance.
+ * always diagnosable at a glance. Without any configured provider the mail is
+ * only kept in the in-memory transcript (dev/test mode).
  */
 export async function sendEmail(input: SendEmailInput, type: EmailType = EmailType.ANNOUNCEMENT): Promise<EmailSendResult> {
   const record: EmailRecord = { ...input, at: new Date().toISOString(), type };
-  const client = getResend();
-  if (!client) {
-    // No API key configured: log + keep a transcript for tests/dev.
+  const mode = emailMode();
+  if (mode === "offline") {
+    // No provider configured: log + keep a transcript for tests/dev.
     emailTranscript.push(record);
     const link = input.text.match(/https?:\/\/\S+/)?.[0];
-    logger.info({ to: input.to, subject: input.subject, link }, "email (not sent: Resend API not configured)");
+    logger.info({ to: input.to, subject: input.subject, link }, "email (not sent: email provider not configured)");
+    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS });
+    return { ok: true, messageId: null, error: null };
+  }
+  if (mode === "smtp") return sendViaSmtp(input, type);
+
+  // Resend path.
+  const client = getResend();
+  if (!client) {
+    // Defensive: emailMode() said resend but the singleton refused (test mode).
+    emailTranscript.push(record);
+    const link = input.text.match(/https?:\/\/\S+/)?.[0];
+    logger.info({ to: input.to, subject: input.subject, link }, "email (not sent: resend client unavailable)");
     await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SUCCESS });
     return { ok: true, messageId: null, error: null };
   }
@@ -211,6 +252,71 @@ export async function sendEmail(input: SendEmailInput, type: EmailType = EmailTy
   }
 }
 
+/** Dispatches through the nodemailer SMTP transport (8s hard cap) and logs the
+ *  outcome exactly like the Resend path so the dashboard stays consistent. */
+async function sendViaSmtp(input: SendEmailInput, type: EmailType): Promise<EmailSendResult> {
+  const transport = getSmtp();
+  if (!transport) {
+    // Smtp mode is on but the singleton refused to build (should not happen).
+    logger.warn({ to: input.to, subject: input.subject }, "email (not sent: smtp transport unavailable)");
+    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: "SMTP transport unavailable" });
+    return { ok: false, error: "SMTP transport unavailable" };
+  }
+  try {
+    const info = await withTimeout(
+      transport.sendMail({
+        from: config.sendFrom,
+        to: input.to,
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+      }),
+      EMAIL_SEND_TIMEOUT_MS,
+      "SMTP server javob bermadi (Timeout)",
+    );
+    const messageId = info.messageId ?? null;
+    console.log("✅ EMAIL DELIVERED SUCCESSFULLY (SMTP):", { messageId, to: input.to, subject: input.subject });
+    logger.info({ to: input.to, subject: input.subject, messageId }, "email sent (smtp)");
+    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.SENT, messageId });
+    return { ok: true, messageId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("❌ SMTP EMAIL ERROR:", err);
+    console.error("❌ SMTP DELIVERY ERROR:", {
+      error: message,
+      to: input.to,
+      from: config.sendFrom,
+      subject: input.subject,
+      type,
+    });
+    logger.error({ err, to: input.to, subject: input.subject }, "failed to send email (smtp)");
+    await recordLog({ type, to: input.to, subject: input.subject, status: EmailStatus.FAILED, error: message.slice(0, 500) });
+    notifyDeliveryFailure(input.to, type, message);
+    return { ok: false, error: message };
+  }
+}
+
+/** Startup self-test: verifies the SMTP transport (transporter.verify()) so a
+ *  bad App Password or unreachable relay surfaces the moment the server boots,
+ *  not on the first user's send-otp click. Returns true when the transport is
+ *  ready (or deliberately skipped in transcript/test mode). */
+export async function verifySmtpAtStartup(): Promise<boolean> {
+  const transport = getSmtp();
+  if (!transport) {
+    console.log("SMTP transport faol emas — Resend / offline transcript rejimi (SMTP_HOST sozlanmagan)");
+    return false;
+  }
+  try {
+    await withTimeout(transport.verify(), EMAIL_SEND_TIMEOUT_MS, "SMTP server javob bermadi (Timeout)");
+    console.log(`✅ SMTP tayyor! (${config.smtpHost}:${config.smtpPort})`);
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("❌ SMTP Ulanishda XATOLIK:", message);
+    return false;
+  }
+}
+
 /** Startup self-test: probes the Resend API with the configured key so a wrong
  *  key or unreachable endpoint surfaces the moment the Express server boots,
  *  not on the first user's send-otp click. Returns true when the API is ready
@@ -245,9 +351,9 @@ export async function verifyResendAtStartup(): Promise<boolean> {
 
 /** Delivery result for the Super Admin dashboard test card. */
 export async function sendTestEmail(to: string): Promise<{ ok: boolean; messageId?: string | null; error?: string | null }> {
-  const subject = "yerlikoglon.uz — Resend sinov xati";
+  const subject = "yerlikoglon.uz — email xizmati sinov xati";
   const text = [
-    "yerlikoglon.uz — Resend sinov xati",
+    "yerlikoglon.uz — email xizmati sinov xati",
     "",
     "Agar bu xatni olgan bo'lsangiz, email xizmati to'g'ri ishlayapti.",
     "",
@@ -256,7 +362,7 @@ export async function sendTestEmail(to: string): Promise<{ ok: boolean; messageI
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
     <h2 style="color:#0f172a">yerlikoglon.uz</h2>
-    <p style="color:#16a34a;font-weight:bold">Resend ishlayapti!</p>
+    <p style="color:#16a34a;font-weight:bold">Email xizmati ishlayapti!</p>
     <p style="color:#334155;line-height:1.6">Bu email super admin "Pochta boshqaruvi" panelidan yuborilgan sinov xati.</p>
   </div>`;
 

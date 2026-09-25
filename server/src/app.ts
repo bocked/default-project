@@ -23,7 +23,7 @@ import { initSocket } from "./socket/index.js";
 import { redis } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { flushAnalyticsToDb } from "./lib/analytics.js";
-import { verifyResendAtStartup } from "./lib/email.js";
+import { verifySmtpAtStartup, verifyResendAtStartup, emailMode } from "./lib/email.js";
 import { logger } from "./lib/logger.js";
 import { apiLimiter, authLimiter } from "./lib/rateLimit.js";
 import { tryEnsureDefaultCategories } from "./lib/categories.js";
@@ -296,20 +296,28 @@ export async function startServer(): Promise<void> {
     logger.warn("ADMIN_PASSWORD is still the default value. Change it in production!");
   }
 
-  // Startup sanity check: confirm Resend was loaded from .env. The API key is
-  // masked so the secret never reaches the logs — only that it was set.
+  // Startup sanity check: confirm the email provider was loaded from .env.
+  // Secrets are masked so they never reach the logs — only that they were set.
   logger.info(
     {
-      resendApiKey: config.resendApiKey ? maskSecret(config.resendApiKey) : "(not set — offline transcript mode)",
+      emailMode: emailMode(),
+      smtpConfigured: config.smtpConfigured,
+      smtpHost: config.smtpHost || "(not set)",
+      resendApiKey: config.resendApiKey ? maskSecret(config.resendApiKey) : "(not set)",
       sendFrom: config.sendFrom,
     },
-    "resend env loaded",
+    "email env loaded",
   );
 
-  // Live Resend probe: a wrong key or unreachable endpoint must surface at boot
-  // ("✅ Resend API tayyor!" / "❌ Resend Ulanishda XATOLIK: ...") rather than on
-  // the first user's send-otp click. Fire-and-forget, never blocks boot.
-  void verifyResendAtStartup();
+  // Live provider probe: a wrong key, revoked App Password or unreachable relay
+  // must surface at boot ("✅ SMTP tayyor!" / "❌ SMTP Ulanishda XATOLIK: ...")
+  // rather than on the first user's send-otp click. Fire-and-forget, never
+  // blocks boot.
+  if (emailMode() === "smtp") {
+    void verifySmtpAtStartup();
+  } else {
+    void verifyResendAtStartup();
+  }
 
   const { server, io } = createApp();
 

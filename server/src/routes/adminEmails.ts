@@ -9,6 +9,7 @@ import {
   buildVerificationEmail,
   buildPasswordResetEmail,
   sendTestEmail,
+  emailMode,
 } from "../lib/email.js";
 import {
   validateBody,
@@ -30,10 +31,11 @@ adminEmailsRouter.use(requireSuperAdmin);
 // GET /api/admin/emails/health - transport configuration status for the
 // dashboard cards. Never reveals credentials, only whether the transport is on.
 adminEmailsRouter.get("/health", (_req, res) => {
+  const mode = emailMode();
   res.json({
-    mode: config.resendApiKey ? "resend" : "offline",
-    configured: Boolean(config.resendApiKey),
-    provider: config.resendApiKey ? "resend" : null,
+    mode,
+    configured: mode !== "offline",
+    provider: mode === "offline" ? null : mode,
     from: config.sendFrom,
     sender: config.sendFrom,
     appUrl: config.appUrl,
