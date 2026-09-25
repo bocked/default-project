@@ -14,6 +14,7 @@ set -euo pipefail
 #      REPO_URL=https://github.com/bocked/default-project.git
 #      DOMAIN=api.yerlikoglon.uz
 #      ADMIN_PASSWORD=<your-secret>     (random 24-char hex if omitted)
+#      JWT_SECRET=<your-secret>         (random 64-char hex if omitted)
 #      SKIP_CERTBOT=1                   (skip Let's Encrypt for first test)
 # ============================================================================
 
@@ -83,6 +84,7 @@ npx prisma generate
 
 # ----------------------------------------------------------------- .env ----
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(openssl rand -hex 12)}"
+JWT_SECRET="${JWT_SECRET:-$(openssl rand -hex 32)}"
 cat > .env <<EOF
 PORT=${APP_PORT}
 NODE_ENV=production
@@ -90,7 +92,8 @@ DATABASE_URL="postgresql://${PG_USER}:${PG_PASSWORD}@localhost:5432/${PG_DB}?sch
 REDIS_URL="redis://localhost:6379"
 CORS_ORIGINS="${FRONTEND_ORIGINS}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD}"
-PUBLIC_BASE_URL="https://${DOMAIN}"
+JWT_SECRET="${JWT_SECRET}"
+APP_URL="https://${DOMAIN}"
 LOG_TO_CONSOLE=true
 EOF
 chmod 600 .env
