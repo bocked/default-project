@@ -27,7 +27,7 @@ const PM2_APP_NAME = "yerlikoglon-api";
 const DISK_THRESHOLD = 80;
 const MINUTE = 60 * 1000;
 
-const RATE_LIMIT: Record<string, number> = {
+const RATE_LIMIT = {
   apiDown: 60 * MINUTE,
   pm2Down: 60 * MINUTE,
   pm2Restart: 10 * MINUTE,
