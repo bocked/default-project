@@ -15,6 +15,8 @@ function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ha, hb);
 }
 
+export { safeEqual };
+
 /**
  * Protects /api/admin/* routes. Accepts either:
  *  - `Authorization: Bearer <ADMIN_PASSWORD>` (shared secret), or

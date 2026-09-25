@@ -6,6 +6,7 @@ import { clientIp } from "../lib/ip.js";
 import { addLog } from "../lib/logstore.js";
 import { setOnlineCount } from "../routes/api.js";
 import { parseZod, adminAuthSchema, adminBanSchema, adminUnbanSchema } from "../schemas.js";
+import { safeEqual } from "../middleware/adminAuth.js";
 import { Cooldown } from "../lib/cooldown.js";
 import { SocketRateLimiter } from "../lib/socketRateLimit.js";
 
@@ -82,7 +83,7 @@ function registerAdminHandlers(socket: Socket): void {
     if (!adminAuthLimiter.allow(socket.data.ip ?? "unknown")) return;
     const parsed = parseZod(adminAuthSchema, data);
     if (!parsed) return;
-    if (parsed.password === config.adminPassword) {
+    if (safeEqual(parsed.password, config.adminPassword)) {
       socket.data.isAdmin = true;
       socket.emit("admin:authed", { ok: true });
       addLog("info", `Admin logged in (socket ${socket.id.slice(0, 8)})`);

@@ -1584,7 +1584,36 @@ adminRouter.get("/activity", async (req, res) => {
 
 async function backupSnapshot(): Promise<Record<string, unknown>> {
   const [users, quotes, categories, tags, content, settings, seo, announcements, feedback] = await Promise.all([
-    prisma.user.findMany({ orderBy: { createdAt: "asc" } }),
+    // Safest possible DTO: credentials (passwordHash, refreshTokenHash), the
+    // private phone/Telegram identifiers and every verification digest are
+    // excluded, so a downloaded or restored backup can never leak secrets.
+    // Only non-sensitive profile/dashboard fields are persisted.
+    prisma.user.findMany({
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        nickname: true,
+        role: true,
+        roleOverride: true,
+        emailVerified: true,
+        phoneVerified: true,
+        quickLogin: true,
+        isPremium: true,
+        premiumExpiresAt: true,
+        customWatermark: true,
+        isSuperApproved: true,
+        superApprovedAt: true,
+        acceptedTermsVersion: true,
+        avatarUrl: true,
+        blocked: true,
+        blockedAt: true,
+        deletedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    }),
     prisma.quote.findMany({ include: { tags: { select: { id: true } } }, orderBy: { createdAt: "asc" } }),
     prisma.category.findMany({ orderBy: { name: "asc" } }),
     prisma.tag.findMany({ orderBy: { name: "asc" } }),
@@ -1632,8 +1661,9 @@ adminRouter.post("/backups", validateBody(backupCreateSchema), async (req, res) 
   }
 });
 
-// GET /api/admin/backups/:id - download the raw JSON snapshot.
-adminRouter.get("/backups/:id", async (req, res) => {
+// GET /api/admin/backups/:id - download the raw JSON snapshot. SUPER_ADMIN only
+// (the snapshot may contain account data, so a plain ADMIN must not export it).
+adminRouter.get("/backups/:id", requireSuperAdmin, async (req, res) => {
   try {
     const backup = await prisma.backup.findUnique({ where: { id: req.params.id } });
     if (!backup) {
@@ -1649,7 +1679,7 @@ adminRouter.get("/backups/:id", async (req, res) => {
 });
 
 // POST /api/admin/backups/:id/restore - restore a snapshot (non-destructive upsert).
-adminRouter.post("/backups/:id/restore", async (req, res) => {
+adminRouter.post("/backups/:id/restore", requireSuperAdmin, async (req, res) => {
   try {
     const backup = await prisma.backup.findUnique({ where: { id: req.params.id } });
     if (!backup) {
@@ -1716,7 +1746,7 @@ adminRouter.post("/backups/:id/restore", async (req, res) => {
 });
 
 // DELETE /api/admin/backups/:id - remove a backup.
-adminRouter.delete("/backups/:id", async (req, res) => {
+adminRouter.delete("/backups/:id", requireSuperAdmin, async (req, res) => {
   try {
     await prisma.backup.delete({ where: { id: req.params.id } });
     await recordAudit({

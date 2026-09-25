@@ -15,6 +15,23 @@ function bool(value: string | undefined, fallback = false): boolean {
   return ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
 
+/**
+ * Loads a secret-like env var and refuses to boot with an insecure default in
+ * production. A missing or still-default ADMIN_PASSWORD / JWT_SECRET is a
+ * critical vulnerability: the process dies FATAL so it can never run with a
+ * guessable key. Dev/test keeps the fallback so local runs stay frictionless.
+ */
+function required(value: string | undefined, name: string, insecureDefaults: string[]): string {
+  if (value && !insecureDefaults.includes(value)) return value;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      `[FATAL] ${name} is missing or still the insecure default "${insecureDefaults[0]}" in production. ` +
+        `Set a strong ${name} in the environment and restart the server.`,
+    );
+  }
+  return value ?? insecureDefaults[0];
+}
+
 export const config = {
   port: num(process.env.PORT, 4000),
   nodeEnv: process.env.NODE_ENV ?? "development",
@@ -30,7 +47,7 @@ export const config = {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
-  adminPassword: process.env.ADMIN_PASSWORD ?? "change-me",
+  adminPassword: required(process.env.ADMIN_PASSWORD, "ADMIN_PASSWORD", ["change-me"]),
   // Emails whose accounts are granted the ADMIN role (on startup, register or login).
   adminEmails: (process.env.ADMIN_EMAILS ?? "mirabbostolqinjonov@gmail.com")
     .split(",")
@@ -60,7 +77,7 @@ export const config = {
   // ------------------------------------------------------------------
   // Iqtibosim (auth, email verification, Telegram moderation)
   // ------------------------------------------------------------------
-  jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
+  jwtSecret: required(process.env.JWT_SECRET, "JWT_SECRET", ["dev-secret-change-me"]),
   // Public frontend origin, used to build email verification links.
   appUrl: process.env.APP_URL ?? "http://localhost:3000",
   // Terms of Use version users must accept. Bump whenever the /terms text is
