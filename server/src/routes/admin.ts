@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Prisma, QuoteStatus, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin, requireSuperAdmin } from "../middleware/adminAuth.js";
+import { checkPermission, adminPermissionSelect } from "../middleware/permissions.js";
 import { recentLogs, addLog } from "../lib/logstore.js";
 import { recordAudit } from "../lib/audit.js";
 import { onlineCount } from "./api.js";
@@ -37,6 +38,7 @@ import {
   seoRuleSchema,
   backupCreateSchema,
   telegramBanSchema,
+  subAdminPermissionUpdateSchema,
   type AdminQuoteReject,
   type QuoteEdit,
   type BulkQuotes,
@@ -52,6 +54,7 @@ import {
   type SeoRuleInput,
   type BackupCreate,
   type TelegramBan,
+  type SubAdminPermissionUpdate,
 } from "../schemas.js";
 
 export const adminRouter = Router();
@@ -192,7 +195,7 @@ function quoteQuery(query: Record<string, unknown>) {
 
 // GET /api/admin/quotes?status=&q=&deleted= - moderation list with the real owner's
 // email/name/nickname even for anonymous quotes.
-adminRouter.get("/quotes", async (req, res) => {
+adminRouter.get("/quotes", checkPermission("canManageQuotes"), async (req, res) => {
   try {
     const where = quoteQuery(req.query);
     const [quotes, total] = await Promise.all([
@@ -212,7 +215,7 @@ adminRouter.get("/quotes", async (req, res) => {
 
 // POST /api/admin/quotes/bulk - approve/reject/delete/restore many quotes at once.
 // Declared before /quotes/:id/* so "bulk" is not captured as an id.
-adminRouter.post("/quotes/bulk", validateBody(bulkQuotesSchema), async (req, res) => {
+adminRouter.post("/quotes/bulk", checkPermission("canManageQuotes"), validateBody(bulkQuotesSchema), async (req, res) => {
   try {
     const body = res.locals.body as BulkQuotes;
     const ip = clientIp(req.headers);
@@ -307,7 +310,7 @@ adminRouter.post("/quotes/bulk", validateBody(bulkQuotesSchema), async (req, res
 });
 
 // POST /api/admin/quotes/:id/approve
-adminRouter.post("/quotes/:id/approve", async (req, res) => {
+adminRouter.post("/quotes/:id/approve", checkPermission("canManageQuotes"), async (req, res) => {
   try {
     const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
     if (!quote) {
@@ -359,7 +362,7 @@ adminRouter.post("/quotes/:id/approve", async (req, res) => {
 });
 
 // POST /api/admin/quotes/:id/reject { reason }
-adminRouter.post("/quotes/:id/reject", validateBody(adminQuoteRejectSchema), async (req, res) => {
+adminRouter.post("/quotes/:id/reject", checkPermission("canManageQuotes"), validateBody(adminQuoteRejectSchema), async (req, res) => {
   try {
     const body = res.locals.body as AdminQuoteReject;
     const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
@@ -399,7 +402,7 @@ adminRouter.post("/quotes/:id/reject", validateBody(adminQuoteRejectSchema), asy
 
 // POST /api/admin/quotes/:id/post-telegram - publish (or republish) an
 // approved quote to the configured Telegram channel.
-adminRouter.post("/quotes/:id/post-telegram", async (req, res) => {
+adminRouter.post("/quotes/:id/post-telegram", checkPermission("canManageQuotes"), async (req, res) => {
   try {
     const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
     if (!quote) {
@@ -438,7 +441,7 @@ adminRouter.post("/quotes/:id/post-telegram", async (req, res) => {
 });
 
 // PATCH /api/admin/quotes/:id - edit quote fields (moderation fixes).
-adminRouter.patch("/quotes/:id", validateBody(quoteEditSchema), async (req, res) => {
+adminRouter.patch("/quotes/:id", checkPermission("canManageQuotes"), validateBody(quoteEditSchema), async (req, res) => {
   try {
     const body = res.locals.body as QuoteEdit;
     const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
@@ -501,7 +504,7 @@ adminRouter.patch("/quotes/:id", validateBody(quoteEditSchema), async (req, res)
 
 // POST /api/admin/quotes/:id/archive - soft delete (moves to trash). Any admin
 // can archive a quote so it can be restored from the trash later.
-adminRouter.post("/quotes/:id/archive", async (req, res) => {
+adminRouter.post("/quotes/:id/archive", checkPermission("canManageQuotes"), async (req, res) => {
   try {
     const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
     if (!quote) {
@@ -553,7 +556,7 @@ adminRouter.delete("/quotes/:id", requireSuperAdmin, async (req, res) => {
 });
 
 // POST /api/admin/quotes/:id/restore - pull a quote back out of trash.
-adminRouter.post("/quotes/:id/restore", async (req, res) => {
+adminRouter.post("/quotes/:id/restore", checkPermission("canManageQuotes"), async (req, res) => {
   try {
     const quote = await prisma.quote.findFirst({ where: { id: req.params.id, deletedAt: { not: null } } });
     if (!quote) {
@@ -602,7 +605,7 @@ function userQuery(query: Record<string, unknown>) {
 }
 
 // GET /api/admin/users?q=&role=&blocked=&deleted= - all users with admin-only details.
-adminRouter.get("/users", async (req, res) => {
+adminRouter.get("/users", checkPermission("canViewUsers"), async (req, res) => {
   try {
     const where = userQuery(req.query);
     const [users, total] = await Promise.all([
@@ -614,6 +617,10 @@ adminRouter.get("/users", async (req, res) => {
           name: true,
           nickname: true,
           role: true,
+          canViewUsers: true,
+          canManageUsers: true,
+          canManageQuotes: true,
+          canManageCategories: true,
           emailVerified: true,
           phoneVerified: true,
           telegramId: true,
@@ -654,7 +661,7 @@ async function guardTargetUser(res: import("express").Response, id: string): Pro
 }
 
 // POST /api/admin/users/:id/block
-adminRouter.post("/users/:id/block", async (req, res) => {
+adminRouter.post("/users/:id/block", checkPermission("canManageUsers"), async (req, res) => {
   try {
     if (!(await guardTargetUser(res, req.params.id))) return;
     await prisma.user.update({
@@ -677,7 +684,7 @@ adminRouter.post("/users/:id/block", async (req, res) => {
 });
 
 // POST /api/admin/users/:id/unblock
-adminRouter.post("/users/:id/unblock", async (req, res) => {
+adminRouter.post("/users/:id/unblock", checkPermission("canManageUsers"), async (req, res) => {
   try {
     await prisma.user.update({
       where: { id: req.params.id },
@@ -698,7 +705,7 @@ adminRouter.post("/users/:id/unblock", async (req, res) => {
 });
 
 // DELETE /api/admin/users/:id - soft delete (moves to trash).
-adminRouter.delete("/users/:id", async (req, res) => {
+adminRouter.delete("/users/:id", checkPermission("canManageUsers"), async (req, res) => {
   try {
     if (!(await guardTargetUser(res, req.params.id))) return;
     await prisma.user.update({
@@ -725,7 +732,7 @@ adminRouter.delete("/users/:id", async (req, res) => {
 // restore a revoked role. Self-change is blocked; only a SUPER_ADMIN may grant
 // or revoke the SUPER_ADMIN role (self-protection: one super admin cannot be
 // locked out by a lesser admin).
-adminRouter.patch("/users/:id/role", validateBody(userRoleUpdateSchema), async (req, res) => {
+adminRouter.patch("/users/:id/role", checkPermission("canManageUsers"), validateBody(userRoleUpdateSchema), async (req, res) => {
   try {
     const { role } = res.locals.body as UserRoleUpdate;
     const target = await prisma.user.findUnique({ where: { id: req.params.id } });
@@ -763,7 +770,7 @@ adminRouter.patch("/users/:id/role", validateBody(userRoleUpdateSchema), async (
 
 // POST /api/admin/users/:id/premium - grant, extend or revoke VIP status.
 // `expiresAt` null = lifetime; a past date disables active premium instantly.
-adminRouter.post("/users/:id/premium", validateBody(premiumUpdateSchema), async (req, res) => {
+adminRouter.post("/users/:id/premium", checkPermission("canManageUsers"), validateBody(premiumUpdateSchema), async (req, res) => {
   try {
     const { isPremium, expiresAt } = res.locals.body as PremiumUpdate;
     const target = await prisma.user.findUnique({ where: { id: req.params.id } });
@@ -860,7 +867,7 @@ adminRouter.delete("/users/:id/super-approve", requireSuperAdmin, async (req, re
 });
 
 // POST /api/admin/users/:id/restore
-adminRouter.post("/users/:id/restore", async (req, res) => {
+adminRouter.post("/users/:id/restore", checkPermission("canManageUsers"), async (req, res) => {
   try {
     const target = await prisma.user.findFirst({ where: { id: req.params.id, deletedAt: { not: null } } });
     if (!target) {
@@ -883,7 +890,7 @@ adminRouter.post("/users/:id/restore", async (req, res) => {
 });
 
 // POST /api/admin/users/bulk - block/unblock/delete/restore many users.
-adminRouter.post("/users/bulk", validateBody(bulkUsersSchema), async (req, res) => {
+adminRouter.post("/users/bulk", checkPermission("canManageUsers"), validateBody(bulkUsersSchema), async (req, res) => {
   try {
     const body = res.locals.body as BulkUsers;
     const ip = clientIp(req.headers);
@@ -935,11 +942,103 @@ adminRouter.post("/users/bulk", validateBody(bulkUsersSchema), async (req, res) 
 });
 
 // ---------------------------------------------------------------------------
+// Sub-admins (granular RBAC) - SUPER_ADMIN only. The acting admin sees every
+// ADMIN/SUPER_ADMIN account with its permission flags and toggles individual
+// abilities per sub-admin. isSuperAdmin is derived from the role, not a stored
+// flag: SUPER_ADMIN always passes checkPermission, ADMIN has the four switches.
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/sub-admins - all admin accounts with their RBAC flags.
+adminRouter.get("/sub-admins", requireSuperAdmin, async (_req, res) => {
+  try {
+    const admins = await prisma.user.findMany({
+      where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, deletedAt: null },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        nickname: true,
+        role: true,
+        ...adminPermissionSelect,
+        blocked: true,
+        createdAt: true,
+      },
+      orderBy: [{ role: "asc" }, { email: "asc" }],
+    });
+    res.json({
+      admins: admins.map(({ role, ...a }) => ({
+        ...a,
+        role,
+        isSuperAdmin: role === "SUPER_ADMIN",
+      })),
+    });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// PATCH /api/admin/sub-admins/:id/permissions - switch on/off one or more
+// granular permissions of a sub-admin ( ADMIN target only — a SUPER_ADMIN's
+// flags are meaningless, so editing them is rejected).
+adminRouter.patch(
+  "/sub-admins/:id/permissions",
+  requireSuperAdmin,
+  validateBody(subAdminPermissionUpdateSchema),
+  async (req, res) => {
+    try {
+      const body = res.locals.body as SubAdminPermissionUpdate;
+      const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+      if (!target) {
+        res.status(404).json({ error: "Admin topilmadi" });
+        return;
+      }
+      if (target.role !== "ADMIN") {
+        res.status(400).json({ error: "Ruxsatlar faqat ADMIN rolidagi xodimlar uchun o'zgartiriladi" });
+        return;
+      }
+      if (target.id === adminId(req)) {
+        res.status(400).json({ error: "O'zingizning ruxsatlaringizni o'zgartira olmaysiz" });
+        return;
+      }
+      const user = await prisma.user.update({
+        where: { id: target.id },
+        data: {
+          canViewUsers: body.canViewUsers ?? target.canViewUsers,
+          canManageUsers: body.canManageUsers ?? target.canManageUsers,
+          canManageQuotes: body.canManageQuotes ?? target.canManageQuotes,
+          canManageCategories: body.canManageCategories ?? target.canManageCategories,
+        },
+        select: { id: true, email: true, role: true, ...adminPermissionSelect },
+      });
+      const changed = (Object.keys(body) as (keyof typeof body)[])
+        .filter((k) => typeof body[k] === "boolean")
+        .map((k) => `${k}=${body[k]}`)
+        .join(", ");
+      await recordAudit({
+        adminId: adminId(req),
+        adminEmail: adminEmail(req),
+        action: "admin.permissions",
+        targetType: "user",
+        targetId: user.id,
+        detail: `${target.email ?? target.id}: ${changed}`,
+        ip: clientIp(req.headers),
+      });
+      res.json({
+        ok: true,
+        admin: { ...user, isSuperAdmin: false },
+      });
+    } catch {
+      res.status(500).json({ error: "Ruxsatlar o'zgartirilmadi" });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Hashtags
 // ---------------------------------------------------------------------------
 
 // GET /api/admin/tags?q= - all hashtags with quote counts.
-adminRouter.get("/tags", async (req, res) => {
+adminRouter.get("/tags", checkPermission("canManageCategories"), async (req, res) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const where: Prisma.TagWhereInput = q ? { name: { contains: q, mode: "insensitive" } } : {};
@@ -956,7 +1055,7 @@ adminRouter.get("/tags", async (req, res) => {
 });
 
 // PATCH /api/admin/tags/:id - rename a hashtag.
-adminRouter.patch("/tags/:id", validateBody(tagUpdateSchema), async (req, res) => {
+adminRouter.patch("/tags/:id", checkPermission("canManageCategories"), validateBody(tagUpdateSchema), async (req, res) => {
   try {
     const body = res.locals.body as TagUpdate;
     const slug = slugify(normalizeTagName(body.name) ?? "");
@@ -990,7 +1089,7 @@ adminRouter.patch("/tags/:id", validateBody(tagUpdateSchema), async (req, res) =
 });
 
 // DELETE /api/admin/tags/:id - permanently remove a hashtag (detaches from quotes).
-adminRouter.delete("/tags/:id", async (req, res) => {
+adminRouter.delete("/tags/:id", checkPermission("canManageCategories"), async (req, res) => {
   try {
     const tag = await prisma.tag.findUnique({ where: { id: req.params.id } });
     if (!tag) {
@@ -1019,7 +1118,7 @@ adminRouter.delete("/tags/:id", async (req, res) => {
 // ---------------------------------------------------------------------------
 
 // GET /api/admin/categories - all categories with quote counts.
-adminRouter.get("/categories", async (_req, res) => {
+adminRouter.get("/categories", checkPermission("canManageCategories"), async (_req, res) => {
   try {
     const categories = await prisma.category.findMany({
       include: { _count: { select: { quotes: { where: { deletedAt: null } } } } },
@@ -1032,7 +1131,7 @@ adminRouter.get("/categories", async (_req, res) => {
 });
 
 // POST /api/admin/categories - create a new category.
-adminRouter.post("/categories", validateBody(categoryUpdateSchema), async (req, res) => {
+adminRouter.post("/categories", checkPermission("canManageCategories"), validateBody(categoryUpdateSchema), async (req, res) => {
   try {
     const body = res.locals.body as CategoryUpdate;
     const slug = body.slug.trim().toLowerCase().replace(/\s+/g, "-");
@@ -1065,7 +1164,7 @@ adminRouter.post("/categories", validateBody(categoryUpdateSchema), async (req, 
 });
 
 // PATCH /api/admin/categories/:id - rename a category.
-adminRouter.patch("/categories/:id", validateBody(categoryUpdateSchema), async (req, res) => {
+adminRouter.patch("/categories/:id", checkPermission("canManageCategories"), validateBody(categoryUpdateSchema), async (req, res) => {
   try {
     const body = res.locals.body as CategoryUpdate;
     const slug = body.slug.trim().toLowerCase().replace(/\s+/g, "-");
@@ -1099,7 +1198,7 @@ adminRouter.patch("/categories/:id", validateBody(categoryUpdateSchema), async (
 });
 
 // DELETE /api/admin/categories/:id - delete a category (only if no quotes).
-adminRouter.delete("/categories/:id", async (req, res) => {
+adminRouter.delete("/categories/:id", checkPermission("canManageCategories"), async (req, res) => {
   try {
     const category = await prisma.category.findUnique({ where: { id: req.params.id } });
     if (!category) {
@@ -1768,7 +1867,7 @@ adminRouter.delete("/backups/:id", requireSuperAdmin, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 // GET /api/admin/bans/telegram - users currently blocked via the Telegram blacklist.
-adminRouter.get("/bans/telegram", async (req, res) => {
+adminRouter.get("/bans/telegram", checkPermission("canViewUsers"), async (req, res) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const where: Prisma.UserWhereInput = { blocked: true, telegramId: { not: null } };
@@ -1794,7 +1893,7 @@ adminRouter.get("/bans/telegram", async (req, res) => {
 });
 
 // POST /api/admin/bans/telegram - block the account(s) linked to a Telegram ID.
-adminRouter.post("/bans/telegram", validateBody(telegramBanSchema), async (_req, res) => {
+adminRouter.post("/bans/telegram", checkPermission("canManageUsers"), validateBody(telegramBanSchema), async (_req, res) => {
   try {
     const body = res.locals.body as TelegramBan;
     const result = await prisma.user.updateMany({
@@ -1814,7 +1913,7 @@ adminRouter.post("/bans/telegram", validateBody(telegramBanSchema), async (_req,
 });
 
 // DELETE /api/admin/bans/telegram/:userId - unblock an account.
-adminRouter.delete("/bans/telegram/:userId", async (req, res) => {
+adminRouter.delete("/bans/telegram/:userId", checkPermission("canManageUsers"), async (req, res) => {
   try {
     await prisma.user.update({
       where: { id: req.params.userId },

@@ -100,6 +100,14 @@ model User {
   // config-based ADMIN_EMAILS/SUPER_ADMIN_EMAILS auto-promotion (login + boot),
   // so a revoked admin status stays revoked until changed again.
   roleOverride                UserRole?
+  // Granular RBAC permissions (admin panel). Only meaningful for the ADMIN
+  // role: SUPER_ADMIN holds every permission unconditionally and USER has none.
+  // Defaults are TRUE so existing admins keep today's access — the SUPER_ADMIN
+  // then switches specific abilities off per sub-admin.
+  canViewUsers                Boolean         @default(true)
+  canManageUsers              Boolean         @default(true)
+  canManageQuotes             Boolean         @default(true)
+  canManageCategories         Boolean         @default(true)
   emailVerified               Boolean         @default(false)
   emailVerifiedAt             DateTime?
   emailVerificationToken      String?         @unique

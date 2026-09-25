@@ -427,6 +427,24 @@ export const emailLogQuerySchema = z.object({
 });
 export type EmailLogQuery = z.infer<typeof emailLogQuerySchema>;
 
+// ---------------------------------------------------------------------------
+// Sub-admin granular permissions (RBAC)
+// ---------------------------------------------------------------------------
+
+/** Partial flag update issued by a SUPER_ADMIN: any subset of the four
+ *  abilities, but at least one must change. Unknown keys are rejected. */
+export const subAdminPermissionUpdateSchema = z
+  .object({
+    canViewUsers: z.boolean().optional(),
+    canManageUsers: z.boolean().optional(),
+    canManageQuotes: z.boolean().optional(),
+    canManageCategories: z.boolean().optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => typeof x === "boolean"), {
+    message: "Hech bo'lmaganda bitta ruxsat ko'rsatilishi kerak",
+  });
+export type SubAdminPermissionUpdate = z.infer<typeof subAdminPermissionUpdateSchema>;
+
 /**
  * Parses unknown socket/request data against a schema. Returns `null` when the
  * input does not match so callers can drop the event/request silently.
