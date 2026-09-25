@@ -6,8 +6,13 @@ import { clientIp } from "../lib/ip.js";
 import { recordAudit } from "../lib/audit.js";
 import { addLog } from "../lib/logstore.js";
 import { validateBody, quizRejectSchema, type QuizReject } from "../schemas.js";
+import { checkPermission } from "../middleware/permissions.js";
 
 export const adminQuizzesRouter = Router();
+
+// Quiz moderation requires the canManageQuizzes feature (requireAdmin is
+// already applied by the parent /api/admin router).
+adminQuizzesRouter.use(checkPermission("canManageQuizzes"));
 
 function adminId(req: import("express").Request): string | null {
   return req.admin?.id ?? null;

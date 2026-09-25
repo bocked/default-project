@@ -41,8 +41,14 @@ function disconnectBannedIp(io: Server, ipAddress: string): void {
   }
 }
 
+/** Cross-instance admin events -> act on the local socket registry. */
+function emitToAdmins(io: Server, event: string, payload: unknown): void {
+  for (const socket of io.sockets.sockets.values()) {
+    if (socket.data.isAdmin) socket.emit(event, payload);
+  }
+}
+
 export function initSocket(io: Server): void {
-  // Cross-instance admin events -> act on the local socket registry.
   bus.subscribe("admin:ban", (payload) => {
     const p = payload as { ipAddress: string };
     disconnectBannedIp(io, p.ipAddress);
@@ -54,6 +60,11 @@ export function initSocket(io: Server): void {
       if (socket.data.isAdmin) socket.emit("admin:log", payload);
     }
   });
+  // Dynamic-registry & policy-review push: delivered on top of the bus so every
+  // instance forwards it, then re-broadcast to the connected admin sockets.
+  bus.subscribe("admin:feature:new", (payload) => emitToAdmins(io, "admin:feature:new", payload));
+  bus.subscribe("admin:policy:review", (payload) => emitToAdmins(io, "admin:policy:review", payload));
+  bus.subscribe("admin:permissions:changed", (payload) => emitToAdmins(io, "admin:permissions:changed", payload));
 
   io.use(banCheck);
 

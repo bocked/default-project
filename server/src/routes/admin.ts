@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Prisma, QuoteStatus, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin, requireSuperAdmin } from "../middleware/adminAuth.js";
-import { checkPermission, adminPermissionSelect } from "../middleware/permissions.js";
+import { checkPermission } from "../middleware/permissions.js";
 import { recentLogs, addLog } from "../lib/logstore.js";
 import { recordAudit } from "../lib/audit.js";
 import { onlineCount } from "./api.js";
@@ -15,6 +15,8 @@ import { notifyQuoteModeration } from "../lib/notify.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { listContent, getContent } from "../lib/content.js";
 import { clientIp } from "../lib/ip.js";
+import { bulkEffectivePermissions, effectivePermissionsFor, listFeatures } from "../lib/permissionRegistry.js";
+import { runPolicyImpactReview, IMPORTANT_SETTING_KEYS } from "../lib/policyImpact.js";
 import { todayAnalytics, visitorHistory } from "../lib/analytics.js";
 import { normalizeTagName, slugify } from "../lib/categories.js";
 import { adminPoliciesRouter } from "./adminPolicies.js";
@@ -38,7 +40,7 @@ import {
   seoRuleSchema,
   backupCreateSchema,
   telegramBanSchema,
-  subAdminPermissionUpdateSchema,
+  adminPermissionUpdateSchema,
   type AdminQuoteReject,
   type QuoteEdit,
   type BulkQuotes,
@@ -54,7 +56,7 @@ import {
   type SeoRuleInput,
   type BackupCreate,
   type TelegramBan,
-  type SubAdminPermissionUpdate,
+  type AdminPermissionUpdate,
 } from "../schemas.js";
 
 export const adminRouter = Router();
@@ -617,10 +619,6 @@ adminRouter.get("/users", checkPermission("canViewUsers"), async (req, res) => {
           name: true,
           nickname: true,
           role: true,
-          canViewUsers: true,
-          canManageUsers: true,
-          canManageQuotes: true,
-          canManageCategories: true,
           emailVerified: true,
           phoneVerified: true,
           telegramId: true,
@@ -641,7 +639,16 @@ adminRouter.get("/users", checkPermission("canViewUsers"), async (req, res) => {
       }),
       prisma.user.count({ where }),
     ]);
-    res.json({ users, total });
+    const permMap = await bulkEffectivePermissions(
+      users.filter((u) => u.role === "ADMIN" || u.role === "SUPER_ADMIN").map((u) => ({ id: u.id, role: u.role }))
+    );
+    res.json({
+      users: users.map((u) => ({
+        ...u,
+        permissions: permMap.get(u.id) ?? {},
+      })),
+      total,
+    });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }
@@ -942,13 +949,13 @@ adminRouter.post("/users/bulk", checkPermission("canManageUsers"), validateBody(
 });
 
 // ---------------------------------------------------------------------------
-// Sub-admins (granular RBAC) - SUPER_ADMIN only. The acting admin sees every
-// ADMIN/SUPER_ADMIN account with its permission flags and toggles individual
-// abilities per sub-admin. isSuperAdmin is derived from the role, not a stored
-// flag: SUPER_ADMIN always passes checkPermission, ADMIN has the four switches.
+// Sub-admins (dynamic granular RBAC) - SUPER_ADMIN only. Every admin account is
+// returned with its effective `permissions` map (feature default + explicit
+// Grant overrides). isSuperAdmin is derived from the role, not a stored flag.
 // ---------------------------------------------------------------------------
 
-// GET /api/admin/sub-admins - all admin accounts with their RBAC flags.
+// GET /api/admin/sub-admins - all admin accounts with effective permissions
+// and the full feature registry (for the toggle UI).
 adminRouter.get("/sub-admins", requireSuperAdmin, async (_req, res) => {
   try {
     const admins = await prisma.user.findMany({
@@ -959,34 +966,81 @@ adminRouter.get("/sub-admins", requireSuperAdmin, async (_req, res) => {
         name: true,
         nickname: true,
         role: true,
-        ...adminPermissionSelect,
         blocked: true,
         createdAt: true,
       },
       orderBy: [{ role: "asc" }, { email: "asc" }],
     });
+    const perms = await bulkEffectivePermissions(admins.map((a) => ({ id: a.id, role: a.role })));
+    const features = await listFeatures();
     res.json({
       admins: admins.map(({ role, ...a }) => ({
         ...a,
         role,
         isSuperAdmin: role === "SUPER_ADMIN",
+        permissions: perms.get(a.id) ?? {},
       })),
+      features,
     });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }
 });
 
-// PATCH /api/admin/sub-admins/:id/permissions - switch on/off one or more
-// granular permissions of a sub-admin ( ADMIN target only — a SUPER_ADMIN's
-// flags are meaningless, so editing them is rejected).
+// GET /api/admin/features - the full dynamic permission registry.
+adminRouter.get("/features", async (_req, res) => {
+  try {
+    res.json({ features: await listFeatures() });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// GET /api/admin/me - the acting admin identity + effective permissions. Used
+// by the admin panel to gate menus and to render the Sub-admins toggle page.
+adminRouter.get("/me", async (req, res) => {
+  try {
+    const perms = await effectivePermissionsFor({ id: adminId(req), role: req.admin?.role ?? "" });
+    const features = await listFeatures();
+    res.json({
+      admin: {
+        id: adminId(req),
+        email: adminEmail(req),
+        name: (req.admin as { name?: string | null } | undefined)?.name ?? null,
+        nickname: (req.admin as { nickname?: string | null } | undefined)?.nickname ?? null,
+        role: req.admin?.role ?? null,
+        isSuperAdmin: req.admin?.role === "SUPER_ADMIN" || req.admin?.role === "ADMIN_PASSWORD",
+        permissions: perms,
+      },
+      features,
+    });
+  } catch {
+    res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// PATCH /api/admin/sub-admins/:id/permissions - switch on/off any registered
+// feature for a sub-admin ( ADMIN target only — a SUPER_ADMIN always holds
+// every permission, so editing theirs is rejected). Grant rows are created only
+// when they differ from the feature default; switching back to the default
+// removes the row again.
 adminRouter.patch(
   "/sub-admins/:id/permissions",
   requireSuperAdmin,
-  validateBody(subAdminPermissionUpdateSchema),
+  validateBody(adminPermissionUpdateSchema),
   async (req, res) => {
     try {
-      const body = res.locals.body as SubAdminPermissionUpdate;
+      const body = res.locals.body as AdminPermissionUpdate;
+      const entries = Object.entries(body.permissions);
+      const keys = entries.map(([k]) => k);
+      const features = await prisma.adminFeature.findMany({
+        where: { key: { in: keys } },
+        select: { key: true, defaultEnabled: true },
+      });
+      if (features.length !== keys.length) {
+        res.status(400).json({ error: "Noma'lum ruxsat kalitlari kiritilgan" });
+        return;
+      }
       const target = await prisma.user.findUnique({ where: { id: req.params.id } });
       if (!target) {
         res.status(404).json({ error: "Admin topilmadi" });
@@ -1000,32 +1054,42 @@ adminRouter.patch(
         res.status(400).json({ error: "O'zingizning ruxsatlaringizni o'zgartira olmaysiz" });
         return;
       }
-      const user = await prisma.user.update({
-        where: { id: target.id },
-        data: {
-          canViewUsers: body.canViewUsers ?? target.canViewUsers,
-          canManageUsers: body.canManageUsers ?? target.canManageUsers,
-          canManageQuotes: body.canManageQuotes ?? target.canManageQuotes,
-          canManageCategories: body.canManageCategories ?? target.canManageCategories,
-        },
-        select: { id: true, email: true, role: true, ...adminPermissionSelect },
-      });
-      const changed = (Object.keys(body) as (keyof typeof body)[])
-        .filter((k) => typeof body[k] === "boolean")
-        .map((k) => `${k}=${body[k]}`)
-        .join(", ");
+      const defaultMap = new Map(features.map((f) => [f.key, f.defaultEnabled]));
+      for (const [key, value] of entries) {
+        if (value === defaultMap.get(key)) {
+          await prisma.adminGrant.deleteMany({ where: { adminId: target.id, featureKey: key } });
+        } else {
+          await prisma.adminGrant.upsert({
+            where: { adminId_featureKey: { adminId: target.id, featureKey: key } },
+            update: { enabled: value },
+            create: { adminId: target.id, featureKey: key, enabled: value },
+          });
+        }
+      }
+      const changed = entries.map(([k, v]) => `${k}=${v}`).join(", ");
       await recordAudit({
         adminId: adminId(req),
         adminEmail: adminEmail(req),
         action: "admin.permissions",
         targetType: "user",
-        targetId: user.id,
+        targetId: target.id,
         detail: `${target.email ?? target.id}: ${changed}`,
         ip: clientIp(req.headers),
       });
+      const perms = await effectivePermissionsFor({ id: target.id, role: "ADMIN" });
+      // Push the change so open admin panels refresh their menus instantly.
+      void bus.publish("admin:permissions:changed", { adminId: target.id, permissions: perms });
       res.json({
         ok: true,
-        admin: { ...user, isSuperAdmin: false },
+        admin: {
+          id: target.id,
+          email: target.email,
+          role: target.role,
+          name: target.name,
+          nickname: target.nickname,
+          isSuperAdmin: false,
+          permissions: perms,
+        },
       });
     } catch {
       res.status(500).json({ error: "Ruxsatlar o'zgartirilmadi" });
@@ -1274,7 +1338,7 @@ adminRouter.put("/content/:key", validateBody(contentUpdateSchema), async (req, 
 // ---------------------------------------------------------------------------
 
 // GET /api/admin/audit-logs?limit= - persistent audit trail of admin actions.
-adminRouter.get("/audit-logs", async (req, res) => {
+adminRouter.get("/audit-logs", checkPermission("canViewAudit"), async (req, res) => {
   try {
     const limit = Math.min(300, Math.max(1, Number(req.query.limit) || 100));
     const logs = await prisma.adminLog.findMany({ orderBy: { createdAt: "desc" }, take: limit });
@@ -1367,7 +1431,7 @@ adminRouter.get("/stats/top-quotes", async (req, res) => {
 // ---------------------------------------------------------------------------
 
 // GET /api/admin/announcements - list all announcements.
-adminRouter.get("/announcements", async (req, res) => {
+adminRouter.get("/announcements", checkPermission("canManageAnnouncements"), async (req, res) => {
   try {
     const status = typeof req.query.status === "string" && ["ACTIVE", "ARCHIVED"].includes(req.query.status.toUpperCase())
       ? req.query.status.toUpperCase()
@@ -1384,7 +1448,7 @@ adminRouter.get("/announcements", async (req, res) => {
 });
 
 // POST /api/admin/announcements - create + broadcast to users over the chosen channel.
-adminRouter.post("/announcements", validateBody(announcementCreateSchema), async (req, res) => {
+adminRouter.post("/announcements", checkPermission("canManageAnnouncements"), validateBody(announcementCreateSchema), async (req, res) => {
   try {
     const body = res.locals.body as AnnouncementCreate;
     const announcement = await prisma.announcement.create({
@@ -1418,7 +1482,7 @@ adminRouter.post("/announcements", validateBody(announcementCreateSchema), async
 });
 
 // PATCH /api/admin/announcements/:id - archive/reactivate.
-adminRouter.patch("/announcements/:id", async (req, res) => {
+adminRouter.patch("/announcements/:id", checkPermission("canManageAnnouncements"), async (req, res) => {
   try {
     const status = typeof req.body?.status === "string" && ["ACTIVE", "ARCHIVED"].includes(req.body.status.toUpperCase())
       ? req.body.status.toUpperCase()
@@ -1447,7 +1511,7 @@ adminRouter.patch("/announcements/:id", async (req, res) => {
 });
 
 // DELETE /api/admin/announcements/:id - permanently remove.
-adminRouter.delete("/announcements/:id", async (req, res) => {
+adminRouter.delete("/announcements/:id", checkPermission("canManageAnnouncements"), async (req, res) => {
   try {
     const announcement = await prisma.announcement.findUnique({ where: { id: req.params.id } });
     if (!announcement) {
@@ -1479,7 +1543,7 @@ const feedbackInclude = {
 } as const;
 
 // GET /api/admin/feedback?status=&category= - all feedback with user info.
-adminRouter.get("/feedback", async (req, res) => {
+adminRouter.get("/feedback", checkPermission("canManageFeedback"), async (req, res) => {
   try {
     const status = typeof req.query.status === "string" && ["OPEN", "IN_PROGRESS", "RESOLVED"].includes(req.query.status.toUpperCase())
       ? req.query.status.toUpperCase()
@@ -1500,7 +1564,7 @@ adminRouter.get("/feedback", async (req, res) => {
 });
 
 // PATCH /api/admin/feedback/:id - reply / change status.
-adminRouter.patch("/feedback/:id", validateBody(feedbackReplySchema), async (req, res) => {
+adminRouter.patch("/feedback/:id", checkPermission("canManageFeedback"), validateBody(feedbackReplySchema), async (req, res) => {
   try {
     const body = res.locals.body as FeedbackReply;
     const item = await prisma.feedback.findUnique({ where: { id: req.params.id } });
@@ -1530,7 +1594,7 @@ adminRouter.patch("/feedback/:id", validateBody(feedbackReplySchema), async (req
 });
 
 // DELETE /api/admin/feedback/:id - permanently remove a feedback entry.
-adminRouter.delete("/feedback/:id", async (req, res) => {
+adminRouter.delete("/feedback/:id", checkPermission("canManageFeedback"), async (req, res) => {
   try {
     const item = await prisma.feedback.findUnique({ where: { id: req.params.id } });
     if (!item) {
@@ -1557,7 +1621,7 @@ adminRouter.delete("/feedback/:id", async (req, res) => {
 // ---------------------------------------------------------------------------
 
 // GET /api/admin/settings - all site settings grouped.
-adminRouter.get("/settings", async (_req, res) => {
+adminRouter.get("/settings", checkPermission("canManageSettings"), async (_req, res) => {
   try {
     const settings = await prisma.siteSetting.findMany({ orderBy: [{ group: "asc" }, { key: "asc" }] });
     res.json({ settings });
@@ -1566,10 +1630,24 @@ adminRouter.get("/settings", async (_req, res) => {
   }
 });
 
-// PUT /api/admin/settings - upsert settings in bulk.
-adminRouter.put("/settings", validateBody(settingsUpdateSchema), async (req, res) => {
+// PUT /api/admin/settings - upsert settings in bulk. Changing an important
+// setting (site name, contact email, social links, ...) triggers a policy
+// impact review: a Draft Policy is prepared and the SUPER_ADMIN is pushed.
+adminRouter.put("/settings", checkPermission("canManageSettings"), validateBody(settingsUpdateSchema), async (req, res) => {
   try {
     const body = res.locals.body as SettingsUpdate;
+    const relevant = body.settings.filter((s) => IMPORTANT_SETTING_KEYS.includes(s.key));
+    const changedKeys: string[] = [];
+    if (relevant.length > 0) {
+      const prior = await prisma.siteSetting.findMany({
+        where: { key: { in: relevant.map((s) => s.key) } },
+        select: { key: true, value: true },
+      });
+      const priorMap = new Map(prior.map((p) => [p.key, p.value]));
+      for (const s of relevant) {
+        if ((priorMap.get(s.key) ?? "") !== s.value) changedKeys.push(s.key);
+      }
+    }
     await prisma.$transaction(
       body.settings.map((s) =>
         prisma.siteSetting.upsert({
@@ -1586,6 +1664,13 @@ adminRouter.put("/settings", validateBody(settingsUpdateSchema), async (req, res
       detail: `${body.settings.length} ta sozlama saqlandi`,
       ip: clientIp(req.headers),
     });
+    if (changedKeys.length > 0) {
+      await runPolicyImpactReview({
+        trigger: "setting",
+        reason: `Muhim sozlamalar yangilandi: ${changedKeys.join(", ")}`,
+        actor: { id: adminId(req), email: adminEmail(req) },
+      });
+    }
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: "Sozlamalar saqlanmadi" });

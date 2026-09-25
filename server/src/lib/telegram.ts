@@ -34,7 +34,7 @@ interface TelegramResult<T> {
 }
 
 export interface TelegramKeyboard {
-  inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
+  inline_keyboard: Array<Array<{ text: string; callback_data?: string; url?: string }>>;
 }
 
 /** Approve / Reject buttons attached to every pending-quote message. */
@@ -108,6 +108,62 @@ export async function answerCallbackQuery(callbackQueryId: string, text?: string
     text: text ?? "",
     show_alert: false,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Policy review (Super Admin workflow) + new-feature alert (dynamic registry)
+// ---------------------------------------------------------------------------
+
+/** [Tasdiqlash] / [Taklif kiritish bilan tasdiqlash] / [Rad etish + sabab]. */
+export function policyReviewKeyboard(policyId: string): TelegramKeyboard {
+  return {
+    inline_keyboard: [
+      [{ text: "✅ Tasdiqlash", callback_data: `policy:approve:${policyId}` }],
+      [{ text: "✍️ Taklif kiritish bilan tasdiqlash", callback_data: `policy:suggest:${policyId}` }],
+      [{ text: "❌ Rad etish + sabab", callback_data: `policy:reject:${policyId}` }],
+    ],
+  };
+}
+
+export interface PolicyReviewContext {
+  type: "TERMS" | "PRIVACY" | "COOKIES";
+  label: string;
+  version: string;
+  changeSummary: string | null;
+}
+
+/** Sends the policy review prompt with the three decision buttons to the admin
+ *  chat. Returns the Telegram message id (to edit later) or null. */
+export async function sendPolicyReviewMessage(ctx: PolicyReviewContext, policyId: string): Promise<number | null> {
+  if (!telegramEnabled()) return null;
+  const text = [
+    `🧐 ${ctx.label} — ko'rib chiqish kutilmoqda (v${ctx.version})`,
+    "",
+    ctx.changeSummary ?? "Tasdiqlanmagan loyiha tayyorlandi",
+    "",
+    "Nima qilamiz?",
+  ].join("\n");
+  const json = await apiCall<TelegramResult<{ message_id: number }>>("sendMessage", {
+    chat_id: config.telegramAdminChatId,
+    text,
+    reply_markup: policyReviewKeyboard(policyId),
+  });
+  return json?.result?.message_id ?? null;
+}
+
+/** "🆕 Yangi modul/funksiya [X] aniqlandi! Adminlar uchun ruxsatlarni
+ *  sozlaysizmi?" — push to the admin chat when a runtime module registers. */
+export async function sendNewFeatureMessage(feature: { label: string; group: string }): Promise<void> {
+  if (!telegramEnabled()) return;
+  const text = [
+    `🆕 Yangi modul/funksiya [${feature.label}] aniqlandi!`,
+    "",
+    `Guruh: ${feature.group}`,
+    "Ushbu imkoniyat adminlar uchun sukut bo'yicha yopiq. Adminlar uchun ruxsatlarni sozlaysizmi?",
+    "",
+    "Sub-adminlar sahifasida (Admin panel → Sub-adminlar) ruxsatlarni sozlashingiz mumkin.",
+  ].join("\n");
+  await sendTelegramMessage(config.telegramAdminChatId, text);
 }
 
 // ---------------------------------------------------------------------------

@@ -428,22 +428,27 @@ export const emailLogQuerySchema = z.object({
 export type EmailLogQuery = z.infer<typeof emailLogQuerySchema>;
 
 // ---------------------------------------------------------------------------
-// Sub-admin granular permissions (RBAC)
+// Sub-admin granular permissions (RBAC, dynamic registry)
 // ---------------------------------------------------------------------------
 
-/** Partial flag update issued by a SUPER_ADMIN: any subset of the four
- *  abilities, but at least one must change. Unknown keys are rejected. */
-export const subAdminPermissionUpdateSchema = z
+/** Partial grant update issued by a SUPER_ADMIN: a map of featureKey -> boolean
+ *  for the registered AdminFeature rows. Server-side validation rejects keys
+ *  that are not in the registry. */
+export const adminPermissionUpdateSchema = z
   .object({
-    canViewUsers: z.boolean().optional(),
-    canManageUsers: z.boolean().optional(),
-    canManageQuotes: z.boolean().optional(),
-    canManageCategories: z.boolean().optional(),
+    permissions: z.record(z.string(), z.boolean()),
   })
-  .refine((v) => Object.values(v).some((x) => typeof x === "boolean"), {
+  .refine((v) => Object.keys(v.permissions).length > 0, {
     message: "Hech bo'lmaganda bitta ruxsat ko'rsatilishi kerak",
   });
-export type SubAdminPermissionUpdate = z.infer<typeof subAdminPermissionUpdateSchema>;
+export type AdminPermissionUpdate = z.infer<typeof adminPermissionUpdateSchema>;
+
+/** Manual "run a policy review" trigger (button in the admin panel). */
+export const policyReviewSchema = z.object({
+  reason: z.string().trim().min(3).max(400),
+  type: policyTypeSchema.optional(),
+});
+export type PolicyReviewInput = z.infer<typeof policyReviewSchema>;
 
 /**
  * Parses unknown socket/request data against a schema. Returns `null` when the

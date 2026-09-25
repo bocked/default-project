@@ -100,14 +100,9 @@ model User {
   // config-based ADMIN_EMAILS/SUPER_ADMIN_EMAILS auto-promotion (login + boot),
   // so a revoked admin status stays revoked until changed again.
   roleOverride                UserRole?
-  // Granular RBAC permissions (admin panel). Only meaningful for the ADMIN
-  // role: SUPER_ADMIN holds every permission unconditionally and USER has none.
-  // Defaults are TRUE so existing admins keep today's access — the SUPER_ADMIN
-  // then switches specific abilities off per sub-admin.
-  canViewUsers                Boolean         @default(true)
-  canManageUsers              Boolean         @default(true)
-  canManageQuotes             Boolean         @default(true)
-  canManageCategories         Boolean         @default(true)
+  // Granular RBAC permissions (admin panel). Moved into the dynamic
+  // AdminFeature/AdminGrant registry: only ADMIN role is checked, SUPER_ADMIN
+  // holds every permission unconditionally and USER has none.
   emailVerified               Boolean         @default(false)
   emailVerifiedAt             DateTime?
   emailVerificationToken      String?         @unique
@@ -169,9 +164,47 @@ model User {
   likes                       QuoteLike[]
   quizzes                     Quiz[]
   quizResults                 QuizResult[]
+  adminGrants                 AdminGrant[]
 
   @@index([createdAt])
   @@index([role, createdAt(sort: Desc)])
+}
+
+// Dynamic feature/permission registry. Every admin-facing module is a feature
+// row; toggling a sub-admin's access creates/removes an AdminGrant row. A NEW
+// (runtime-registered) feature starts defaultEnabled=false so nobody but the
+// SUPER_ADMIN sees it until explicitly granted, and the SUPER_ADMIN is alerted
+// via Telegram + the admin panel socket.
+model AdminFeature {
+  key            String   @id
+  label          String
+  group          String   @default("general")
+  // Effective value for admins without an explicit grant row. Built-ins that
+  // shipped with the codebase default to TRUE so existing access is preserved;
+  // auto-registered runtime modules default to FALSE ("sukut bo'yicha yopiq").
+  defaultEnabled Boolean  @default(false)
+  // builtin (shipped with code) or runtime (auto-registered) — only runtime
+  // registrations emit the "new module detected" alert.
+  source         String   @default("builtin")
+  description    String?
+  registeredAt   DateTime @default(now())
+
+  grants AdminGrant[]
+}
+
+// Explicit per-admin override for one feature. A missing row means: use the
+// feature's defaultEnabled. Only explicit true/false rows differ.
+model AdminGrant {
+  adminId    String
+  featureKey String
+  enabled    Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+
+  user    User         @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  feature AdminFeature @relation(fields: [featureKey], references: [key], onDelete: Cascade)
+
+  @@id([adminId, featureKey])
+  @@index([featureKey])
 }
 
 model Category {
@@ -253,6 +286,11 @@ model SitePolicy {
   createdById   String?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+  // Pending Telegram reply on the draft: "SUGGEST" (approve with a comment) or
+  // "REJECT" (reject with a reason). The admin's reply text is linked back via
+  // telegramMessageId (like the quote moderation rejection flow).
+  awaitingTelegramReply String?
+  telegramMessageId     Int?
 
   @@unique([type, version])
   @@index([type, isApproved])

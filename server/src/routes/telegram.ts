@@ -19,6 +19,8 @@ import {
   hashQuickLoginSessionId,
 } from "../lib/tokens.js";
 import { notifyQuoteModeration } from "../lib/notify.js";
+import { recordAudit } from "../lib/audit.js";
+import { POLICY_LABELS, approvePolicy } from "../lib/policies.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { executeAdminCommand } from "../lib/adminCommands.js";
 
@@ -74,6 +76,9 @@ telegramRouter.post("/webhook", async (req, res) => {
 
 const APPROVE_PREFIX = "approve:";
 const REJECT_PREFIX = "reject:";
+const POLICY_APPROVE_PREFIX = "policy:approve:";
+const POLICY_SUGGEST_PREFIX = "policy:suggest:";
+const POLICY_REJECT_PREFIX = "policy:reject:";
 
 function isAdminChat(chatId: unknown): boolean {
   return config.telegramAdminChatId.length > 0 && Number(chatId) === Number(config.telegramAdminChatId);
@@ -135,6 +140,71 @@ async function handleCallback(cq: Record<string, any>): Promise<void> {
         null
       );
     }
+  } else if (data.startsWith(POLICY_APPROVE_PREFIX)) {
+    const policyId = data.slice(POLICY_APPROVE_PREFIX.length);
+    await answerCallbackQuery(cq.id, "Tasdiqlandi ✓");
+    await handlePolicyApprove(policyId, chatId, messageId);
+  } else if (data.startsWith(POLICY_SUGGEST_PREFIX)) {
+    const policyId = data.slice(POLICY_SUGGEST_PREFIX.length);
+    await answerCallbackQuery(cq.id, "Taklifingizni reply qilib yozing");
+    await handlePolicyReplyAwait(policyId, "SUGGEST", chatId, messageId);
+  } else if (data.startsWith(POLICY_REJECT_PREFIX)) {
+    const policyId = data.slice(POLICY_REJECT_PREFIX.length);
+    await answerCallbackQuery(cq.id, "Rad etish sababini yozing");
+    await handlePolicyReplyAwait(policyId, "REJECT", chatId, messageId);
+  }
+}
+
+/** Publishes a Draft Policy from the Telegram [Tasdiqlash] button. */
+async function handlePolicyApprove(policyId: string, chatId: number | undefined, messageId: number | undefined): Promise<void> {
+  const draft = await prisma.sitePolicy.findUnique({ where: { id: policyId } });
+  if (!draft || draft.isApproved) {
+    if (chatId !== undefined && messageId !== undefined) {
+      await editModerationMessage(chatId, messageId, "Loyiha topilmadi yoki allaqachon tasdiqlangan.", null);
+    }
+    return;
+  }
+  await approvePolicy(draft.id, { id: null, email: "SUPER_ADMIN (Telegram)" });
+  if (chatId !== undefined && messageId !== undefined) {
+    await editModerationMessage(chatId, messageId, `✅ Tasdiqlandi — ${POLICY_LABELS[draft.type]} v${draft.version} nashr etildi.`, null);
+  }
+  await recordAudit({
+    adminId: null,
+    adminEmail: "SUPER_ADMIN (Telegram)",
+    action: "policy.approve",
+    targetType: "policy",
+    targetId: draft.id,
+    detail: `${draft.type} v${draft.version} Telegram orqali nashr etildi`,
+    ip: null,
+  });
+  addLog("info", `${POLICY_LABELS[draft.type]} v${draft.version} Telegram orqali nashr etildi`);
+}
+
+/** Marks a Draft Policy as awaiting the admin's reply text (SUGGEST or REJECT). */
+async function handlePolicyReplyAwait(policyId: string, mode: "SUGGEST" | "REJECT", chatId: number | undefined, messageId: number | undefined): Promise<void> {
+  const draft = await prisma.sitePolicy.findUnique({ where: { id: policyId } });
+  if (!draft || draft.isApproved) {
+    if (chatId !== undefined && messageId !== undefined) {
+      await editModerationMessage(chatId, messageId, "Loyiha topilmadi yoki allaqachon tasdiqlangan.", null);
+    }
+    return;
+  }
+  if (draft.awaitingTelegramReply) {
+    if (chatId !== undefined && messageId !== undefined) {
+      await editModerationMessage(chatId, messageId, "Bu loyihaga javob allaqachon kutilmoqda.", null);
+    }
+    return;
+  }
+  await prisma.sitePolicy.update({
+    where: { id: draft.id },
+    data: { awaitingTelegramReply: mode, telegramMessageId: messageId ?? null },
+  });
+  if (chatId !== undefined && messageId !== undefined) {
+    const prompt =
+      mode === "SUGGEST"
+        ? `✍️ ${POLICY_LABELS[draft.type]} v${draft.version} — taklifingizni shu xabarga reply qilib yozing.`
+        : `❌ ${POLICY_LABELS[draft.type]} v${draft.version} — rad etish sababini shu xabarga reply qilib yozing.`;
+    await editModerationMessage(chatId, messageId, prompt, null);
   }
 }
 
@@ -145,16 +215,66 @@ async function handleReply(msg: Record<string, any>): Promise<void> {
   if (repliedId === undefined || !reason) return;
 
   const quote = await prisma.quote.findFirst({ where: { telegramMessageId: repliedId } });
-  if (!quote || !quote.awaitingRejection || quote.status !== "PENDING") return;
+  if (quote && quote.awaitingRejection && quote.status === "PENDING") {
+    await prisma.quote.update({
+      where: { id: quote.id },
+      data: { status: "REJECTED", rejectionReason: reason, awaitingRejection: false },
+    });
+    await editModerationMessage(msg.chat.id, repliedId, rejectedText(quote, reason), null);
+    void notifyQuoteModeration({ quoteId: quote.id, decision: "rejected", reason });
+    void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
+    addLog("warn", `Iqtibos rad etildi (Telegram): ${quote.text.slice(0, 40)}...`);
+    return;
+  }
 
-  await prisma.quote.update({
-    where: { id: quote.id },
-    data: { status: "REJECTED", rejectionReason: reason, awaitingRejection: false },
+  // Draft Policy reply flow: [Taklif kiritish bilan tasdiqlash] or [Rad etish
+  // + sabab] — the admin's reply text becomes the comment/reason.
+  const policy = await prisma.sitePolicy.findFirst({
+    where: { telegramMessageId: repliedId, isApproved: false },
   });
-  await editModerationMessage(msg.chat.id, repliedId, rejectedText(quote, reason), null);
-  void notifyQuoteModeration({ quoteId: quote.id, decision: "rejected", reason });
-  void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
-  addLog("warn", `Iqtibos rad etildi (Telegram): ${quote.text.slice(0, 40)}...`);
+  if (!policy || !policy.awaitingTelegramReply) return;
+
+  if (policy.awaitingTelegramReply === "SUGGEST") {
+    await prisma.sitePolicy.update({
+      where: { id: policy.id },
+      data: { awaitingTelegramReply: null, changeReason: reason },
+    });
+    await approvePolicy(policy.id, { id: null, email: "SUPER_ADMIN (Telegram)" });
+    await editModerationMessage(
+      msg.chat.id,
+      repliedId,
+      `✅ Tasdiqlandi (taklif bilan) — ${POLICY_LABELS[policy.type]} v${policy.version} nashr etildi.\n\nIzoh: ${reason}`,
+      null
+    );
+    await recordAudit({
+      adminId: null,
+      adminEmail: "SUPER_ADMIN (Telegram)",
+      action: "policy.approve",
+      targetType: "policy",
+      targetId: policy.id,
+      detail: `${policy.type} v${policy.version} taklif bilan tasdiqlandi: ${reason}`,
+      ip: null,
+    });
+    addLog("info", `${POLICY_LABELS[policy.type]} v${policy.version} taklif bilan tasdiqlandi (Telegram)`);
+  } else if (policy.awaitingTelegramReply === "REJECT") {
+    await prisma.sitePolicy.delete({ where: { id: policy.id } });
+    await editModerationMessage(
+      msg.chat.id,
+      repliedId,
+      `❌ Rad etildi — ${POLICY_LABELS[policy.type]} v${policy.version}\n\nSabab: ${reason}`,
+      null
+    );
+    await recordAudit({
+      adminId: null,
+      adminEmail: "SUPER_ADMIN (Telegram)",
+      action: "policy.reject-draft",
+      targetType: "policy",
+      targetId: policy.id,
+      detail: `${policy.type} v${policy.version} rad etildi: ${reason}`,
+      ip: null,
+    });
+    addLog("warn", `${POLICY_LABELS[policy.type]} v${policy.version} rad etildi (Telegram): ${reason.slice(0, 60)}`);
+  }
 }
 
 /**

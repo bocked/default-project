@@ -17,6 +17,10 @@ class EventBus {
   private subscribedChannels = new Set<string>();
   private subscriber: Redis | null = null;
 
+  constructor() {
+    this.emitter.setMaxListeners(100);
+  }
+
   async publish(channel: string, payload: unknown): Promise<void> {
     if (redis.available) {
       // Delivered back to us (and other instances) through the subscriber,

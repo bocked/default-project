@@ -29,6 +29,7 @@ import { apiLimiter, authLimiter } from "./lib/rateLimit.js";
 import { tryEnsureDefaultCategories } from "./lib/categories.js";
 import { tryEnsureDefaultContent } from "./lib/content.js";
 import { tryEnsurePolicyBaseline, tryEnsurePolicyDrafts } from "./lib/policies.js";
+import { syncBuiltInFeatures } from "./lib/permissionRegistry.js";
 import { initSentry, setupSentryErrorHandler, captureException } from "./lib/sentry.js";
 
 /** Masks secrets for the startup log while still confirming they were set. */
@@ -286,6 +287,7 @@ export async function startServer(): Promise<void> {
     await tryEnsureDefaultContent();
     await tryEnsurePolicyBaseline();
     await tryEnsurePolicyDrafts();
+    await syncBuiltInFeatures();
     await promoteAdminEmails();
   } catch (err) {
     logger.warn({ err }, "postgres unreachable, starting anyway");

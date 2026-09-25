@@ -17,11 +17,14 @@ import {
   policyDraftCreateSchema,
   policyEditSchema,
   policyApproveSchema,
+  policyReviewSchema,
   policyTypeSchema,
   type PolicyDraftCreate,
   type PolicyEdit,
   type PolicyApprove,
+  type PolicyReviewInput,
 } from "../schemas.js";
+import { runPolicyImpactReview } from "../lib/policyImpact.js";
 
 export const adminPoliciesRouter = Router();
 
@@ -89,6 +92,32 @@ adminPoliciesRouter.get("/:type", async (req, res) => {
     });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
+  }
+});
+
+// POST /api/admin/policies/review - manually run a policy impact review from
+// the panel button. Prepares/updates an open Draft Policy and PUSHes the
+// SUPER_ADMIN (Telegram buttons + admin-panel socket banner).
+adminPoliciesRouter.post("/review", validateBody(policyReviewSchema), async (req, res) => {
+  const body = res.locals.body as PolicyReviewInput;
+  try {
+    const result = await runPolicyImpactReview({
+      trigger: "manual",
+      type: body.type,
+      reason: body.reason,
+      actor: { id: adminId(req), email: adminEmail(req) },
+    });
+    if (!result.draft) {
+      res.status(500).json({ error: "Ko'rib chiqish ishga tushmadi" });
+      return;
+    }
+    res.status(201).json({
+      ok: true,
+      draft: result.draft,
+      created: result.created,
+    });
+  } catch {
+    res.status(500).json({ error: "Ko'rib chiqish ishga tushmadi" });
   }
 });
 
