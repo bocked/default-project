@@ -21,7 +21,12 @@ export const config = {
   isDev: (process.env.NODE_ENV ?? "development") !== "production",
   databaseUrl: process.env.DATABASE_URL ?? "postgresql://canvas:canvas@localhost:5432/canvas?schema=public",
   redisUrl: process.env.REDIS_URL ?? "",
-  corsOrigins: (process.env.CORS_ORIGINS ?? "https://yerlikoglon.uz,https://*.yerlikoglon.uz")
+  // Strict CORS allow-list (defaults to the production origins; the wildcard
+  // "*" must never be used). Comma-separated env value overrides this.
+  corsOrigins: (
+    process.env.CORS_ORIGINS ??
+    "https://yerlikoglon.uz,https://www.yerlikoglon.uz,http://localhost:3000"
+  )
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),

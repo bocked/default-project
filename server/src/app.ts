@@ -51,7 +51,7 @@ export function originAllowed(origin: string): boolean {
 
 function corsOrigin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void): void {
   if (!origin || originAllowed(origin)) callback(null, true);
-  else callback(new Error("Origin not allowed by CORS"));
+  else callback(new Error("CORS policy violation: Access Denied"));
 }
 
 export interface CreateAppOptions {
@@ -96,26 +96,93 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   // for rate limiting and logging.
   app.set("trust proxy", config.trustProxy);
 
+  // OWASP hardning: never leak the Express engine marker.
+  app.disable("x-powered-by");
+
+  // Strict CSP without 'unsafe-eval' (ImmuniWeb rejects it). The explicit
+  // directive list replaces Helmet's defaults entirely. telegram.org is kept
+  // because the Telegram post widget loads its script and iframe from there —
+  // every other source must already be covered by 'self' / the allow-list.
   app.use(
     helmet({
       contentSecurityPolicy: {
         directives: {
-          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-          // Telegram post widget: the script itself and its iframe both load
-          // from telegram.org.
-          "script-src": ["'self'", "https://telegram.org"],
-          "frame-src": ["https://telegram.org"],
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "https://telegram.org", "https://a.nel.cloudflare.com", "https://static.cloudflareinsights.com"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          imgSrc: ["'self'", "data:", "blob:", "https:"],
+          fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
+          connectSrc: ["'self'", "https:", "wss:", "https://a.nel.cloudflare.com"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          frameSrc: ["https://telegram.org"],
           // This API is not meant to be embedded anywhere. 0-blocks framing to
           // prevent clickjacking against the authenticated admin endpoints.
-          "frame-ancestors": ["'none'"],
+          frameAncestors: ["'none'"],
+          upgradeInsecureRequests: [],
         },
       },
+      hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true,
+      },
+      crossOriginResourcePolicy: { policy: "same-origin" },
+      crossOriginOpenerPolicy: { policy: "same-origin" },
+      crossOriginEmbedderPolicy: false,
+      referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+      xContentTypeOptions: true,
+      xDnsPrefetchControl: { allow: false },
+      xFrameOptions: { action: "deny" },
     })
   );
-  // API used from yerlikoglon.uz (and *.pages.dev previews); credentials are
-  // required for the HttpOnly refresh cookie, so CORS must echo the origin
-  // instead of using "*".
-  app.use(cors({ origin: corsOrigin, credentials: true }));
+
+  // Strict CORS allow-list (info-reading requests from unknown origins are
+  // denied). Credentials are required for the HttpOnly refresh cookie, so CORS
+  // must echo the exact origin instead of "*".
+  app.use(
+    cors({
+      origin: corsOrigin,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+    })
+  );
+
+  // Cookie hardening: every Set-Cookie inherits HttpOnly + root path (and, by
+  // default, Secure + SameSite=Strict) unless a route explicitly opts out.
+  // auth.ts overrides sameSite/secure for the cross-site refresh cookie, which
+  // must stay SameSite=None in production because the API host differs from the
+  // frontend host.
+  app.use((_req, res, next) => {
+    const original = res.cookie.bind(res) as (
+      name: string,
+      value: unknown,
+      options?: unknown,
+    ) => typeof res;
+    res.cookie = ((name: string, value: unknown, options: Record<string, unknown> = {}) =>
+      original(name, value, {
+        httpOnly: true,
+        path: "/",
+        secure: true,
+        sameSite: "strict",
+        ...options,
+      })) as unknown as typeof res.cookie;
+    next();
+  });
+
+  // Never let scanner probes or curious visitors read dotfiles or Prisma
+  // artifacts off the public API (ImmuniWeb / OWASP: files like .env, .git and
+  // prisma/schema.prisma must resolve to 404/403).
+  app.use((req, res, next) => {
+    const blocked = /(^|\/)\.(env|git)([/?#]|$)|(^|\/)\.npmrc([/?#]|$)|(^|\/)prisma\//;
+    if (blocked.test(req.path)) {
+      return res.status(404).json({ error: "Not found" });
+    }
+    next();
+  });
+
   app.use(compression());
   // Resend delivery webhook must consume the raw body BEFORE express.json()
   // parses it, because the Svix HMAC covers the exact bytes as received.
