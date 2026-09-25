@@ -71,14 +71,14 @@ find "${BACKUP_DIR}" -name "yerlikoglon_full_backup_*.tar.gz" -mtime "+${RETENTI
 # Telegram delivery using the settings from the database (admin-managed).
 # ---------------------------------------------------------------------------
 read_ts() {
-  psql "${DATABASE_URL}" -Atc "SELECT $1 FROM telegram_settings WHERE id='main'" 2>/dev/null || true
+  psql "${DATABASE_URL}" -Atc "SELECT \"$1\" FROM \"TelegramSettings\" WHERE id='main'" 2>/dev/null || true
 }
 
-TOKEN="$(read_ts bot_token)"
-CHAT_ID="$(read_ts super_admin_chat_id)"
-CHANNEL_CAPTURED="$(read_ts channel_chat_id)"
-CHANNEL_RAW="$(read_ts channel_value)"
-NOTIFY_BACKUP="$(read_ts notify_backup)"
+TOKEN="$(read_ts "botToken")"
+CHAT_ID="$(read_ts "superAdminChatId")"
+CHANNEL_CAPTURED="$(read_ts "channelChatId")"
+CHANNEL_RAW="$(read_ts "channelValue")"
+NOTIFY_BACKUP="$(read_ts "notifyBackup")"
 
 TELEGRAM_API="https://api.telegram.org"
 
