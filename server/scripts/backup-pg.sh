@@ -40,6 +40,7 @@ PG_URL="${PG_URL:-${DATABASE_URL}}"
 
 STAMP="$(date +%Y%m%d)"
 ARCHIVE="${BACKUP_DIR}/yerlikoglon_full_backup_${STAMP}.tar.gz"
+mkdir -p "${BACKUP_DIR}"
 STAGE="$(mktemp -d)"
 ROOT_NAME="yerlikoglon_full_backup_${STAMP}"
 mkdir -p "${STAGE}/${ROOT_NAME}"
