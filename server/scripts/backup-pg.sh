@@ -33,6 +33,11 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
+# Strip Prisma-only URI params (e.g. ?schema=public) which libpq tools
+# (pg_dump/psql) reject with "invalid URI query parameter".
+PG_URL="$(printf '%s' "${DATABASE_URL}" | sed -E 's/[?&]schema=[^&]*//g' | sed -E 's/[?&]+$//')"
+PG_URL="${PG_URL:-${DATABASE_URL}}"
+
 STAMP="$(date +%Y%m%d)"
 ARCHIVE="${BACKUP_DIR}/yerlikoglon_full_backup_${STAMP}.tar.gz"
 STAGE="$(mktemp -d)"
@@ -41,7 +46,7 @@ mkdir -p "${STAGE}/${ROOT_NAME}"
 trap 'rm -rf "${STAGE}"' EXIT
 
 echo "==> pg_dump ..."
-pg_dump --no-owner --no-acl "${DATABASE_URL}" > "${STAGE}/${ROOT_NAME}/database_${STAMP}.sql"
+pg_dump --no-owner --no-acl "${PG_URL}" > "${STAGE}/${ROOT_NAME}/database_${STAMP}.sql"
 
 echo "==> environment files ..."
 [[ -f "${ENV_FILE}" ]] && cp "${ENV_FILE}" "${STAGE}/${ROOT_NAME}/env-server.env"
@@ -71,7 +76,7 @@ find "${BACKUP_DIR}" -name "yerlikoglon_full_backup_*.tar.gz" -mtime "+${RETENTI
 # Telegram delivery using the settings from the database (admin-managed).
 # ---------------------------------------------------------------------------
 read_ts() {
-  psql "${DATABASE_URL}" -Atc "SELECT \"$1\" FROM \"TelegramSettings\" WHERE id='main'" 2>/dev/null || true
+  psql "${PG_URL}" -Atc "SELECT \"$1\" FROM \"TelegramSettings\" WHERE id='main'" 2>/dev/null || true
 }
 
 TOKEN="$(read_ts "botToken")"
@@ -126,7 +131,7 @@ Sana: $(date '+%Y-%m-%d %H:%M')"
 
   if [[ "${UPLOADED}" == "1" ]]; then
     DETAIL="$(printf '%s' "${ARCHIVE} (${SIZE}) — kanalga yuklandi" | sed "s/'/''/g")"
-    psql "${DATABASE_URL}" -c "INSERT INTO \"AdminLog\" (id, \"adminEmail\", action, \"targetType\", detail, \"createdAt\") VALUES (gen_random_uuid(), 'backup-watchdog', 'backup.upload', 'backup', '${DETAIL}', now());" >/dev/null 2>&1 || true
+    psql "${PG_URL}" -c "INSERT INTO \"AdminLog\" (id, \"adminEmail\", action, \"targetType\", detail, \"createdAt\") VALUES (gen_random_uuid(), 'backup-watchdog', 'backup.upload', 'backup', '${DETAIL}', now());" >/dev/null 2>&1 || true
   fi
 else
   echo "==> Telegram sozlamalari to'liq emas; yuklash o'tkazib yuborildi." >&2
