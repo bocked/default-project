@@ -58,7 +58,7 @@ Bu reja foydali funksiyalar, kod sifati/xavfsizlik yaxshilashlari va bosqichma-b
 - `app.set("trust proxy", 1)` — reverse-proxy ortida to'g'ri IP/rate-limit.
 - HTTP rate limiting (`express-rate-limit`) + socket'da IP bo'yicha qo'shimcha limiter.
 - Websocket auth handshake: token birinchi xabarda tekshiriladi, haqiqiy emas -> disconnect.
-- Secret'lar faqat Render env'da; log'larga token/parol tushmasligi.
+- Secret'lar faqat GCP VM'dagi `server/.env`'da; log'larga token/parol tushmasligi.
 - Barcha user-generated kontent XSS-safe render (client'da `dangerouslySetInnerHTML` yo'q).
 
 ### Optimallashtirish
@@ -98,7 +98,7 @@ Har bir qadam tugagach: `git add . && git commit && git push origin main` (AGENT
 15. Redis `socket.io` adapteri (custom bus o'rniga) + presence Redis'da — haqiqiy multi-instance.
 16. R2 upload to'liq: thumbnail, fayl metadatalari, CDN, o'chirish.
 17. `/api/items` pagination + spatial query (katta canvaslar).
-18. Deploy mustahkamligi: Render'da pre-deploy `prisma migrate deploy`, healthcheck; VPS nginx/PM2'da xuddi shunday; `pg_dump` cron zaxira.
+18. Deploy mustahkamligi: GCP VM'da `prisma migrate deploy` + PM2 healthcheck; `pg_dump` cron zaxira.
 
 ---
 

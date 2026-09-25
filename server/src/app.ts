@@ -92,7 +92,7 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
     }
   }
 
-  // Behind a single reverse proxy (Render LB / Nginx). Enables correct req.ip
+  // Behind a single reverse proxy (Cloudflare proxy / Nginx). Enables correct req.ip
   // for rate limiting and logging.
   app.set("trust proxy", config.trustProxy);
 

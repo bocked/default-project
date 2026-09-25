@@ -71,7 +71,7 @@ export const config = {
   logLevel: process.env.LOG_LEVEL ?? "info",
   sentryDsn: process.env.SENTRY_DSN ?? "",
   sentryTracesSampleRate: num(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.1),
-  // Number of trusted reverse-proxy hops (Render LB / Nginx).
+  // Number of trusted reverse-proxy hops (Cloudflare proxy / Nginx).
   trustProxy: num(process.env.TRUST_PROXY, 1),
 
   // ------------------------------------------------------------------

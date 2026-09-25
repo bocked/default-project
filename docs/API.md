@@ -1,6 +1,6 @@
 # API Reference
 
-Base URL (production): `https://yerlikoglon-backend.onrender.com`
+Base URL (production): `https://api.yerlikoglon.uz`
 
 Format: JSON. Errors: `{ "error": "<message>" }` with a 4xx/5xx status.
 

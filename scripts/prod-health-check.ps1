@@ -2,9 +2,8 @@
 #
 #   Checks:
 #     1. Frontend (Cloudflare Pages)               -> 200
-#     2. Backend /health (Render, live)            -> 200  {ok:true}
-#     3. New-code marker on Render (me/delete)     -> 401  (route exists)
-#     4. Backend /health (VPS api.yerlikoglon.uz)  -> 200  (fix SSL 526 first)
+#     2. Backend /health (api.yerlikoglon.uz)      -> 200  {ok:true}
+#     3. New-code marker on API (me/delete)        -> 401  (route exists)
 #
 #   Usage:
 #     .\scripts\prod-health-check.ps1              (optional: -Token to verify CF token)
@@ -26,9 +25,8 @@ function Check-Url([string]$Name, [string]$Url, [int]$Expected, [string]$Method 
 
 Write-Output "=== yerlikoglon.uz production health check ==="
 Check-Url "Frontend (Pages)"            "https://default-project-bza.pages.dev/"                         200
-Check-Url "Backend health (Render)"     "https://yerlikoglon-backend.onrender.com/health"                 200
-Check-Url "Backend new-code marker"     "https://yerlikoglon-backend.onrender.com/api/auth/me/delete"     401 "POST"
-Check-Url "Backend health (VPS api...)" "https://api.yerlikoglon.uz/health"                               200
+Check-Url "Backend health (API)"        "https://api.yerlikoglon.uz/health"                              200
+Check-Url "Backend new-code marker"     "https://api.yerlikoglon.uz/api/auth/me/delete"                  401 "POST"
 
 if ($Token) {
     if (-not $env:CF_API_TOKEN) { Write-Output "FAIL  Cloudflare token check skipped (set CF_API_TOKEN)"; $fail = 1 }

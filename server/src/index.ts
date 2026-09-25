@@ -3,7 +3,7 @@ import { logger } from "./lib/logger.js";
 import { captureException } from "./lib/sentry.js";
 
 // Catch unhandled rejections and exceptions so the process exits cleanly and
-// the process manager / Render can restart it. Without these handlers a stray
+// the process manager (PM2) can restart it. Without these handlers a stray
 // rejection keeps the process alive in a potentially broken state.
 process.on("uncaughtException", (err) => {
   logger.fatal({ err }, "uncaught exception");

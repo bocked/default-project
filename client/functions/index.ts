@@ -30,7 +30,7 @@ const DEFAULT_TITLE = "Iqtibosim — iqtiboslar to'plami";
 const DEFAULT_DESCRIPTION =
   "Fikrlarni to'playdigan, bo'limlar va heshteglar bo'yicha saralanadigan iqtiboslar sayti.";
 
-const API_ORIGIN = "https://yerlikoglon-backend.onrender.com";
+const API_ORIGIN = "https://api.yerlikoglon.uz";
 
 export const onRequestGet = async (context: { request: Request; env: Env }): Promise<Response> => {
   const { request, env } = context;

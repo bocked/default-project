@@ -33,7 +33,7 @@ jobs:
         working-directory: client
         run: npm run build
         env:
-          NEXT_PUBLIC_SERVER_URL: https://yerlikoglon-backend.onrender.com
+          NEXT_PUBLIC_SERVER_URL: https://api.yerlikoglon.uz
           NEXT_PUBLIC_TEST_MODE: "1"
           NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
 

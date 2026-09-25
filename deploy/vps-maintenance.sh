@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# yerlikoglon.uz — VPS (95.46.96.12) maintenance: SSH root key + SSL(526) + deploy + health.
+# yerlikoglon.uz — GCP VM (35.224.32.160) maintenance: SSH key + SSL + deploy + health.
 #
 # Steps (all run on the VPS):
 #   1. Root SSH public-key login   (fixes our key-based access)

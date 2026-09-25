@@ -4,7 +4,7 @@
 - Loyiha monorepo tuzilishiga ega (`client/` va `server/`).
 - Har bir mantiqiy tugallangan topshiriqdan so'ng, o'zgarishlarni avtomatik ravishda commit va push qilib boring.
 - Commit xabarlari aniq va tushunarli bo'lishi shart (masalan: `feat: ...`, `fix: ...`, `chore: ...`).
-- Deploy manzillari: frontend `https://default-project-bza.pages.dev`; API (ko'chma): `https://yerlikoglon-backend.onrender.com`.
+- Deploy manzillari: frontend `https://default-project-bza.pages.dev`; API: `https://api.yerlikoglon.uz` (GCP VM, port 4000).
 
 ## 2. Server va VPS Konfiguratsiyasi
 - **Backend Port:** `4000` (`config.ts` va `server/.env`)

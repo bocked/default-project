@@ -4,7 +4,7 @@
 > bu stack faqat API (`api.yerlikoglon.uz`) ni xizmat qiladi.
 > Eski PM2 yo'li (agar kerak bo'lsa): [`DEPLOY.md`](DEPLOY.md).
 
-Server: Ubuntu 22.04/24.04 yoki Debian 12, VPS IP `95.46.96.12`.
+Server: Ubuntu 22.04/24.04 yoki Debian 12, GCP VM IP `35.224.32.160` (Always Free).
 
 ## Nima deploy qilinadi
 
@@ -25,7 +25,7 @@ Fayllar:
 
 ## 1. DNS (Cloudflare)
 
-`api.yerlikoglon.uz` → `95.46.96.12` (A-record, **Proxied: ON**).
+`api.yerlikoglon.uz` → `35.224.32.160` (A-record, **Proxied: ON**).
 
 Cloudflare → `yerlikoglon.uz` → **SSL/TLS → Overview**: mode ni **Full**
 (yoki **Full (strict)**) qiling.
@@ -76,8 +76,8 @@ VPS'dagi API tasdiqlangach:
    `NEXT_PUBLIC_SERVER_URL` ni ham shu manzilga o'zgartiring.
 3. `main`'ga push qiling — Cloudflare Pages avtomatik rebuild qiladi.
 
-> O'tish paytida xizmat uzilishini xohlamasangiz, avval VPS API to'liq
-> ishlaguncha Render'da qoldirib, so'ng birdaniga almashtiring.
+> O'tish paytida xizmat uzilishini xohlamasangiz, avval VM API to'liq
+> ishlagunicha eski hosting'da qoldirib, so'ng birdaniga almashtiring.
 
 ## 5. Yangilash
 

@@ -3,10 +3,9 @@
 #
 #   Checks:
 #     1. Frontend (Cloudflare Pages)               -> 200
-#     2. Backend /health (Render, live)            -> 200  {ok:true}
-#     3. New-code marker on Render (me/delete)     -> 401  (route exists)
-#     4. Backend /health (VPS api.yerlikoglon.uz)  -> 200  (fix SSL 526 first)
-#     5. Optional: Cloudflare API token verify     -> success:true
+#     2. Backend /health (api.yerlikoglon.uz)      -> 200  {ok:true}
+#     3. New-code marker on API (me/delete)        -> 401  (route exists)
+#     4. Optional: Cloudflare API token verify     -> success:true
 #
 #   Usage:
 #     ./scripts/prod-health-check.sh [--token]        (token check via $CF_API_TOKEN)
@@ -27,9 +26,8 @@ check() { # check <name> <https-url> <expected-code> [GET|POST]
 }
 echo "=== yerlikoglon.uz production health check ==="
 check "Frontend (Pages)"              "https://default-project-bza.pages.dev/"                        200
-check "Backend health (Render)"       "https://yerlikoglon-backend.onrender.com/health"                200
-check "Backend new-code marker"       "https://yerlikoglon-backend.onrender.com/api/auth/me/delete"    401 POST
-check "Backend health (VPS api...)"   "https://api.yerlikoglon.uz/health"                              200
+check "Backend health (API)"          "https://api.yerlikoglon.uz/health"                             200
+check "Backend new-code marker"       "https://api.yerlikoglon.uz/api/auth/me/delete"                 401 POST
 if [ "${1:-}" = "--token" ] && [ -n "${CF_API_TOKEN:-}" ]; then
   echo "=== Cloudflare token verify ==="
   curl -s -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \

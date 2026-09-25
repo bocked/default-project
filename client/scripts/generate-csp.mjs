@@ -19,7 +19,7 @@ const outDir = join(clientRoot, "out");
 // explicitly in connect-src (no generic https:) or every browser API call
 // would be blocked.
 const API_ORIGIN =
-  process.env.NEXT_PUBLIC_SERVER_URL ?? "https://yerlikoglon-backend.onrender.com";
+  process.env.NEXT_PUBLIC_SERVER_URL ?? "https://api.yerlikoglon.uz";
 
 const JS_TYPES = new Set([
   "",

@@ -112,7 +112,7 @@ $env:NEXT_PUBLIC_SERVER_URL="https://api.yerlikoglon.uz"; npm run build
 
 Main branch'ga push qilinsa GitHub Actions avtomatik: server'ni tekshiradi
 (lint, typecheck, unit testlar, E2E, build) va client'ni Cloudflare Pages'ga
-deploy qiladi; `server/` o'zgarishlari Render'da avtomatik deploy'lanadi.
+deploy qiladi; `server/` o'zgarishlari GCP VM'ga (PM2) deploy qilinadi.
 
 ## API hujjati
 
@@ -122,7 +122,7 @@ Barcha REST endpointlar va Socket.IO eventlar: [`docs/API.md`](docs/API.md).
 
 `deploy/` papkasida tayyor konfiguratsiyalar: `nginx.conf`,
 `ecosystem.config.cjs` (PM2), `setup-vps.sh` (avtomatik skript) va
-`DEPLOY.md` (bosqichma-bosqich yo'riqnoma). VPS: `95.46.96.12`.
+`DEPLOY.md` (bosqichma-bosqich yo'riqnoma). GCP VM: `35.224.32.160` (Always Free).
 
 ## Backend'ni VPS'ga deploy (Docker + Nginx + SSL — tavsiya etilgan)
 

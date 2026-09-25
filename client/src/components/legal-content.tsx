@@ -74,7 +74,7 @@ export function TermsContent() {
         <ul className="list-disc pl-6 space-y-2 text-slate-600 dark:text-slate-300">
           <li>Sayt doimiy ishlashini va xatoliksizlikni.</li>
           <li>Ma&apos;lumotlar yo&apos;qolmasligi yoki buzilmaganligini.</li>
-          <li>Uchinchi tomon xizmatlari (Telegram, Brevo, Render, Cloudflare) to&apos;g&apos;ri ishlashini.</li>
+          <li>Uchinchi tomon xizmatlari (Telegram, Brevo, GCP, Cloudflare) to&apos;g&apos;ri ishlashini.</li>
         </ul>
         <p className="text-slate-600 dark:text-slate-300">
           Admin tomoni saytda yuzaga kelgan har qanday zarar (to&apos;g&apos;ridan-to&apos;g&apos;ri, poyga, tasodifiy) uchun mas&apos;uliyat qabul qilmaydi.

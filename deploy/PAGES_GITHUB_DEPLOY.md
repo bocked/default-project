@@ -1,7 +1,7 @@
 # Cloudflare Pages — GitHub avtomatik deploy (yo'riqnoma)
 
 Loyiha monorepo: `client/` = Next.js static export, `server/` = Express API
-(Render'da). Pages'ga faqat `client/` deploy bo'ladi.
+(GCP VM'da). Pages'ga faqat `client/` deploy bo'ladi.
 
 ## Tekshirilgan sozlamalar (repo ichida)
 
@@ -32,7 +32,7 @@ build `npx next build`, chiqish `out`.
 
    > Build command uchun `npx next build` ham ishlaydi — ikkalasi ekvivalent.
    > `NEXT_PUBLIC_SERVER_URL` **shart emas**: `client/src/lib/config.ts`
-   > defaulti allaqachon `https://yerlikoglon-backend.onrender.com`.
+   > defaulti allaqachon `https://api.yerlikoglon.uz`.
 4. **Save and Deploy**. Birinchi build Git integrationni ulaydi; keyingi
    `main` commit'lar avtomatik deploy bo'ladi.
 
@@ -50,7 +50,7 @@ npx wrangler pages dev out
   ularni wrangler faylida yozib bo'lmaydi.
 - Agar wrangler fayli ishlatilsa, u Pages config uchun "source of truth"
   bo'ladi; bu yerda faqat `out` ko'rsatilgani uchun ziddiyat yo'q.
-- CORS: Render backendda `CORS_ORIGINS` bo'lmasa hamma origin ruxsat
+- CORS: API'da `CORS_ORIGINS` bo'lmasa hamma origin ruxsat
   (`*` default). Bo'lsa, `https://default-project-bza.pages.dev,
   https://*.pages.dev, https://yerlikoglon.uz, https://www.yerlikoglon.uz`
   qo'shilganini tekshiring.

@@ -1,14 +1,14 @@
 # Backend'ni VPS'ga deploy qilish (PM2 + Nginx + SSL)
 
-Server: Ubuntu/Debian VPS, IP `95.46.96.12`. Backend Express + Socket.io,
+Server: GCP e2-micro VM (Always Free), IP `35.224.32.160`. Backend Express + Socket.io,
 Nginx reverse-proxy + Let's Encrypt (certbot), PM2 process manager.
 
 ## 1. DNS
 
-`api.yerlikoglon.uz` → `95.46.96.12` (A-record, **Proxied: ON**).
+`api.yerlikoglon.uz` → `35.224.32.160` (A-record, **Proxied: ON**).
 
 Cloudflare Dashboard: `yerlikoglon.uz` → **DNS → Add record**:
-`Type=A, Name=api, IPv4=95.46.96.12, Proxy status=Proxied`.
+`Type=A, Name=api, IPv4=35.224.32.160, Proxy status=Proxied`.
 
 Keyin Cloudflare → `yerlikoglon.uz` → **SSL/TLS → Overview**: mode ni
 **Full** (yoki **Full (strict)**) qiling — shunda CF origin sertifikat bilan

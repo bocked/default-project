@@ -62,7 +62,7 @@ Sayt "shunday qilib" (as is) va "mavjud bo'lgan holatda" (as available) taqdim e
 
 - Sayt doimiy ishlashini va xatoliksizligini.
 - Ma'lumotlar yo'qolmasligi yoki buzilmaganligini.
-- Uchinchi tomon xizmatlari (Telegram, Brevo, Render, Cloudflare) to'g'ri ishlashini.
+- Uchinchi tomon xizmatlari (Telegram, Brevo, GCP, Cloudflare) to'g'ri ishlashini.
 
 Admin tomoni saytda yuzaga kelgan har qanday zarar (to'g'ridan-to'g'ri, poyga, tasodifiy) uchun mas'uliyat qabul qilmaydi.
 
