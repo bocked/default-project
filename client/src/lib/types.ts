@@ -307,6 +307,61 @@ export interface PolicyContent {
   publishedAt: string | null;
 }
 
+export type PermissionMap = Record<string, boolean>;
+
+export interface AdminFeature {
+  key: string;
+  label: string;
+  description: string;
+  defaultEnabled: boolean;
+  source: "builtin" | "runtime";
+  createdAt: string;
+}
+
+export interface AdminSession {
+  id: string | null;
+  email: string;
+  name: string | null;
+  nickname: string | null;
+  role: string;
+  isSuperAdmin: boolean;
+  permissions: PermissionMap;
+}
+
+export interface AdminSessionResponse {
+  admin: AdminSession;
+  features: AdminFeature[];
+}
+
+export interface AdminFeaturesResponse {
+  features: AdminFeature[];
+}
+
+export interface AdminSubAdminRow {
+  id: string;
+  email: string;
+  name: string | null;
+  nickname: string | null;
+  isSuperAdmin: boolean;
+  permissions: PermissionMap;
+}
+
+export interface AdminSubAdminsResponse {
+  admins: AdminSubAdminRow[];
+  features: AdminFeature[];
+}
+
+export interface AdminPermissionPatchResponse {
+  ok: boolean;
+  admin: Pick<AdminSubAdminRow, "id" | "email" | "name" | "nickname" | "isSuperAdmin" | "permissions">;
+}
+
+export interface PolicyReviewResponse {
+  ok: boolean;
+  created: boolean;
+  draft: AdminPolicy;
+}
+
 export interface PolicyResponse {
   policy: PolicyContent;
   draft: { id: string; version: string; changeSummary: string | null } | null;

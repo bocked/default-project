@@ -156,7 +156,9 @@ export function AdminTextarea({
 export function Checkbox({
   checked,
   onChange,
-}: {
+  className = "",
+  ...props
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange" | "checked"> & {
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
@@ -165,7 +167,8 @@ export function Checkbox({
       type="checkbox"
       checked={checked}
       onChange={(e) => onChange(e.target.checked)}
-      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800"
+      className={`h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 ${className}`}
+      {...props}
     />
   );
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { io as ioClient, type Socket } from "socket.io-client";
 import { prisma } from "../../src/lib/prisma.js";
-import { startTestServer, cleanDatabase, request, unique, ADMIN_PASSWORD, type TestServer } from "./helpers.js";
+import { startTestServer, cleanDatabase, request, unique, onceMatch, ADMIN_PASSWORD, type TestServer } from "./helpers.js";
 
 const ADMIN = ADMIN_PASSWORD;
 const PERMISSION_DENIED = "Ushbu bo'limga kirish uchun sizda yetarli huquq yo'q";
@@ -261,6 +262,70 @@ describe("E2E: admin RBAC (dynamic feature registry)", () => {
     const meAdmin = list.json.users.find((u: any) => u.id === subAdmin.id);
     expect(meAdmin.permissions.canViewUsers).toBe(true);
     expect(meAdmin.permissions.canManageQuotes).toBe(true);
+  });
+});
+
+describe("E2E: admin socket push via JWT", () => {
+  let ts: TestServer;
+  let base: string;
+  let superSocket: Socket;
+
+  const waitEvent = <T>(socket: Socket, event: string, predicate: (payload: T) => boolean): Promise<T> =>
+    onceMatch((cb) => socket.on(event, cb), predicate);
+
+  beforeAll(async () => {
+    ts = await startTestServer();
+    base = ts.base;
+    await cleanDatabase();
+    const reg = await request(base, "POST", "/api/auth/register", {
+      body: { email: "mirabbostolqinjonov@gmail.com", password: "super-password" },
+    });
+    expect(reg.status).toBe(201);
+  });
+
+  afterAll(async () => {
+    await ts.close();
+  });
+
+  it("marks a JWT-authenticated admin socket as admin and pushes policy:review", async () => {
+    const login = await request(base, "POST", "/api/auth/login", {
+      body: { email: "mirabbostolqinjonov@gmail.com", password: "super-password" },
+    });
+    expect(login.status).toBe(200);
+
+    superSocket = ioClient(base, {
+      transports: ["websocket"],
+      reconnection: false,
+      auth: { token: login.json.token },
+    });
+    await waitEvent(superSocket, "connected", () => true);
+
+    const review = waitEvent(superSocket, "admin:policy:review", () => true);
+    await request(base, "POST", "/api/admin/policies/review", {
+      token: ADMIN,
+      body: { reason: "Socket orqali push sinovi" },
+    });
+    const payload = (await review) as { reason?: string };
+    expect(payload.reason).toContain("Socket orqali push sinovi");
+    superSocket.disconnect();
+  });
+
+  it("does NOT mark an anonymous socket as admin (no push received)", async () => {
+    const anon = ioClient(base, { transports: ["websocket"], reconnection: false });
+    await waitEvent(anon, "connected", () => true);
+
+    let received = false;
+    const probe = (): void => {
+      received = true;
+    };
+    anon.on("admin:policy:review", probe);
+    await request(base, "POST", "/api/admin/policies/review", {
+      token: ADMIN,
+      body: { reason: "Anonim socket push olmasligi kerak" },
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(received).toBe(false);
+    anon.disconnect();
   });
 });
 

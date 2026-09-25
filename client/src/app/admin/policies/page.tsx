@@ -13,7 +13,7 @@ import {
   ErrorNote,
   PageTitle,
 } from "@/components/admin-ui";
-import type { AdminPolicy, AdminPolicyListResponse, PolicyType } from "@/lib/types";
+import type { AdminPolicy, AdminPolicyListResponse, PolicyType, PolicyReviewResponse } from "@/lib/types";
 
 const TYPE_TABS: Array<{ id: PolicyType; label: string }> = [
   { id: "TERMS", label: "Foydalanish shartlari" },
@@ -35,6 +35,8 @@ export default function AdminPoliciesPage() {
   const [editing, setEditing] = useState<EditState | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approveReason, setApproveReason] = useState("");
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewReason, setReviewReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -135,6 +137,29 @@ export default function AdminPoliciesPage() {
     }
   }
 
+  async function runReview(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api<PolicyReviewResponse>("/api/admin/policies/review", {
+        method: "POST",
+        body: { reason: reviewReason.trim().length > 0 ? reviewReason.trim() : "Qo'lda ko'rib chiqish so'rovi" },
+      });
+      setReviewOpen(false);
+      setReviewReason("");
+      await load();
+      flash(
+        res.created
+          ? "Ko'rib chiqish loyihasi yaratildi va SUPER_ADMIN'ga yuborildi."
+          : "Mavjud loyiha yangilandi va yana ko'rib chiqishga yuborildi (Telegram + panel)."
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ko'rib chiqish so'rovi yuborilmadi");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const activeLabel = TYPE_TABS.find((t) => t.id === activeType)?.label ?? activeType;
 
   return (
@@ -186,6 +211,42 @@ export default function AdminPoliciesPage() {
           + Yangi loyiha
         </AdminButton>
       </AdminCard>
+
+      {isSuper && (
+        <AdminCard>
+          {reviewOpen ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <AdminInput
+                value={reviewReason}
+                onChange={(e) => setReviewReason(e.target.value)}
+                maxLength={400}
+                placeholder="O'zgarish sababi (masalan: yangi modul aniqlandi, sozlamalar yangilandi)"
+                className="max-w-lg flex-1"
+              />
+              <AdminButton variant="amber" onClick={() => void runReview()} disabled={busy}>
+                Ko&apos;rib chiqishga jo&apos;natish
+              </AdminButton>
+              <AdminButton variant="ghost" onClick={() => setReviewOpen(false)}>
+                Bekor qilish
+              </AdminButton>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  O&apos;zgarishlarni ko&apos;rib chiqish
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Yangi modul yoki muhim sozlamalar o&apos;zgarganda TERMS loyihasi avtomatik tayyorlanadi.
+                </p>
+              </div>
+              <AdminButton variant="amber" onClick={() => setReviewOpen(true)} disabled={busy}>
+                🔍 Ko&apos;rib chiqish so&apos;rovi
+              </AdminButton>
+            </div>
+          )}
+        </AdminCard>
+      )}
 
       {typePolicies.length === 0 ? (
         <EmptyState text="Bu tur uchun hujjatlar yo'q." />

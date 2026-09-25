@@ -4,21 +4,52 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { useAdminSession } from "@/lib/admin-session";
+import { AdminPushZone } from "@/components/admin-push-zone";
 
-const NAV: Array<{ href: string; label: string; exact?: boolean; superOnly?: boolean }> = [
+type PermissionKey = string;
+
+interface NavItem {
+  href: string;
+  label: string;
+  exact?: boolean;
+  superOnly?: boolean;
+  /** Feature keys — ANY of them grants the section. Omitted = role-gated only. */
+  permissions?: PermissionKey[];
+}
+
+const NAV: NavItem[] = [
   { href: "/admin", label: "Boshqaruv paneli", exact: true },
-  { href: "/admin/content", label: "Kontent" },
-  { href: "/admin/quizzes", label: "Testlar" },
-  { href: "/admin/users", label: "Foydalanuvchilar" },
-  { href: "/admin/communication", label: "Muloqot" },
-  { href: "/admin/settings", label: "Sozlamalar" },
+  { href: "/admin/content", label: "Kontent", permissions: ["canManageQuotes", "canManageCategories"] },
+  { href: "/admin/quizzes", label: "Testlar", permissions: ["canManageQuizzes"] },
+  { href: "/admin/users", label: "Foydalanuvchilar", permissions: ["canViewUsers"] },
+  {
+    href: "/admin/communication",
+    label: "Muloqot",
+    permissions: ["canManageAnnouncements", "canManageFeedback"],
+  },
+  { href: "/admin/settings", label: "Sozlamalar", permissions: ["canManageSettings"] },
+  { href: "/admin/sub-admins", label: "Sub-adminlar", superOnly: true },
   { href: "/admin/policies", label: "Siyosatlar" },
   { href: "/admin/email-management", label: "📧 Pochta Boshqaruvi", superOnly: true },
-  { href: "/admin/audit", label: "Audit" },
+  { href: "/admin/audit", label: "Audit", permissions: ["canViewAudit"] },
 ];
+
+/** Permission(s) guarding the section a pathname belongs to. */
+function permissionsForPath(pathname: string): { superOnly?: boolean; keys: PermissionKey[] } {
+  if (pathname?.startsWith("/admin/sub-admins")) return { superOnly: true, keys: [] };
+  for (const item of NAV) {
+    const prefix = item.exact ? new RegExp(`^${item.href}$`) : new RegExp(`^${item.href}(/|$)`);
+    if (item.href !== "/admin" && prefix.test(pathname ?? "")) {
+      return { superOnly: item.superOnly, keys: item.permissions ?? [] };
+    }
+  }
+  return { keys: [] };
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const { session: sess, can, loading: sessLoading } = useAdminSession();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -43,7 +74,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  const visibleNav = user.role === "SUPER_ADMIN" ? NAV : NAV.filter((item) => !item.superOnly);
+  const isSuper = user.role === "SUPER_ADMIN";
+
+  const visibleNav = NAV.filter((item) => {
+    if (item.superOnly) return isSuper;
+    if (item.permissions && item.permissions.length > 0) return item.permissions.some(can);
+    return true;
+  });
+
+  // Deep-link guard: if the sidebar hides a section, a direct URL must not
+  // render its content either (the backend enforces the same 403s).
+  const guard = permissionsForPath(pathname ?? "");
+  const accessDenied =
+    (guard.superOnly && !isSuper) || (guard.keys.length > 0 && !guard.keys.some(can));
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
@@ -68,7 +111,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
       </aside>
       <div className="min-w-0 flex-1">
-        <main className="mx-auto w-full max-w-7xl">{children}</main>
+        <div className="mb-4">
+          <AdminPushZone />
+        </div>
+        <main className="mx-auto w-full max-w-7xl">
+          {sessLoading || !sess ? (
+            <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Ruxsatlar tekshirilmoqda...</p>
+          ) : accessDenied ? (
+            <div className="mx-auto mt-8 w-full max-w-sm">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center dark:border-amber-700/40 dark:bg-amber-950/30">
+                <h1 className="text-lg font-semibold text-amber-800 dark:text-amber-300">Ruxsat yo&apos;q</h1>
+                <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
+                  Bu bo&apos;limga kirish uchun sizda yetarli huquq yo&apos;q.
+                </p>
+                <Link
+                  href="/admin"
+                  className="mt-4 inline-block rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                >
+                  Boshqaruv paneliga qaytish
+                </Link>
+              </div>
+            </div>
+          ) : (
+            children
+          )}
+        </main>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { addLog } from "../lib/logstore.js";
 import { setOnlineCount } from "../routes/api.js";
 import { parseZod, adminAuthSchema, adminBanSchema, adminUnbanSchema } from "../schemas.js";
 import { safeEqual } from "../middleware/adminAuth.js";
+import { verifyAuthToken } from "../lib/tokens.js";
 import { Cooldown } from "../lib/cooldown.js";
 import { SocketRateLimiter } from "../lib/socketRateLimit.js";
 
@@ -76,6 +77,28 @@ export function initSocket(io: Server): void {
       online: io.engine.clientsCount,
       ip: socket.data.ip ?? "unknown",
     });
+
+    // Browser admin panels authenticate their socket with the short-lived JWT
+    // (sent via handshake.auth.token). Verifying it lets the admin push events
+    // reach real admin sessions instead of only the shared-password bots.
+    const rawToken = socket.handshake.auth?.token;
+    if (typeof rawToken === "string" && rawToken.length > 0 && rawToken.length < 4096) {
+      const payload = verifyAuthToken(rawToken);
+      if (payload) {
+        void prisma.user
+          .findUnique({ where: { id: payload.sub }, select: { role: true, blocked: true } })
+          .then((user) => {
+            if (
+              user &&
+              !user.blocked &&
+              (user.role === "ADMIN" || user.role === "SUPER_ADMIN")
+            ) {
+              socket.data.isAdmin = true;
+            }
+          })
+          .catch(() => {});
+      }
+    }
 
     socket.on("disconnect", () => {
       adminAuthCooldown.remove(socket.id);

@@ -89,6 +89,7 @@ export async function runPolicyImpactReview(input: PolicyImpactInput): Promise<P
       type: draft.type,
       version: draft.version,
       changeSummary: draft.changeSummary,
+      reason,
     });
     const telegramMessageId = await sendPolicyReviewMessage(
       {
