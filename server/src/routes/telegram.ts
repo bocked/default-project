@@ -11,6 +11,7 @@ import {
   sendVerificationCodeMessage,
   publishQuoteToChannel,
 } from "../lib/telegram.js";
+import { captureChannelChatId, getTelegramSettings } from "../lib/telegramSettings.js";
 import {
   hashTelegramVerifyToken,
   generateTelegramVerifyCode,
@@ -46,6 +47,14 @@ telegramRouter.post("/webhook", async (req, res) => {
     const update = req.body as Record<string, any>;
     if (update?.callback_query) {
       await handleCallback(update.callback_query);
+    } else if (update?.channel_post?.chat?.id) {
+      // Auto-capture the channel id whenever the bot sees a channel post.
+      await captureChannel(update.channel_post.chat.id, "channel_post");
+    } else if (update?.my_chat_member?.chat?.type === "channel") {
+      const status = update.my_chat_member.new_chat_member?.status;
+      if (status && status !== "kicked" && status !== "left" && status !== "restricted") {
+        await captureChannel(update.my_chat_member.chat.id, "my_chat_member");
+      }
     } else if (update?.message?.contact) {
       // A contact always belongs to the verification flow, even when the client
       // attaches it as a reply to the bot's request message.
@@ -54,10 +63,13 @@ telegramRouter.post("/webhook", async (req, res) => {
       await handleReply(update.message);
     } else if (typeof update?.message?.text === "string" && update.message.text.startsWith("/start")) {
       await handleStart(update.message);
-    } else if (typeof update?.message?.text === "string" && isAdminChat(update.message.chat?.id)) {
+    } else if (typeof update?.message?.text === "string" && (await isAdminChat(update.message.chat?.id))) {
       // Plain admin text messages become actionable prompts (approve, block,
       // VIP, broadcast, …). Non-admin text is intentionally ignored.
       await handleAdminText(update.message);
+    } else if (update?.message?.forward_from_chat?.type === "channel") {
+      // A message forwarded from the target channel reveals its numeric id.
+      await captureChannel(update.message.forward_from_chat.id, "forward");
     } else {
       logger.warn(
         {
@@ -80,8 +92,19 @@ const POLICY_APPROVE_PREFIX = "policy:approve:";
 const POLICY_SUGGEST_PREFIX = "policy:suggest:";
 const POLICY_REJECT_PREFIX = "policy:reject:";
 
-function isAdminChat(chatId: unknown): boolean {
-  return config.telegramAdminChatId.length > 0 && Number(chatId) === Number(config.telegramAdminChatId);
+async function isAdminChat(chatId: unknown): Promise<boolean> {
+  const settings = await getTelegramSettings();
+  return settings.superAdminChatId.length > 0 && Number(chatId) === Number(settings.superAdminChatId);
+}
+
+/** Persists a numeric channel id learnt from the webhook and logs the change. */
+async function captureChannel(chatId: unknown, source: string): Promise<void> {
+  if (chatId === undefined || chatId === null) return;
+  const changed = await captureChannelChatId(chatId as number | string);
+  if (changed) {
+    addLog("info", `Telegram kanali raqami aniqlandi (${source}): ${String(chatId)}`);
+    logger.info({ chatId, source }, "telegram channel id captured");
+  }
 }
 
 function approvedText(quote: { text: string; displayAuthor: string }): string {
@@ -97,7 +120,7 @@ async function handleCallback(cq: Record<string, any>): Promise<void> {
   const chatId = cq.message?.chat?.id;
   const messageId: number | undefined = cq.message?.message_id;
 
-  if (!isAdminChat(chatId)) {
+  if (!(await isAdminChat(chatId))) {
     await answerCallbackQuery(cq.id, "Ruxsat yo'q");
     return;
   }
@@ -209,7 +232,7 @@ async function handlePolicyReplyAwait(policyId: string, mode: "SUGGEST" | "REJEC
 }
 
 async function handleReply(msg: Record<string, any>): Promise<void> {
-  if (!isAdminChat(msg.chat?.id)) return;
+  if (!(await isAdminChat(msg.chat?.id))) return;
   const repliedId: number | undefined = msg.reply_to_message?.message_id;
   const reason = String(msg.text ?? "").trim().slice(0, 500);
   if (repliedId === undefined || !reason) return;
@@ -283,7 +306,7 @@ async function handleReply(msg: Record<string, any>): Promise<void> {
  * "✓ Topshiriq bajarildi: …" reply describing what was done.
  */
 async function handleAdminText(msg: Record<string, any>): Promise<void> {
-  if (!isAdminChat(msg.chat?.id)) return;
+  if (!(await isAdminChat(msg.chat?.id))) return;
   const chatId: number | undefined = msg.chat?.id;
   const text = String(msg.text ?? "").trim().slice(0, 2000);
   if (chatId === undefined || !text) return;

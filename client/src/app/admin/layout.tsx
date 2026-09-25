@@ -30,6 +30,7 @@ const NAV: NavItem[] = [
   },
   { href: "/admin/settings", label: "Sozlamalar", permissions: ["canManageSettings"] },
   { href: "/admin/sub-admins", label: "Sub-adminlar", superOnly: true },
+  { href: "/admin/telegram", label: "Telegram Sozlamalari", superOnly: true },
   { href: "/admin/policies", label: "Siyosatlar" },
   { href: "/admin/email-management", label: "📧 Pochta Boshqaruvi", superOnly: true },
   { href: "/admin/audit", label: "Audit", permissions: ["canViewAudit"] },
@@ -37,7 +38,9 @@ const NAV: NavItem[] = [
 
 /** Permission(s) guarding the section a pathname belongs to. */
 function permissionsForPath(pathname: string): { superOnly?: boolean; keys: PermissionKey[] } {
-  if (pathname?.startsWith("/admin/sub-admins")) return { superOnly: true, keys: [] };
+  if (pathname?.startsWith("/admin/sub-admins") || pathname?.startsWith("/admin/telegram")) {
+    return { superOnly: true, keys: [] };
+  }
   for (const item of NAV) {
     const prefix = item.exact ? new RegExp(`^${item.href}$`) : new RegExp(`^${item.href}(/|$)`);
     if (item.href !== "/admin" && prefix.test(pathname ?? "")) {

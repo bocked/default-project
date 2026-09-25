@@ -1,7 +1,9 @@
 import type { Server as HttpServer } from "node:http";
 import type { Server as IOServer } from "socket.io";
 import { createApp } from "../../src/app.js";
+import { config } from "../../src/config.js";
 import { prisma } from "../../src/lib/prisma.js";
+import { invalidateTelegramSettingsCache } from "../../src/lib/telegramSettings.js";
 
 export interface TestServer {
   base: string;
@@ -51,7 +53,30 @@ export async function cleanDatabase(): Promise<void> {
     prisma.bannedIp.deleteMany(),
     prisma.adminLog.deleteMany(),
     prisma.contentBlock.deleteMany(),
+    prisma.telegramSettings.upsert({
+      where: { id: "main" },
+      update: {
+        // The token stays empty so e2e never calls the real Telegram API; the
+        // admin chat is seeded from the e2e env so webhook-driven flows still
+        // recognise the admin chat (mirrors the boot-time ensureTelegramSettings).
+        botToken: "",
+        superAdminChatId: config.telegramAdminChatId,
+        channelValue: "",
+        channelChatId: "",
+        notifyPolicy: true,
+        notifyNewFeature: true,
+        notifyHealth: true,
+        notifyBackup: true,
+        botStatus: "disabled",
+        botUsername: null,
+        lastError: null,
+      },
+      create: { id: "main" },
+    }),
   ]);
+  // The settings module caches the row; reset it so every test file starts
+  // from the same state (Vitest isolates modules per file, this guards too).
+  invalidateTelegramSettingsCache();
 }
 
 export interface ReqOptions {

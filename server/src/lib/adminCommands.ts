@@ -543,7 +543,7 @@ async function announce(title: string, message: string): Promise<string> {
 }
 
 async function broadcastTelegramText(title: string, message: string): Promise<number> {
-  if (!telegramEnabled()) return 0;
+  if (!(await telegramEnabled())) return 0;
   const users = await prisma.user.findMany({
     where: { telegramId: { not: null }, deletedAt: null, blocked: false },
     select: { telegramId: true },

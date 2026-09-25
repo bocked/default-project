@@ -30,6 +30,8 @@ import { tryEnsureDefaultCategories } from "./lib/categories.js";
 import { tryEnsureDefaultContent } from "./lib/content.js";
 import { tryEnsurePolicyBaseline, tryEnsurePolicyDrafts } from "./lib/policies.js";
 import { syncBuiltInFeatures } from "./lib/permissionRegistry.js";
+import { ensureTelegramSettings, reinitBot } from "./lib/telegramSettings.js";
+import { notifyServerError, startHealthMonitor } from "./lib/healthMonitor.js";
 import { initSentry, setupSentryErrorHandler, captureException } from "./lib/sentry.js";
 
 /** Masks secrets for the startup log while still confirming they were set. */
@@ -226,6 +228,9 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
       if (status >= 500) {
         logger.error({ err }, "request failed");
         captureException(err, { status });
+        // Push a Server-500 alert to the Super Admin's Telegram chat (rate
+        // limited) whenever the notifyHealth toggle is enabled.
+        notifyServerError(err, _req);
       }
       res.status(status).json({ error: message });
     }
@@ -289,6 +294,13 @@ export async function startServer(): Promise<void> {
     await tryEnsurePolicyDrafts();
     await syncBuiltInFeatures();
     await promoteAdminEmails();
+    // Seed the Telegram settings row from .env once; after an admin edits the
+    // panel the DB is the source of truth. Refresh the bot status in the
+    // background so the dashboard shows it without waiting for a manual check.
+    await ensureTelegramSettings();
+    void reinitBot().catch(() => {
+      /* best-effort status refresh */
+    });
   } catch (err) {
     logger.warn({ err }, "postgres unreachable, starting anyway");
   }
@@ -328,6 +340,9 @@ export async function startServer(): Promise<void> {
   const analyticsFlushTimer = setInterval(() => {
     void flushAnalyticsToDb();
   }, 5 * 60 * 1000);
+
+  // Periodic disk-usage check with Telegram alert (notifyHealth-gated).
+  startHealthMonitor();
 
   server.listen(config.port, () => {
     logger.info(`listening on http://localhost:${config.port}`);

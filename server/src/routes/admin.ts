@@ -22,6 +22,7 @@ import { normalizeTagName, slugify } from "../lib/categories.js";
 import { adminPoliciesRouter } from "./adminPolicies.js";
 import { adminQuizzesRouter } from "./adminQuizzes.js";
 import { adminEmailsRouter } from "./adminEmails.js";
+import { adminTelegramRouter } from "./adminTelegram.js";
 import {
   validateBody,
   banCreateSchema,
@@ -415,8 +416,8 @@ adminRouter.post("/quotes/:id/post-telegram", checkPermission("canManageQuotes")
       res.status(400).json({ error: "Faqat tasdiqlangan iqtiboslarni Telegramga joylash mumkin" });
       return;
     }
-    if (!channelEnabled()) {
-      res.status(400).json({ error: "Telegram kanal sozlanmagan. TELEGRAM_CHANNEL_ID o'rnating." });
+    if (!(await channelEnabled())) {
+      res.status(400).json({ error: "Telegram kanal sozlanmagan. Admin panel → Telegram sozlamalari bo'limida sozlang." });
       return;
     }
     const posted = await publishQuoteToChannel(quote);
@@ -2016,7 +2017,7 @@ adminRouter.delete("/bans/telegram/:userId", checkPermission("canManageUsers"), 
 // ---------------------------------------------------------------------------
 
 async function broadcastTelegram(title: string, message: string): Promise<number> {
-  if (!telegramEnabled()) return 0;
+  if (!(await telegramEnabled())) return 0;
   const users = await prisma.user.findMany({
     where: { telegramId: { not: null }, deletedAt: null, blocked: false },
     select: { telegramId: true },
@@ -2061,3 +2062,4 @@ async function broadcastEmail(title: string, message: string): Promise<number> {
 adminRouter.use("/policies", adminPoliciesRouter);
 adminRouter.use("/quizzes", adminQuizzesRouter);
 adminRouter.use("/emails", adminEmailsRouter);
+adminRouter.use("/telegram", adminTelegramRouter);

@@ -16,6 +16,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "telegram:webhook": "tsx scripts/set-telegram-webhook.ts",
+    "telegram:watchdog": "node scripts/telegram-watchdog.mjs",
     "test:smtp": "tsx scripts/test-smtp.ts",
     "seed": "tsx prisma/seed.ts"
   },

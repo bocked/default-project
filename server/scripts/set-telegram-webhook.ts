@@ -17,7 +17,7 @@ async function main(): Promise<void> {
     body: JSON.stringify({
       url: config.telegramWebhookUrl,
       secret_token: config.telegramWebhookSecret,
-      allowed_updates: ["callback_query", "message"],
+      allowed_updates: ["message", "callback_query", "channel_post", "my_chat_member", "chat_join_request"],
       drop_pending_updates: false,
     }),
   });

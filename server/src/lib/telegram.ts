@@ -1,26 +1,48 @@
 import type { Category, Quote, Tag, User } from "@prisma/client";
 import { config } from "../config.js";
 import { logger } from "./logger.js";
+import { channelChatIdFor, getTelegramSettings } from "./telegramSettings.js";
 
 const API_BASE = "https://api.telegram.org";
 
-export function telegramEnabled(): boolean {
-  return config.telegramBotToken.length > 0 && config.telegramAdminChatId.length > 0;
+/** Whether a bot token AND an admin chat are configured (DB settings). */
+export async function telegramEnabled(): Promise<boolean> {
+  const settings = await getTelegramSettings();
+  return settings.botToken.length > 0 && settings.superAdminChatId.length > 0;
 }
 
 /** Whether the bot can publish approved quotes to the Telegram channel. */
-export function channelEnabled(): boolean {
-  return config.telegramBotToken.length > 0 && config.telegramChannelId.length > 0;
+export async function channelEnabled(): Promise<boolean> {
+  const settings = await getTelegramSettings();
+  return settings.botToken.length > 0 && Boolean(channelChatIdFor(settings));
 }
 
-async function apiCall<T>(method: string, body: unknown): Promise<T | null> {
-  if (!config.telegramBotToken) return null;
+async function telegramFetch(url: string, body: unknown): Promise<Response | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
   try {
-    const res = await fetch(`${API_BASE}/bot${config.telegramBotToken}/${method}`, {
+    return await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function apiCall<T>(method: string, body: unknown): Promise<T | null> {
+  const settings = await getTelegramSettings();
+  if (!settings.botToken) return null;
+  const res = await telegramFetch(`${API_BASE}/bot${settings.botToken}/${method}`, body);
+  if (!res) {
+    logger.warn({ method }, "telegram api call failed (network)");
+    return null;
+  }
+  try {
     return (await res.json().catch(() => null)) as T | null;
   } catch (err) {
     logger.warn({ err, method }, "telegram api call failed");
@@ -77,9 +99,10 @@ export function moderationText(ctx: ModerationContext): string {
 /** Sends a new pending quote to the admin with Approve/Reject buttons.
  *  Returns the Telegram message id (to edit later) or null. */
 export async function sendModerationMessage(ctx: ModerationContext): Promise<number | null> {
-  if (!telegramEnabled()) return null;
+  if (!(await telegramEnabled())) return null;
+  const settings = await getTelegramSettings();
   const json = await apiCall<TelegramResult<{ message_id: number }>>("sendMessage", {
-    chat_id: config.telegramAdminChatId,
+    chat_id: settings.superAdminChatId,
     text: moderationText(ctx),
     reply_markup: moderationKeyboard(ctx.quote.id),
   });
@@ -133,9 +156,13 @@ export interface PolicyReviewContext {
 }
 
 /** Sends the policy review prompt with the three decision buttons to the admin
- *  chat. Returns the Telegram message id (to edit later) or null. */
+ *  chat. Returns the Telegram message id (to edit later) or null.
+ *  Gated by the "notifyPolicy" toggle; the admin panel socket push is
+ *  independent and always fires. */
 export async function sendPolicyReviewMessage(ctx: PolicyReviewContext, policyId: string): Promise<number | null> {
-  if (!telegramEnabled()) return null;
+  const settings = await getTelegramSettings();
+  if (!settings.notifyPolicy) return null;
+  if (!settings.botToken || !settings.superAdminChatId) return null;
   const text = [
     `🧐 ${ctx.label} — ko'rib chiqish kutilmoqda (v${ctx.version})`,
     "",
@@ -144,7 +171,7 @@ export async function sendPolicyReviewMessage(ctx: PolicyReviewContext, policyId
     "Nima qilamiz?",
   ].join("\n");
   const json = await apiCall<TelegramResult<{ message_id: number }>>("sendMessage", {
-    chat_id: config.telegramAdminChatId,
+    chat_id: settings.superAdminChatId,
     text,
     reply_markup: policyReviewKeyboard(policyId),
   });
@@ -152,9 +179,12 @@ export async function sendPolicyReviewMessage(ctx: PolicyReviewContext, policyId
 }
 
 /** "🆕 Yangi modul/funksiya [X] aniqlandi! Adminlar uchun ruxsatlarni
- *  sozlaysizmi?" — push to the admin chat when a runtime module registers. */
+ *  sozlaysizmi?" — push to the admin chat when a runtime module registers.
+ *  Gated by the "notifyNewFeature" toggle. */
 export async function sendNewFeatureMessage(feature: { label: string; group: string }): Promise<void> {
-  if (!telegramEnabled()) return;
+  const settings = await getTelegramSettings();
+  if (!settings.notifyNewFeature) return;
+  if (!settings.botToken || !settings.superAdminChatId) return;
   const text = [
     `🆕 Yangi modul/funksiya [${feature.label}] aniqlandi!`,
     "",
@@ -163,7 +193,7 @@ export async function sendNewFeatureMessage(feature: { label: string; group: str
     "",
     "Sub-adminlar sahifasida (Admin panel → Sub-adminlar) ruxsatlarni sozlashingiz mumkin.",
   ].join("\n");
-  await sendTelegramMessage(config.telegramAdminChatId, text);
+  await sendTelegramMessage(settings.superAdminChatId, text);
 }
 
 // ---------------------------------------------------------------------------
@@ -198,9 +228,11 @@ export function quoteChannelPostText(quote: ChannelQuote): string {
  * configured or Telegram rejects the message.
  */
 export async function publishQuoteToChannel(quote: ChannelQuote): Promise<boolean> {
-  if (!channelEnabled()) return false;
+  const settings = await getTelegramSettings();
+  const chatId = channelChatIdFor(settings);
+  if (!settings.botToken || !chatId) return false;
   const json = await apiCall<TelegramResult<{ message_id: number }>>("sendMessage", {
-    chat_id: config.telegramChannelId,
+    chat_id: chatId,
     text: quoteChannelPostText(quote),
     reply_markup: channelPostKeyboard(quote.id, config.publicSiteUrl),
   });
@@ -218,18 +250,23 @@ export interface ReplyKeyboard {
   one_time_keyboard?: boolean;
 }
 
-/** Cached `getMe` result so the bot username is resolved once. */
 let cachedBotUsername: string | null | undefined;
+let cachedBotUsernameForToken = "";
 
 /** The bot's public @username (no leading @), used to build deep links. */
 export async function getBotUsername(): Promise<string | null> {
-  if (cachedBotUsername !== undefined) return cachedBotUsername;
-  if (!config.telegramBotToken) {
+  const settings = await getTelegramSettings();
+  if (!settings.botToken) {
     cachedBotUsername = null;
+    cachedBotUsernameForToken = settings.botToken;
     return null;
+  }
+  if (cachedBotUsername !== undefined && cachedBotUsernameForToken === settings.botToken) {
+    return cachedBotUsername;
   }
   const json = await apiCall<TelegramResult<{ username?: string }>>("getMe", {});
   cachedBotUsername = json?.result?.username ?? null;
+  cachedBotUsernameForToken = settings.botToken;
   return cachedBotUsername;
 }
 
@@ -248,8 +285,9 @@ export async function sendTelegramMessage(
 
 /** Fires a plain notification to the admin chat (no buttons). */
 export async function sendAdminNotification(text: string): Promise<void> {
-  if (!telegramEnabled()) return;
-  await sendTelegramMessage(config.telegramAdminChatId, text);
+  const settings = await getTelegramSettings();
+  if (!settings.botToken || !settings.superAdminChatId) return;
+  await sendTelegramMessage(settings.superAdminChatId, text);
 }
 
 /** Asks the user for their phone number via a Request Contact button. */

@@ -356,6 +356,57 @@ export interface AdminPermissionPatchResponse {
   admin: Pick<AdminSubAdminRow, "id" | "email" | "name" | "nickname" | "isSuperAdmin" | "permissions">;
 }
 
+export interface TelegramSettings {
+  botTokenSet: boolean;
+  botTokenMasked: string;
+  superAdminChatId: string;
+  channelValue: string;
+  channelChatId: string;
+  notifyPolicy: boolean;
+  notifyNewFeature: boolean;
+  notifyHealth: boolean;
+  notifyBackup: boolean;
+  botStatus: string;
+  botUsername: string | null;
+  lastError: string | null;
+  lastCheckedAt: string | null;
+  updatedAt: string;
+}
+
+export interface TelegramSettingsResponse {
+  settings: TelegramSettings;
+  reinitialized?: boolean;
+}
+
+export interface TelegramStatusResponse {
+  configured: boolean;
+  botStatus: string;
+  botUsername: string | null;
+  lastError: string | null;
+  lastCheckedAt: string | null;
+  superAdminChatIdSet: boolean;
+  channelChatId: string;
+  channelResolved: string | null;
+  webhookUrl: string | null;
+  webhookConfigured: boolean;
+  notifications: {
+    policy: boolean;
+    newFeature: boolean;
+    health: boolean;
+    backup: boolean;
+  };
+}
+
+export interface TelegramSettingsUpdate {
+  botToken?: string;
+  superAdminChatId?: string;
+  channelValue?: string;
+  notifyPolicy?: boolean;
+  notifyNewFeature?: boolean;
+  notifyHealth?: boolean;
+  notifyBackup?: boolean;
+}
+
 export interface PolicyReviewResponse {
   ok: boolean;
   created: boolean;

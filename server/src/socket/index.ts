@@ -66,6 +66,7 @@ export function initSocket(io: Server): void {
   bus.subscribe("admin:feature:new", (payload) => emitToAdmins(io, "admin:feature:new", payload));
   bus.subscribe("admin:policy:review", (payload) => emitToAdmins(io, "admin:policy:review", payload));
   bus.subscribe("admin:permissions:changed", (payload) => emitToAdmins(io, "admin:permissions:changed", payload));
+  bus.subscribe("admin:telegram:status", (payload) => emitToAdmins(io, "admin:telegram:status", payload));
 
   io.use(banCheck);
 

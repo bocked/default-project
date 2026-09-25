@@ -7,6 +7,9 @@ server/dist/
 server/uploads/
 server/.env
 server/.env.local
+server/backups/
+server/scripts/.telegram-watchdog.state.json
+server/scripts/.telegram-watchdog.lock
 
 # client (handled by client/.gitignore)
 client/out/

@@ -337,6 +337,23 @@ export const telegramBanSchema = z.object({
 });
 export type TelegramBan = z.infer<typeof telegramBanSchema>;
 
+export const telegramSettingsUpdateSchema = z.object({
+  // Empty / omitted string keeps the currently stored token.
+  botToken: z.string().trim().max(200).optional(),
+  superAdminChatId: z.string().trim().max(40).optional(),
+  channelValue: z.string().trim().max(220).optional(),
+  notifyPolicy: z.boolean().optional(),
+  notifyNewFeature: z.boolean().optional(),
+  notifyHealth: z.boolean().optional(),
+  notifyBackup: z.boolean().optional(),
+});
+export type TelegramSettingsUpdate = z.infer<typeof telegramSettingsUpdateSchema>;
+
+export const telegramTestSchema = z.object({
+  message: z.string().trim().max(500).optional(),
+});
+export type TelegramTest = z.infer<typeof telegramTestSchema>;
+
 // ---------------------------------------------------------------------------
 // Legal policies (TERMS/PRIVACY/COOKIES) + quizzes
 // ---------------------------------------------------------------------------

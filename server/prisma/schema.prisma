@@ -394,6 +394,33 @@ model SiteSetting {
   @@index([group])
 }
 
+model TelegramSettings {
+  id               String    @id @default("main")
+  // Telegram bot token. Stored in the DB so the Admin Panel can change it at
+  // runtime; a change re-initialises the connection (setWebhook + getMe).
+  botToken         String    @default("")
+  superAdminChatId String    @default("")
+  // Channel as entered by the admin: @username, numeric id or t.me invite link.
+  channelValue     String    @default("")
+  // Numeric channel id captured from the webhook (my_chat_member,
+  // channel_post or forwarded channel messages). Takes priority over channelValue.
+  channelChatId    String    @default("")
+  // Notification toggles — each gates only the Telegram send, admin panel
+  // socket pushes happen regardless.
+  notifyPolicy     Boolean   @default(true)
+  notifyNewFeature Boolean   @default(true)
+  notifyHealth     Boolean   @default(true)
+  notifyBackup     Boolean   @default(true)
+  // ok | error | disabled
+  botStatus        String    @default("disabled")
+  botUsername      String?
+  lastError        String?
+  lastCheckedAt    DateTime?
+  updatedById      String?
+  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime  @default(now())
+}
+
 model SeoRule {
   id          String    @id @default(uuid())
   // home | category:<slug> | tag:<slug> | quote:<id>
