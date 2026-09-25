@@ -108,15 +108,17 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'", "https://telegram.org", "https://a.nel.cloudflare.com", "https://static.cloudflareinsights.com"],
+          // Strict: no 'unsafe-inline' / 'unsafe-eval' — only first-party
+          // scripts plus the Cloudflare NEL/analytics endpoints (Mozilla
+          // Observatory / ImmuniWeb deduct points for unsafe script sources).
+          scriptSrc: ["'self'", "https://a.nel.cloudflare.com", "https://static.cloudflareinsights.com"],
           styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
           imgSrc: ["'self'", "data:", "blob:", "https:"],
           fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
-          connectSrc: ["'self'", "https:", "wss:", "https://a.nel.cloudflare.com"],
+          connectSrc: ["'self'", "https://a.nel.cloudflare.com", "wss:"],
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
           formAction: ["'self'"],
-          frameSrc: ["https://telegram.org"],
           // This API is not meant to be embedded anywhere. 0-blocks framing to
           // prevent clickjacking against the authenticated admin endpoints.
           frameAncestors: ["'none'"],
