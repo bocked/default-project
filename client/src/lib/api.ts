@@ -2,15 +2,31 @@ import { config } from "./config";
 
 const TOKEN_KEY = "iqtibosim_token";
 
+/**
+ * Access-token store. Kept in sessionStorage (survives reloads, dies with the
+ * tab) instead of localStorage so a successful XSS cannot silently persist the
+ * JWT on the victim's machine for other tabs/visits. A one-time migration
+ * moves any token left in localStorage by older builds into sessionStorage.
+ */
 export const tokenStore = {
   get(): string | null {
     if (typeof window === "undefined") return null;
-    return window.localStorage.getItem(TOKEN_KEY);
+    const session = window.sessionStorage.getItem(TOKEN_KEY);
+    if (session) return session;
+    const legacy = window.localStorage.getItem(TOKEN_KEY);
+    if (legacy) {
+      window.sessionStorage.setItem(TOKEN_KEY, legacy);
+      window.localStorage.removeItem(TOKEN_KEY);
+      return legacy;
+    }
+    return null;
   },
   set(token: string): void {
-    window.localStorage.setItem(TOKEN_KEY, token);
+    window.sessionStorage.setItem(TOKEN_KEY, token);
+    window.localStorage.removeItem(TOKEN_KEY);
   },
   clear(): void {
+    window.sessionStorage.removeItem(TOKEN_KEY);
     window.localStorage.removeItem(TOKEN_KEY);
   },
 };

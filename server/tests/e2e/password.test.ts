@@ -67,13 +67,16 @@ describe("E2E: password reset flow", () => {
     expect(reuse.status).toBe(400);
   });
 
-  it("answers 404 with a clear message for an unregistered email", async () => {
+  it("answers 200 uniformly for an unregistered email without sending anything", async () => {
     const before = emailTranscript.length;
     const res = await request(base, "POST", "/api/auth/forgot-password", {
       body: { email: `${unique("ghost")}@example.com` },
     });
-    expect(res.status).toBe(404);
-    expect(res.json.message).toBe("Ushbu email bilan ro'yxatdan o'tilmagan");
+    // Account enumeration is closed: unknown addresses get the exact same
+    // success shape as registered ones, and no email is dispatched.
+    expect(res.status).toBe(200);
+    expect(res.json.ok).toBe(true);
+    expect(res.json.message).toBe("Parolni tiklash kodi pochtangizga yuborildi!");
     expect(emailTranscript.length).toBe(before);
   });
 

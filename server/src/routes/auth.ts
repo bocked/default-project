@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import type { UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
@@ -67,6 +68,12 @@ import {
 } from "../schemas.js";
 
 export const authRouter = Router();
+
+/** One-way digest of an identifier (email/phone) used in logs and activity so
+ *  PII never reaches the console or persistent audit trails in cleartext. */
+function hashPii(value: string): string {
+  return crypto.createHash("sha256").update(value.toLowerCase().trim()).digest("hex");
+}
 
 // ---------------------------------------------------------------------------
 // HttpOnly refresh-token cookie helpers
@@ -214,7 +221,9 @@ authRouter.post("/register", authBruteLimiter, validateBody(registerSchema), asy
   const body = res.locals.body as Register;
   const existing = await prisma.user.findUnique({ where: { email: body.email } });
   if (existing) {
-    res.status(409).json({ error: "Bu email allaqachon ro'yxatdan o'tgan" });
+    // Uniform pre-creation failure: does not confirm whether the address is
+    // already taken, preventing account enumeration through the register flow.
+    res.status(400).json({ error: "Ro'yxatdan o'tishda xatolik yuz berdi. Qayta urinib ko'ring." });
     return;
   }
   const termsVersion = await publishedPolicyVersion(PolicyType.TERMS);
@@ -232,7 +241,7 @@ authRouter.post("/register", authBruteLimiter, validateBody(registerSchema), asy
   // Best-effort: keep the admin informed about new registrations.
   const handle = [user.nickname, user.name].filter(Boolean).join(" / ") || user.email!;
   void sendAdminNotification(`🆕 Yangi foydalanuvchi ro'yxatdan o'tdi\n\n${user.email}${handle !== user.email ? `\n${handle}` : ""}`);
-  void recordActivity({ userId: user.id, action: "REGISTER", detail: user.email! });
+  void recordActivity({ userId: user.id, action: "REGISTER" });
   await issueRefreshCookie(res, user.id);
   res.status(201).json({ token: signAuthToken(user.id), user: await toUser(user, termsVersion) });
 });
@@ -257,7 +266,7 @@ authRouter.post("/login", authBruteLimiter, validateBody(loginSchema), async (_r
     targetRole !== user.role
       ? await prisma.user.update({ where: { id: user.id }, data: { role: targetRole } })
       : user;
-  void recordActivity({ userId: current.id, action: "LOGIN", detail: current.email ?? current.telegramUsername ?? "telegram" });
+  void recordActivity({ userId: current.id, action: "LOGIN" });
   await issueRefreshCookie(res, current.id);
   res.json({ token: signAuthToken(user.id), user: await toUser(current) });
 });
@@ -318,7 +327,7 @@ authRouter.post("/resend-verification", authBruteLimiter, validateBody(resendVer
       // reason, never leave the client's "Yuborilmoqda..." button hanging. A
       // sandbox-blocked recipient answers 400 with the actionable reason too.
       console.error("Resend Email Error:", err);
-      logger.warn({ err, to: body.email }, "resend-verification: email delivery failed");
+      logger.warn({ err, toHash: hashPii(body.email) }, "resend-verification: email delivery failed");
       res.status(400).json({
         success: false,
         message: err instanceof Error ? err.message : "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring.",
@@ -348,7 +357,7 @@ authRouter.post("/send-otp", requireAuth, authBruteLimiter, async (req, res) => 
     res.json({ success: true, message: "Kod pochtaga yuborildi!" });
   } catch (err) {
     console.error("Resend Email Error:", err);
-    logger.warn({ err, to: user.email }, "send-otp: email delivery failed");
+    logger.warn({ err, toHash: hashPii(user.email) }, "send-otp: email delivery failed");
     res.status(400).json({
       success: false,
       message: err instanceof Error ? err.message : "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring.",
@@ -357,22 +366,23 @@ authRouter.post("/send-otp", requireAuth, authBruteLimiter, async (req, res) => 
 });
 
 // POST /api/auth/forgot-password - email a 6-digit OTP reset code + a fallback
-// reset link. Unknown emails answer 404 so the UI can say "ro'yxatdan
-// o'tilmagan". The code + token are stored SHA-256 hashed under resetTokenExpiry
-// (15 min). Every step is logged so a "kod yetib bormayapti" report can be
-// traced end-to-end from the terminal.
+// reset link. Unknown emails get the same 200 success as registered ones so an
+// attacker cannot probe which addresses have accounts (account enumeration);
+// no real email is dispatched for unknown addresses. The code + token are
+// stored SHA-256 hashed under resetTokenExpiry (15 min). Nothing identifying
+// (email/phone) is ever written to the console or logs — only a digest.
 authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswordSchema), async (_req, res) => {
   const body = res.locals.body as ForgotPassword;
   const userEmail = body.email;
-  console.log("[FORGOT PASSWORD] So'rov qabul qilindi:", userEmail);
+  logger.debug({ emailHash: hashPii(userEmail) }, "forgot-password: request received");
 
   const user = await prisma.user.findUnique({ where: { email: userEmail } });
+  // Uniform answer regardless of whether the account exists.
   if (!user || !user.email) {
-    console.log("[FORGOT PASSWORD] Foydalanuvchi topilmadi:", userEmail);
-    res.status(404).json({ success: false, message: "Ushbu email bilan ro'yxatdan o'tilmagan" });
+    logger.debug({ emailHash: hashPii(userEmail) }, "forgot-password: no account found, replying uniformly");
+    res.json({ success: true, ok: true, message: "Parolni tiklash kodi pochtangizga yuborildi!" });
     return;
   }
-  console.log("[FORGOT PASSWORD] Foydalanuvchi topildi:", user.email);
 
   const token = generatePasswordResetToken();
   const code = generatePasswordResetCode();
@@ -386,14 +396,10 @@ authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswor
       },
     });
   } catch (err) {
-    console.error("❌ [FORGOT PASSWORD DB ERROR]:", err);
+    logger.error({ err }, "forgot-password: failed to persist reset fields");
     res.status(500).json({ success: false, message: "Parolni tiklashda xatolik yuz berdi. Qayta urinib ko'ring." });
     return;
   }
-  console.log("[FORGOT PASSWORD] OTP yaratildi va resetTokenExpiry (15 daqiqa) bilan saqlandi");
-
-  const senderEmail = config.sendFrom;
-  console.log(`[FORGOT PASSWORD] OTP yuborilmoqda: ${user.email} | Sender: ${senderEmail}`);
 
   let sent: EmailSendResult;
   try {
@@ -403,20 +409,23 @@ authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswor
       "Resend API javob bermadi (Timeout)",
     );
   } catch (err) {
-    console.error("❌ [RESEND FORGOT PASSWORD ERROR]:", JSON.stringify({ message: err instanceof Error ? err.message : String(err) }, null, 2));
+    logger.error({ err }, "forgot-password: email send failed");
     res.status(400).json({ success: false, message: "Pochtaga xat yuborishda xatolik yuz berdi." });
     return;
   }
   if (!sent.ok) {
-    console.error("❌ [RESEND FORGOT PASSWORD ERROR]:", JSON.stringify({ message: sent.error }, null, 2));
+    logger.error({ emailHash: hashPii(user.email) }, "forgot-password: provider rejected the reset email");
     res.status(400).json({
       success: false,
-      message: sent.error ?? "Pochtaga xat yuborishda xatolik yuz berdi.",
+      message: sent.error ?? "Pochtaga xat yuborishda xatolik yuz berdi. Qayta urinib ko'ring.",
     });
     return;
   }
 
-  console.log("✅ [RESEND SUCCESS]:", { id: sent.messageId ?? null, to: user.email, from: senderEmail });
+  logger.info(
+    { userId: user.id, emailHash: hashPii(user.email), messageId: sent.messageId ?? null },
+    "forgot-password: reset email dispatched",
+  );
   res.json({ success: true, ok: true, message: "Parolni tiklash kodi pochtangizga yuborildi!" });
 });
 
@@ -618,7 +627,7 @@ authRouter.post("/telegram/quick/status", validateBody(telegramQuickSessionSchem
     }
     // One token per completion: consume the session so it cannot be re-polled.
     await prisma.telegramQuickSession.delete({ where: { id: session.id } });
-    void recordActivity({ userId: user.id, action: "LOGIN", detail: user.email ?? user.telegramUsername ?? "telegram" });
+    void recordActivity({ userId: user.id, action: "LOGIN" });
     await issueRefreshCookie(res, user.id);
     res.json({ status: "COMPLETE", token: signAuthToken(user.id), user: await toUser(user) });
     return;
@@ -655,7 +664,7 @@ authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), asy
     },
   });
   await issueEmailVerification(updated.email!);
-  void recordActivity({ userId: updated.id, action: "REGISTER", detail: updated.email ?? "" });
+  void recordActivity({ userId: updated.id, action: "REGISTER" });
   await issueRefreshCookie(res, updated.id);
   res.json({ token: signAuthToken(updated.id), user: await toUser(updated, termsVersion) });
 });
@@ -673,8 +682,22 @@ authRouter.post("/refresh", async (req, res) => {
     res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
     return;
   }
-  const user = await prisma.user.findUnique({ where: { refreshTokenHash: hashRefreshToken(raw) } });
+  const digest = hashRefreshToken(raw);
+  const user = await prisma.user.findUnique({ where: { refreshTokenHash: digest } });
   if (!user || user.blocked || !user.refreshTokenExpiresAt || user.refreshTokenExpiresAt < new Date()) {
+    clearRefreshCookie(res);
+    res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
+    return;
+  }
+  // Refresh-token replay detection: every successful refresh rotates the digest,
+  // so a cookie whose digest is already gone must have been stolen (or shipped
+  // by an old client copy). Revoke the session entirely and flag it. This is
+  // the strongest cheap invariant available — a second use of a consumed token
+  // can only be an attacker replaying a leaked cookie.
+  const current = await prisma.user.findUnique({ where: { id: user.id }, select: { refreshTokenHash: true } });
+  if (!current || current.refreshTokenHash !== digest) {
+    await prisma.user.update({ where: { id: user.id }, data: { refreshTokenHash: null, refreshTokenExpiresAt: null } });
+    logger.warn({ userId: user.id }, "refresh: token replay detected, session revoked");
     clearRefreshCookie(res);
     res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
     return;
