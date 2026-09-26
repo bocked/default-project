@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { moderationKeyboard, moderationText, quoteChannelPostText, channelPostKeyboard, adminPromotionText } from "../telegram.js";
+import {
+  moderationKeyboard,
+  moderationText,
+  quoteChannelPostText,
+  channelPostKeyboard,
+  adminPromotionText,
+  userApprovalKeyboard,
+  userApprovalPromptText,
+} from "../telegram.js";
 
 describe("moderationKeyboard", () => {
   it("attaches approve and reject buttons with the quote id", () => {
@@ -83,5 +91,34 @@ describe("adminPromotionText", () => {
       grants: [{ key: "canViewUsers", label: "Foydalanuvchilarni ko'rish", enabled: true }],
     });
     expect(text).toContain("Foydalanuvchi ali_tg yangi Admin qilib tayinlandi");
+  });
+});
+
+describe("userApprovalKeyboard", () => {
+  it("attaches Tasdiqlash / Rad etish buttons referencing the userId", () => {
+    const kb = userApprovalKeyboard("user-42");
+    expect(kb.inline_keyboard).toHaveLength(1);
+    const row = kb.inline_keyboard[0];
+    expect(row.map((b) => b.callback_data)).toEqual(["approve-user:user-42", "reject-user:user-42"]);
+    expect(row.map((b) => b.text)).toEqual(["✅ Tasdiqlash", "❌ Rad etish"]);
+  });
+});
+
+describe("userApprovalPromptText", () => {
+  it("names the email and the handle and asks for the posting right", () => {
+    const text = userApprovalPromptText({
+      user: { id: "u1", email: "ali@example.com", name: "Ali", nickname: "ali", telegramUsername: null } as any,
+    });
+    expect(text).toContain("ali@example.com");
+    expect(text).toContain("Ali / ali");
+    expect(text).toContain("Iqtibos joylash huquqi beriladimi?");
+  });
+
+  it("omits the handle when nothing but an email is known", () => {
+    const text = userApprovalPromptText({
+      user: { id: "u1", email: "ali@example.com", name: null, nickname: null, telegramUsername: null } as any,
+    });
+    expect(text).toContain("ali@example.com");
+    expect(text).not.toContain(" / ");
   });
 });

@@ -218,6 +218,25 @@ export async function executeAdminCommand(input: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// User approval bot (dedicated path)
+// ---------------------------------------------------------------------------
+
+/**
+ * Executes ONLY the user-approval subset of the admin prompts (verify /
+ * tasdiqla, unverify / verify off) used by the @nimadur7_bot webhook. Every
+ * other command returns null so the approval bot can tell the admin that the
+ * request belongs to the main bot. Malformed approval attempts return the
+ * parser's "✗ …" hint so the admin can fix the prompt.
+ */
+export async function executeUserApprovalCommand(input: string): Promise<string | null> {
+  const cmd = parseAdminCommand(input);
+  if (cmd.kind === "verify") return verifyUser(cmd.email);
+  if (cmd.kind === "unverify") return unverifyUser(cmd.email);
+  if (cmd.kind === "invalid") return `✗ ${cmd.message}`;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Queries (no side effects)
 // ---------------------------------------------------------------------------
 

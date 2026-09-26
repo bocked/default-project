@@ -42,11 +42,17 @@ function statusBadge(status: string): { tone: "emerald" | "rose" | "amber" | "sl
   }
 }
 
+function approvalBadge(status: string): { tone: "emerald" | "rose" | "amber" | "slate"; label: string } {
+  if (!status) return { tone: "slate", label: "Sozlanmagan" };
+  return statusBadge(status);
+}
+
 export default function AdminTelegramPage() {
   const { user } = useAuth();
   const [settings, setSettings] = useState<TelegramSettings | null>(null);
   const [status, setStatus] = useState<TelegramStatusResponse | null>(null);
   const [botToken, setBotToken] = useState("");
+  const [approvalBotToken, setApprovalBotToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,10 +102,15 @@ export default function AdminTelegramPage() {
         notifyBackup: settings?.notifyBackup ?? true,
       };
       if (botToken.trim()) body.botToken = botToken.trim();
+      if (approvalBotToken.trim()) body.approvalBotToken = approvalBotToken.trim();
       await api<TelegramSettingsResponse>("/api/admin/telegram/settings", { method: "PUT", body });
       await Promise.all([loadSettings(), loadStatus(true)]);
       setBotToken("");
-      setInfo("Sozlamalar saqlandi." + (body.botToken ? " Bot qayta ulandi." : ""));
+      setApprovalBotToken("");
+      const parts = [];
+      if (body.botToken) parts.push("Asosiy bot qayta ulandi.");
+      if (body.approvalBotToken) parts.push("Tasdiqlash boti qayta ulandi.");
+      setInfo(`Sozlamalar saqlandi. ${parts.join(" ")}`);
       window.setTimeout(() => setInfo(null), 4000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sozlamalar saqlanmadi");
@@ -282,6 +293,85 @@ export default function AdminTelegramPage() {
         </div>
 
         <div className="mt-5 flex justify-end">
+          <AdminButton disabled={busy} onClick={() => void save()}>
+            Saqlash
+          </AdminButton>
+        </div>
+      </AdminCard>
+
+      <AdminCard>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Tasdiqlash boti (@nimadur7_bot)</h2>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Faqat foydalanuvchilarni tasdiqlash uchun: yangi ro&apos;yxatdan o&apos;tganlarga [Tasdiqlash / Rad etish]
+              tugmalari va <code>verify &lt;email&gt;</code> buyruqlari. Tizim xabarlari asosiy bot orqali yuboriladi.
+            </p>
+          </div>
+          <Badge tone={approvalBadge(status?.approvalBotStatus ?? settings.approvalBotStatus).tone}>
+            {approvalBadge(status?.approvalBotStatus ?? settings.approvalBotStatus).label}
+          </Badge>
+        </div>
+
+        {(status?.approvalBotStatus || settings.approvalBotStatus) && (
+          <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
+              <p className="text-xs text-slate-400 dark:text-slate-500">Bot username</p>
+              <p className="mt-0.5 font-medium text-slate-800 dark:text-slate-200">
+                {status?.approvalBotUsername ?? settings.approvalBotUsername
+                  ? `@${status?.approvalBotUsername ?? settings.approvalBotUsername}`
+                  : "—"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
+              <p className="text-xs text-slate-400 dark:text-slate-500">Webhook</p>
+              <p className="mt-0.5 font-medium text-slate-800 dark:text-slate-200">
+                {status?.approvalBotWebhookUrl ? <code className="text-xs">{status.approvalBotWebhookUrl}</code> : "—"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
+              <p className="text-xs text-slate-400 dark:text-slate-500">Oxirgi tekshiruv</p>
+              <p className="mt-0.5 font-medium text-slate-800 dark:text-slate-200">
+                {settings.approvalBotLastCheckedAt ? new Date(settings.approvalBotLastCheckedAt).toLocaleString() : "—"}
+              </p>
+            </div>
+            {(status?.approvalBotLastError ?? settings.approvalBotLastError) && (
+              <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 dark:border-rose-800/40 dark:bg-rose-950/30 sm:col-span-2 lg:col-span-3">
+                <p className="text-xs text-rose-500 dark:text-rose-400">So&apos;nggi xato</p>
+                <p className="mt-0.5 font-medium text-rose-700 dark:text-rose-300">
+                  {status?.approvalBotLastError ?? settings.approvalBotLastError}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="mt-4">
+          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+            Tasdiqlash boti tokeni
+            {settings.approvalBotTokenSet && (
+              <span className="ml-2 font-normal text-slate-400 dark:text-slate-500">
+                joriy: {settings.approvalBotTokenMasked}
+              </span>
+            )}
+          </label>
+          <AdminInput
+            type="password"
+            autoComplete="off"
+            placeholder={
+              settings.approvalBotTokenSet
+                ? "Yangi token kiriting (bo'sh = eski saqlanadi)"
+                : "@BotFather'dan olingan nimadur7 tokeni"
+            }
+            value={approvalBotToken}
+            onChange={(e) => setApprovalBotToken(e.target.value)}
+          />
+          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+            Token kiritilgach, bot avtomatik ulanadi va &quot;/api/telegram/webhook/approval&quot; manziliga bog&apos;lanadi.
+          </p>
+        </div>
+
+        <div className="mt-4 flex justify-end">
           <AdminButton disabled={busy} onClick={() => void save()}>
             Saqlash
           </AdminButton>

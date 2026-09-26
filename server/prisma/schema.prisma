@@ -396,8 +396,10 @@ model SiteSetting {
 
 model TelegramSettings {
   id               String    @id @default("main")
-  // Telegram bot token. Stored in the DB so the Admin Panel can change it at
-  // runtime; a change re-initialises the connection (setWebhook + getMe).
+  // System bot token (@yerlikoglonBot). Stored in the DB so the Admin Panel can
+  // change it at runtime; a change re-initialises the connection (setWebhook +
+  // getMe). Delivers every "system" message: quote moderation buttons, policy
+  // review, health/backup/email alerts, admin command replies.
   botToken         String    @default("")
   superAdminChatId String    @default("")
   // Channel as entered by the admin: @username, numeric id or t.me invite link.
@@ -416,6 +418,15 @@ model TelegramSettings {
   botUsername      String?
   lastError        String?
   lastCheckedAt    DateTime?
+  // Approval bot token (@nimadur7_bot). Dedicated to USER approval only: when a
+  // new user registers, the [Tasdiqlash / Rad etish] prompt and the
+  // verify/unverify commands go through this bot. Every system notification
+  // stays on the main botToken above.
+  approvalBotToken      String    @default("")
+  approvalBotUsername   String?
+  approvalBotStatus     String    @default("disabled")
+  approvalBotLastError  String?
+  approvalBotLastCheckedAt DateTime?
   updatedById      String?
   updatedAt        DateTime  @updatedAt
   createdAt        DateTime  @default(now())

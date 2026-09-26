@@ -340,6 +340,9 @@ export type TelegramBan = z.infer<typeof telegramBanSchema>;
 export const telegramSettingsUpdateSchema = z.object({
   // Empty / omitted string keeps the currently stored token.
   botToken: z.string().trim().max(200).optional(),
+  // @nimadur7_bot — dedicated to user approval (verify commands + the
+  // [Tasdiqlash / Rad etish] inbox). Never carries system notifications.
+  approvalBotToken: z.string().trim().max(200).optional(),
   superAdminChatId: z.string().trim().max(40).optional(),
   channelValue: z.string().trim().max(220).optional(),
   notifyPolicy: z.boolean().optional(),

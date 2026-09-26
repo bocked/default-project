@@ -37,7 +37,7 @@ import {
 import { issueEmailVerification } from "../lib/verifyEmail.js";
 import { logger } from "../lib/logger.js";
 import { authBruteLimiter } from "../lib/rateLimit.js";
-import { getBotUsername, sendAdminNotification } from "../lib/telegram.js";
+import { getBotUsername, sendAdminNotification, sendUserApprovalPrompt } from "../lib/telegram.js";
 import { recordActivity } from "../lib/activity.js";
 import { publishedPolicyVersion } from "../lib/policies.js";
 import { PolicyType } from "@prisma/client";
@@ -241,6 +241,11 @@ authRouter.post("/register", authBruteLimiter, validateBody(registerSchema), asy
   // Best-effort: keep the admin informed about new registrations.
   const handle = [user.nickname, user.name].filter(Boolean).join(" / ") || user.email!;
   void sendAdminNotification(`🆕 Yangi foydalanuvchi ro'yxatdan o'tdi\n\n${user.email}${handle !== user.email ? `\n${handle}` : ""}`);
+  // Best-effort approval inbox on @nimadur7_bot (no-op while the approval bot
+  // token is unset): asks whether a brand-new USER may post quotes directly.
+  if (user.role === "USER") {
+    void sendUserApprovalPrompt({ user });
+  }
   void recordActivity({ userId: user.id, action: "REGISTER" });
   await issueRefreshCookie(res, user.id);
   res.status(201).json({ token: signAuthToken(user.id), user: await toUser(user, termsVersion) });

@@ -15,6 +15,11 @@ export interface TelegramRuntimeSettings {
   botUsername: string | null;
   lastError: string | null;
   lastCheckedAt: Date | null;
+  approvalBotToken: string;
+  approvalBotUsername: string | null;
+  approvalBotStatus: string;
+  approvalBotLastError: string | null;
+  approvalBotLastCheckedAt: Date | null;
   updatedAt: Date;
 }
 
@@ -27,6 +32,7 @@ export interface TelegramSettingsPatch {
   notifyNewFeature?: boolean;
   notifyHealth?: boolean;
   notifyBackup?: boolean;
+  approvalBotToken?: string;
 }
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -145,14 +151,19 @@ export async function checkBotToken(token: string): Promise<BotCheckResult> {
 
 const WEBHOOK_ALLOWED_UPDATES = ["message", "callback_query", "channel_post", "my_chat_member", "chat_join_request"];
 
-/** Registers/unregisters the webhook, only when the env provides a URL. */
-export async function registerWebhook(token: string): Promise<void> {
-  if (!config.telegramWebhookUrl || !config.telegramWebhookSecret) return;
+/**
+ * Registers/unregisters the webhook, only when the env provides a URL.
+ * The main bot uses the bare `telegramWebhookUrl` while the approval bot
+ * (@nimadur7_bot) gets it with a `/approval` suffix so every inbound update
+ * can be routed to the bot it actually came from.
+ */
+export async function registerWebhook(token: string, url = config.telegramWebhookUrl): Promise<void> {
+  if (!url || !config.telegramWebhookSecret) return;
   await telegramFetch(`${TELEGRAM_API_BASE}/bot${token.trim()}/setWebhook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      url: config.telegramWebhookUrl,
+      url,
       secret_token: config.telegramWebhookSecret,
       allowed_updates: WEBHOOK_ALLOWED_UPDATES,
     }),
@@ -195,6 +206,59 @@ export async function reinitBot(): Promise<BotCheckResult> {
   return check;
 }
 
+/**
+ * Re-initialises the approval bot (@nimadur7_bot) after its token changes:
+ * getMe + webhook (`<telegramWebhookUrl>/approval`) + persisted status. The
+ * approval bot is exclusively dedicated to user approval prompts/commands;
+ * every system notification still uses the main token.
+ */
+export async function reinitApprovalBot(): Promise<BotCheckResult> {
+  const settings = await getTelegramSettings();
+  if (!settings.approvalBotToken) {
+    await prisma.telegramSettings.update({
+      where: { id: "main" },
+      data: {
+        approvalBotStatus: "disabled",
+        approvalBotUsername: null,
+        approvalBotLastError: null,
+        approvalBotLastCheckedAt: new Date(),
+      },
+    });
+    invalidateTelegramSettingsCache();
+    return { ok: false, error: "Tasdiqlash boti tokeni kiritilmagan" };
+  }
+
+  const check = await checkBotToken(settings.approvalBotToken);
+  if (check.ok) {
+    const webhookUrl = config.telegramWebhookUrl ? `${config.telegramWebhookUrl}/approval` : "";
+    try {
+      await registerWebhook(settings.approvalBotToken, webhookUrl);
+    } catch {
+      /* webhook registration is best-effort */
+    }
+    await prisma.telegramSettings.update({
+      where: { id: "main" },
+      data: {
+        approvalBotStatus: "ok",
+        approvalBotUsername: check.username ?? null,
+        approvalBotLastError: null,
+        approvalBotLastCheckedAt: new Date(),
+      },
+    });
+  } else {
+    await prisma.telegramSettings.update({
+      where: { id: "main" },
+      data: {
+        approvalBotStatus: "error",
+        approvalBotLastError: check.error ?? "Noma'lum xato",
+        approvalBotLastCheckedAt: new Date(),
+      },
+    });
+  }
+  invalidateTelegramSettingsCache();
+  return check;
+}
+
 export interface SanitizedTelegramSettings {
   botTokenSet: boolean;
   botTokenMasked: string;
@@ -209,6 +273,12 @@ export interface SanitizedTelegramSettings {
   botUsername: string | null;
   lastError: string | null;
   lastCheckedAt: Date | null;
+  approvalBotTokenSet: boolean;
+  approvalBotTokenMasked: string;
+  approvalBotUsername: string | null;
+  approvalBotStatus: string;
+  approvalBotLastError: string | null;
+  approvalBotLastCheckedAt: Date | null;
   updatedAt: Date;
 }
 
@@ -227,6 +297,15 @@ export function sanitizeSettings(settings: TelegramRuntimeSettings): SanitizedTe
     botUsername: settings.botUsername,
     lastError: settings.lastError,
     lastCheckedAt: settings.lastCheckedAt,
+    approvalBotTokenSet: settings.approvalBotToken.length > 0,
+    approvalBotTokenMasked:
+      settings.approvalBotToken.length > 0
+        ? `${settings.approvalBotToken.slice(0, 6)}…${settings.approvalBotToken.slice(-4)}`
+        : "",
+    approvalBotUsername: settings.approvalBotUsername,
+    approvalBotStatus: settings.approvalBotStatus,
+    approvalBotLastError: settings.approvalBotLastError,
+    approvalBotLastCheckedAt: settings.approvalBotLastCheckedAt,
     updatedAt: settings.updatedAt,
   };
 }
@@ -239,14 +318,20 @@ export async function applyTelegramSettings(patch: TelegramSettingsPatch): Promi
   settings: SanitizedTelegramSettings;
   reinitialized: boolean;
   botCheck?: BotCheckResult;
+  approvalReinitialized: boolean;
+  approvalBotCheck?: BotCheckResult;
 }> {
   const current = await getTelegramSettings();
 
   const data: TelegramSettingsPatch = { ...patch };
   if ("botToken" in data && data.botToken === current.botToken) delete data.botToken;
   if (data.botToken !== undefined) data.botToken = data.botToken.trim();
+  if ("approvalBotToken" in data && data.approvalBotToken === current.approvalBotToken) delete data.approvalBotToken;
+  if (data.approvalBotToken !== undefined) data.approvalBotToken = data.approvalBotToken.trim();
 
   const tokenChanged = data.botToken !== undefined && data.botToken !== current.botToken;
+  const approvalTokenChanged =
+    data.approvalBotToken !== undefined && data.approvalBotToken !== current.approvalBotToken;
 
   await prisma.telegramSettings.upsert({
     where: { id: "main" },
@@ -260,8 +345,19 @@ export async function applyTelegramSettings(patch: TelegramSettingsPatch): Promi
     botCheck = await reinitBot();
   }
 
+  let approvalBotCheck: BotCheckResult | undefined;
+  if (approvalTokenChanged) {
+    approvalBotCheck = await reinitApprovalBot();
+  }
+
   const fresh = await getTelegramSettings();
-  return { settings: sanitizeSettings(fresh), reinitialized: tokenChanged, botCheck };
+  return {
+    settings: sanitizeSettings(fresh),
+    reinitialized: tokenChanged,
+    botCheck,
+    approvalReinitialized: approvalTokenChanged,
+    approvalBotCheck,
+  };
 }
 
 export { parseChannelValue, channelChatIdFor, maskToken } from "./telegramFormat.js";

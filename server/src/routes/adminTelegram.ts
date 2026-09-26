@@ -8,6 +8,7 @@ import {
   applyTelegramSettings,
   channelChatIdFor,
   getTelegramSettings,
+  reinitApprovalBot,
   reinitBot,
   sanitizeSettings,
 } from "../lib/telegramSettings.js";
@@ -49,16 +50,25 @@ adminTelegramRouter.put("/settings", validateBody(telegramSettingsUpdateSchema),
       action: "telegram.settings",
       targetType: "telegram",
       targetId: "main",
-      detail: buildChangeSummary(patch, result.reinitialized),
+      detail: buildChangeSummary(patch, result.reinitialized, result.approvalReinitialized),
       ip: null,
     });
-    addLog("info", `Telegram sozlamalari yangilandi (${result.reinitialized ? "bot token o'zgardi" : "boshqa maydonlar"})`);
+    addLog(
+      "info",
+      `Telegram sozlamalari yangilandi (${result.reinitialized ? "bot token o'zgardi" : "boshqa maydonlar"}${result.approvalReinitialized ? ", tasdiqlash boti tokeni o'zgardi" : ""})`
+    );
     bus.publish("admin:telegram:status", {
       settings: result.settings,
       reinitialized: result.reinitialized,
       botCheck: result.botCheck ?? null,
+      approvalReinitialized: result.approvalReinitialized,
+      approvalBotCheck: result.approvalBotCheck ?? null,
     });
-    res.json({ settings: result.settings, reinitialized: result.reinitialized });
+    res.json({
+      settings: result.settings,
+      reinitialized: result.reinitialized,
+      approvalReinitialized: result.approvalReinitialized,
+    });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Sozlamalar saqlanmadi" });
   }
@@ -67,8 +77,11 @@ adminTelegramRouter.put("/settings", validateBody(telegramSettingsUpdateSchema),
 // GET /api/admin/telegram/status?refresh=1 - live bot connection state.
 adminTelegramRouter.get("/status", async (req, res) => {
   try {
+    let approvalReinitialized = false;
     if (req.query.refresh === "1" || req.query.refresh === "true") {
       await reinitBot();
+      await reinitApprovalBot();
+      approvalReinitialized = true;
     }
     const settings = await getTelegramSettings();
     res.json({
@@ -88,6 +101,12 @@ adminTelegramRouter.get("/status", async (req, res) => {
         health: settings.notifyHealth,
         backup: settings.notifyBackup,
       },
+      approvalConfigured: Boolean(settings.approvalBotToken && settings.superAdminChatId),
+      approvalBotStatus: settings.approvalBotStatus,
+      approvalBotUsername: settings.approvalBotUsername,
+      approvalBotLastError: settings.approvalBotLastError,
+      approvalBotWebhookUrl: config.telegramWebhookUrl ? `${config.telegramWebhookUrl}/approval` : null,
+      approvalReinitialized,
     });
   } catch {
     res.status(500).json({ error: "Holatni tekshirib bo'lmadi" });
@@ -120,9 +139,10 @@ adminTelegramRouter.post("/test", validateBody(telegramTestSchema), async (_req,
   }
 });
 
-function buildChangeSummary(patch: TelegramSettingsUpdate, tokenChanged: boolean): string {
+function buildChangeSummary(patch: TelegramSettingsUpdate, tokenChanged: boolean, approvalTokenChanged: boolean): string {
   const parts: string[] = [];
   if (tokenChanged) parts.push("bot token yangilandi");
+  if (approvalTokenChanged) parts.push("tasdiqlash boti tokeni yangilandi");
   if (patch.superAdminChatId !== undefined) parts.push("super admin chat ID yangilandi");
   if (patch.channelValue !== undefined) parts.push("kanal nuqtai yangilandi");
   if (patch.notifyPolicy !== undefined || patch.notifyNewFeature !== undefined) parts.push("bildirishnomalar (siyosat/yangilik) yangilandi");

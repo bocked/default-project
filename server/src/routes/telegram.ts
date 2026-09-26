@@ -5,7 +5,12 @@ import { logger } from "../lib/logger.js";
 import { addLog } from "../lib/logstore.js";
 import {
   answerCallbackQuery,
+  answerApprovalCallback,
+  APPROVE_USER_PREFIX,
+  REJECT_USER_PREFIX,
+  editApprovalMessage,
   editModerationMessage,
+  sendApprovalMessage,
   sendTelegramMessage,
   requestContactMessage,
   sendVerificationCodeMessage,
@@ -23,7 +28,7 @@ import { notifyQuoteModeration } from "../lib/notify.js";
 import { recordAudit } from "../lib/audit.js";
 import { POLICY_LABELS, approvePolicy } from "../lib/policies.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
-import { executeAdminCommand } from "../lib/adminCommands.js";
+import { executeAdminCommand, executeUserApprovalCommand } from "../lib/adminCommands.js";
 
 export const telegramRouter = Router();
 
@@ -82,6 +87,34 @@ telegramRouter.post("/webhook", async (req, res) => {
     }
   } catch (err) {
     logger.error({ err }, "telegram webhook handler failed");
+  }
+  res.json({ ok: true });
+});
+
+// POST /api/telegram/webhook/approval - the dedicated @nimadur7_bot webhook.
+// The approval bot ONLY verifies users: the registration inbox with
+// [Tasdiqlash / Rad etish] buttons plus the verify/unverify prompt commands.
+// All system messages (quote moderation, policy review, health/backup/email
+// alerts, admin commands) live on the main /webhook bot.
+telegramRouter.post("/webhook/approval", async (req, res) => {
+  try {
+    const update = req.body as Record<string, any>;
+    if (update?.callback_query) {
+      await handleApprovalCallback(update.callback_query);
+    } else if (typeof update?.message?.text === "string" && (await isAdminChat(update.message.chat?.id))) {
+      await handleApprovalAdminText(update.message);
+    } else {
+      logger.warn(
+        {
+          updateId: update?.update_id,
+          topKeys: update ? Object.keys(update) : null,
+          messageKeys: update?.message ? Object.keys(update.message) : null,
+        },
+        "telegram approval update: no handler matched"
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, "telegram approval webhook handler failed");
   }
   res.json({ ok: true });
 });
@@ -473,4 +506,106 @@ async function handleContact(msg: Record<string, any>): Promise<void> {
   });
   await sendVerificationCodeMessage(chatId, code);
   addLog("info", `Telegram orqali telefon raqam bog'landi: ${phone.slice(0, 5)}...`);
+}
+
+// ---------------------------------------------------------------------------
+// User approval bot (@nimadur7_bot) handlers — approval triggers only.
+// ---------------------------------------------------------------------------
+
+async function handleApprovalCallback(cq: Record<string, any>): Promise<void> {
+  const data = String(cq.data ?? "");
+  const chatId = cq.message?.chat?.id;
+  const messageId: number | undefined = cq.message?.message_id;
+
+  if (!(await isAdminChat(chatId))) {
+    await answerApprovalCallback(cq.id, "Ruxsat yo'q");
+    return;
+  }
+
+  if (data.startsWith(APPROVE_USER_PREFIX)) {
+    const userId = data.slice(APPROVE_USER_PREFIX.length);
+    await answerApprovalCallback(cq.id, "Tasdiqlandi ✓");
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const result = await applySuperApproveFromTelegram(userId);
+    if (messageId) {
+      const identity = user?.email ?? userId;
+      const text = result.ok
+        ? `✅ Foydalanuvchi tasdiqlandi — ${identity}\n\nIqtibos joylash huquqi berildi.`
+        : `✗ ${result.message}`;
+      await editApprovalMessage(chatId, messageId, text, null);
+    }
+    return;
+  }
+
+  if (data.startsWith(REJECT_USER_PREFIX)) {
+    const userId = data.slice(REJECT_USER_PREFIX.length);
+    await answerApprovalCallback(cq.id, "Rad etildi");
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (messageId) {
+      await editApprovalMessage(chatId, messageId, `❌ Tasdiqlanmadi — ${user?.email ?? userId}`, null);
+    }
+    await recordAudit({
+      adminId: null,
+      adminEmail: "SUPER_ADMIN (Telegram)",
+      action: "user.super-reject",
+      targetType: "user",
+      targetId: userId,
+      detail: user?.email ?? userId,
+      ip: null,
+    });
+    addLog("info", `Foydalanuvchi tasdiqlash rad etildi (Telegram): ${user?.email ?? userId}`);
+    return;
+  }
+
+  await answerApprovalCallback(cq.id, "Yaroqsiz tugma");
+}
+
+/** Grants iqtibos-posting rights (isSuperApproved) from the approval inbox. */
+async function applySuperApproveFromTelegram(userId: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.deletedAt) return { ok: false, message: "Foydalanuvchi topilmadi" };
+  if (user.role === "ADMIN" || user.role === "SUPER_ADMIN")
+    return { ok: false, message: "Admin hisobini qo'lda tasdiqlash shart emas" };
+  if (user.isSuperApproved) return { ok: false, message: "Foydalanuvchi allaqachon tasdiqlangan" };
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { isSuperApproved: true, superApprovedAt: new Date() },
+  });
+  await recordAudit({
+    adminId: null,
+    adminEmail: "SUPER_ADMIN (Telegram)",
+    action: "user.super-approve",
+    targetType: "user",
+    targetId: user.id,
+    detail: user.email ?? user.id,
+    ip: null,
+  });
+  addLog("info", `Foydalanuvchi tasdiqlash boti orqali tasdiqlandi: ${user.email ?? user.id}`);
+  return { ok: true };
+}
+
+async function handleApprovalAdminText(msg: Record<string, any>): Promise<void> {
+  if (!(await isAdminChat(msg.chat?.id))) return;
+  const chatId: number | undefined = msg.chat?.id;
+  const text = String(msg.text ?? "").trim().slice(0, 2000);
+  if (chatId === undefined || !text) return;
+
+  const reply = await executeUserApprovalCommand(text);
+  if (reply === null) {
+    await sendApprovalMessage(
+      chatId,
+      [
+        "Bu bot faqat foydalanuvchilarni tasdiqlash uchun ishlatiladi.",
+        "",
+        "`verify <email>` / `tasdiqla <email>` — foydalanuvchini tasdiqlash",
+        "`verify off <email>` / `unverify <email>` — tasdiqlashni bekor qilish",
+        "",
+        "Qolgan so'rov va bildirishnomalar @yerlikoglonBot orqali bajariladi.",
+      ].join("\n"),
+      undefined,
+      msg.message_id
+    );
+    return;
+  }
+  await sendApprovalMessage(chatId, reply, undefined, msg.message_id);
 }

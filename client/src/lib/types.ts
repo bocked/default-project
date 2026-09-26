@@ -371,12 +371,19 @@ export interface TelegramSettings {
   botUsername: string | null;
   lastError: string | null;
   lastCheckedAt: string | null;
+  approvalBotTokenSet: boolean;
+  approvalBotTokenMasked: string;
+  approvalBotUsername: string | null;
+  approvalBotStatus: string;
+  approvalBotLastError: string | null;
+  approvalBotLastCheckedAt: string | null;
   updatedAt: string;
 }
 
 export interface TelegramSettingsResponse {
   settings: TelegramSettings;
   reinitialized?: boolean;
+  approvalReinitialized?: boolean;
 }
 
 export interface TelegramStatusResponse {
@@ -396,10 +403,17 @@ export interface TelegramStatusResponse {
     health: boolean;
     backup: boolean;
   };
+  approvalConfigured: boolean;
+  approvalBotStatus: string;
+  approvalBotUsername: string | null;
+  approvalBotLastError: string | null;
+  approvalBotWebhookUrl: string | null;
+  approvalReinitialized?: boolean;
 }
 
 export interface TelegramSettingsUpdate {
   botToken?: string;
+  approvalBotToken?: string;
   superAdminChatId?: string;
   channelValue?: string;
   notifyPolicy?: boolean;

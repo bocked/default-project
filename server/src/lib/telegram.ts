@@ -34,10 +34,11 @@ async function telegramFetch(url: string, body: unknown): Promise<Response | nul
   }
 }
 
-async function apiCall<T>(method: string, body: unknown): Promise<T | null> {
+async function apiCall<T>(method: string, body: unknown, token?: string): Promise<T | null> {
   const settings = await getTelegramSettings();
-  if (!settings.botToken) return null;
-  const res = await telegramFetch(`${API_BASE}/bot${settings.botToken}/${method}`, body);
+  const botToken = token ?? settings.botToken;
+  if (!botToken) return null;
+  const res = await telegramFetch(`${API_BASE}/bot${botToken}/${method}`, body);
   if (!res) {
     logger.warn({ method }, "telegram api call failed (network)");
     return null;
@@ -332,5 +333,117 @@ export async function sendVerificationCodeMessage(chatId: number | string, code:
   await sendTelegramMessage(
     chatId,
     `Sizning tasdiqlash kodingiz:\n\n` + "`" + code + "`" + `\n\nSaytga qayting va botdan olgan kodni kiriting.`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// User approval bot (@nimadur7_bot). Dedicated to *user verification only*:
+// the registration inbox with [Tasdiqlash / Rad etish] buttons and the
+// verify/unverify prompt commands. Every "system" notification (health,
+// backup, emails, new modules, admin permissions, quote moderation, policy
+// review) stays on the main bot token.
+// ---------------------------------------------------------------------------
+
+export const APPROVE_USER_PREFIX = "approve-user:";
+export const REJECT_USER_PREFIX = "reject-user:";
+
+export interface UserApprovalContext {
+  user: Pick<User, "id" | "email" | "name" | "nickname" | "telegramUsername">;
+}
+
+export function userApprovalKeyboard(userId: string): TelegramKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: "✅ Tasdiqlash", callback_data: `${APPROVE_USER_PREFIX}${userId}` },
+        { text: "❌ Rad etish", callback_data: `${REJECT_USER_PREFIX}${userId}` },
+      ],
+    ],
+  };
+}
+
+export function userApprovalPromptText(ctx: UserApprovalContext): string {
+  const handle = [ctx.user.name, ctx.user.nickname].filter(Boolean).join(" / ");
+  return [
+    "🆕 Yangi foydalanuvchi ro'yxatdan o'tdi",
+    "",
+    ctx.user.email ?? "—",
+    ...(handle ? [handle] : []),
+    "",
+    "Iqtibos joylash huquqi beriladimi?",
+  ].join("\n");
+}
+
+/** The registration inbox: asks the Super Admin via the approval bot whether a
+ *  brand-new account should be allowed to post quotes directly (isSuperApproved).
+ *  Returns the Telegram message id (to edit later) or null when the approval
+ *  bot is not configured. */
+export async function sendUserApprovalPrompt(ctx: UserApprovalContext): Promise<number | null> {
+  const settings = await getTelegramSettings();
+  if (!settings.approvalBotToken || !settings.superAdminChatId) return null;
+  const json = await apiCall<TelegramResult<{ message_id: number }>>(
+    "sendMessage",
+    {
+      chat_id: settings.superAdminChatId,
+      text: userApprovalPromptText(ctx),
+      reply_markup: userApprovalKeyboard(ctx.user.id),
+    },
+    settings.approvalBotToken
+  );
+  return json?.result?.message_id ?? null;
+}
+
+/** Sends a plain message through the approval bot (used to reply to prompt
+ *  commands such as `verify <email>` and to warn about non-approval commands). */
+export async function sendApprovalMessage(
+  chatId: number | string,
+  text: string,
+  replyMarkup?: TelegramKeyboard,
+  replyToMessageId?: number
+): Promise<boolean> {
+  const settings = await getTelegramSettings();
+  const token = settings.approvalBotToken;
+  if (!token || !settings.superAdminChatId) return false;
+  const body: Record<string, unknown> = { chat_id: chatId, text };
+  if (replyMarkup) body.reply_markup = replyMarkup;
+  if (replyToMessageId !== undefined) body.reply_to_message_id = replyToMessageId;
+  const json = await apiCall<TelegramResult<{ message_id: number }>>("sendMessage", body, token);
+  return json?.ok === true;
+}
+
+/** Rewrites an approval-bot message (used after [Tasdiqlash / Rad etish]). */
+export async function editApprovalMessage(
+  chatId: number | string,
+  messageId: number,
+  text: string,
+  replyMarkup: TelegramKeyboard | null
+): Promise<void> {
+  const settings = await getTelegramSettings();
+  const token = settings.approvalBotToken;
+  if (!token) return;
+  await apiCall(
+    "editMessageText",
+    {
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      reply_markup: replyMarkup ?? { inline_keyboard: [] },
+    },
+    token
+  );
+}
+
+export async function answerApprovalCallback(callbackQueryId: string, text?: string): Promise<void> {
+  const settings = await getTelegramSettings();
+  const token = settings.approvalBotToken;
+  if (!token) return;
+  await apiCall(
+    "answerCallbackQuery",
+    {
+      callback_query_id: callbackQueryId,
+      text: text ?? "",
+      show_alert: false,
+    },
+    token
   );
 }

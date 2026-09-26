@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAdminCommand } from "../adminCommands.js";
+import { parseAdminCommand, executeUserApprovalCommand } from "../adminCommands.js";
 
 describe("parseAdminCommand", () => {
   describe("queries", () => {
@@ -158,5 +158,25 @@ describe("parseAdminCommand", () => {
       expect(parseAdminCommand("salom nima gap")).toEqual({ kind: "unknown" });
       expect(parseAdminCommand("")).toEqual({ kind: "unknown" });
     });
+  });
+});
+
+describe("executeUserApprovalCommand (dedicated approval bot)", () => {
+  it("returns null for system commands so the bot warns them away", async () => {
+    expect(await executeUserApprovalCommand("stats")).toBeNull();
+    expect(await executeUserApprovalCommand("pending")).toBeNull();
+    expect(await executeUserApprovalCommand("elon Yangi imkoniyat | Raqamli poster")).toBeNull();
+    expect(await executeUserApprovalCommand("salom nima gap")).toBeNull();
+  });
+
+  it("returns null for quote approval — that stays on the main bot", async () => {
+    expect(await executeUserApprovalCommand("approve 550e8400-e29b-41d4-a716-446655440000")).toBeNull();
+    expect(await executeUserApprovalCommand("rad et abc spam")).toBeNull();
+  });
+
+  it("surfaces the parsing hint for malformed approval attempts", async () => {
+    const hint = await executeUserApprovalCommand("verify");
+    expect(hint).toContain("✗");
+    expect(hint).toContain("Email kiriting");
   });
 });
