@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moderationKeyboard, moderationText, quoteChannelPostText, channelPostKeyboard } from "../telegram.js";
+import { moderationKeyboard, moderationText, quoteChannelPostText, channelPostKeyboard, adminPromotionText } from "../telegram.js";
 
 describe("moderationKeyboard", () => {
   it("attaches approve and reject buttons with the quote id", () => {
@@ -55,5 +55,33 @@ describe("channelPostKeyboard", () => {
       text: "🔗 Saytda o'qish",
       url: "https://yerlikoglon.uz/?quote=q1",
     });
+  });
+});
+
+describe("adminPromotionText", () => {
+  const grants = [
+    { key: "canManageUsers", label: "Foydalanuvchilarni boshqarish", enabled: true },
+    { key: "canManageQuotes", label: "Iqtiboslar moderatsiyasi", enabled: true },
+    { key: "canManageSettings", label: "Sozlamalar", enabled: false },
+  ];
+
+  it("names the new admin and lists the granted permissions", () => {
+    const text = adminPromotionText({
+      user: { email: "ali@example.com", name: null, nickname: "ali", telegramUsername: null } as any,
+      grants,
+    });
+    expect(text).toContain("Foydalanuvchi ali@example.com yangi Admin qilib tayinlandi va belgilangan ruxsatlar biriktirildi.");
+    expect(text).toContain("• Foydalanuvchilarni boshqarish");
+    expect(text).toContain("• Iqtiboslar moderatsiyasi");
+    expect(text).toContain("Cheklangan ruxsatlar:");
+    expect(text).toContain("• Sozlamalar");
+  });
+
+  it("falls back to the Telegram username when no email exists", () => {
+    const text = adminPromotionText({
+      user: { email: null, name: "Ali", nickname: "ali", telegramUsername: "ali_tg" } as any,
+      grants: [{ key: "canViewUsers", label: "Foydalanuvchilarni ko'rish", enabled: true }],
+    });
+    expect(text).toContain("Foydalanuvchi ali_tg yangi Admin qilib tayinlandi");
   });
 });

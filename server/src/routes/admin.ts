@@ -9,7 +9,7 @@ import { onlineCount } from "./api.js";
 import { bus } from "../lib/bus.js";
 import { config } from "../config.js";
 import { adminLimiter } from "../lib/rateLimit.js";
-import { editModerationMessage, sendTelegramMessage, telegramEnabled, channelEnabled, publishQuoteToChannel } from "../lib/telegram.js";
+import { editModerationMessage, sendTelegramMessage, sendAdminNotification, adminPromotionText, telegramEnabled, channelEnabled, publishQuoteToChannel } from "../lib/telegram.js";
 import { sendEmail } from "../lib/email.js";
 import { notifyQuoteModeration } from "../lib/notify.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
@@ -42,6 +42,7 @@ import {
   backupCreateSchema,
   telegramBanSchema,
   adminPermissionUpdateSchema,
+  adminMakeUserSchema,
   type AdminQuoteReject,
   type QuoteEdit,
   type BulkQuotes,
@@ -58,6 +59,7 @@ import {
   type BackupCreate,
   type TelegramBan,
   type AdminPermissionUpdate,
+  type AdminMakeUserInput,
 } from "../schemas.js";
 
 export const adminRouter = Router();
@@ -775,6 +777,86 @@ adminRouter.patch("/users/:id/role", checkPermission("canManageUsers"), validate
     res.status(500).json({ error: "Rol o'zgartirilmadi" });
   }
 });
+
+// PATCH /api/admin/users/:id/make-admin - promote a USER to ADMIN and persist
+// the granular grants chosen in the "Admin ruxsatlarini tayinlash" modal. The
+// role is pinned in `roleOverride` exactly like PATCH /role, so config-based
+// auto-promotion can never silently restore a revoked role. Grant rows mirror
+// the sub-admin permission editor: only values differing from the feature
+// default are stored (defaults are all true). The Super Admin chat gets a
+// Telegram PUSH. Self-promotion is blocked.
+adminRouter.patch(
+  "/users/:id/make-admin",
+  checkPermission("canManageUsers"),
+  validateBody(adminMakeUserSchema),
+  async (req, res) => {
+    try {
+      const { grants } = res.locals.body as AdminMakeUserInput;
+      const entries = Object.entries(grants);
+      const keys = entries.map(([k]) => k);
+      const features = await prisma.adminFeature.findMany({
+        where: { key: { in: keys } },
+        select: { key: true, label: true, defaultEnabled: true },
+      });
+      if (features.length !== keys.length) {
+        res.status(400).json({ error: "Noma'lum ruxsat kalitlari kiritilgan" });
+        return;
+      }
+      const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+      if (!target) {
+        res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+        return;
+      }
+      const actorId = adminId(req);
+      if (actorId && target.id === actorId) {
+        res.status(400).json({ error: "O'zingizni admin qila olmaysiz" });
+        return;
+      }
+      if (target.role !== "USER") {
+        res.status(400).json({ error: "Faqat USER rolidagi foydalanuvchi admin qilinadi" });
+        return;
+      }
+      const user = await prisma.user.update({
+        where: { id: target.id },
+        data: { role: "ADMIN", roleOverride: "ADMIN" },
+      });
+      const defaultMap = new Map(features.map((f) => [f.key, f.defaultEnabled]));
+      for (const [key, value] of entries) {
+        if (value === defaultMap.get(key)) {
+          await prisma.adminGrant.deleteMany({ where: { adminId: user.id, featureKey: key } });
+        } else {
+          await prisma.adminGrant.upsert({
+            where: { adminId_featureKey: { adminId: user.id, featureKey: key } },
+            update: { enabled: value },
+            create: { adminId: user.id, featureKey: key, enabled: value },
+          });
+        }
+      }
+      await recordAudit({
+        adminId: actorId,
+        adminEmail: adminEmail(req),
+        action: "user.make-admin",
+        targetType: "user",
+        targetId: user.id,
+        detail: `${target.email ?? target.id}: ${entries.map(([k, v]) => `${k}=${v}`).join(", ")}`,
+        ip: clientIp(req.headers),
+      });
+      const perms = await effectivePermissionsFor({ id: user.id, role: "ADMIN" });
+      // Push so open admin panels refresh their menus instantly.
+      void bus.publish("admin:permissions:changed", { adminId: user.id, permissions: perms });
+      // Push the promotion to the Super Admin chat (best-effort, never blocks).
+      void sendAdminNotification(
+        adminPromotionText({
+          user,
+          grants: features.map((f) => ({ key: f.key, label: f.label, enabled: grants[f.key] === true })),
+        })
+      );
+      res.json({ ok: true, user: { id: user.id, role: user.role, permissions: perms } });
+    } catch {
+      res.status(500).json({ error: "Admin qilib bo'lmadi" });
+    }
+  },
+);
 
 // POST /api/admin/users/:id/premium - grant, extend or revoke VIP status.
 // `expiresAt` null = lifetime; a past date disables active premium instantly.

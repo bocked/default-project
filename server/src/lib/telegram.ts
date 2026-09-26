@@ -290,6 +290,34 @@ export async function sendAdminNotification(text: string): Promise<void> {
   await sendTelegramMessage(settings.superAdminChatId, text);
 }
 
+export interface AdminPromotionContext {
+  user: Pick<User, "email" | "name" | "nickname" | "telegramUsername">;
+  grants: Array<{ key: string; label: string; enabled: boolean }>;
+}
+
+/** The message pushed to the Super Admin when a user is promoted to a
+ *  granular ADMIN from the Users table (admin panel). */
+export function adminPromotionText(ctx: AdminPromotionContext): string {
+  const identity =
+    ctx.user.email ??
+    ctx.user.telegramUsername ??
+    [ctx.user.name, ctx.user.nickname].filter(Boolean).join(" / ") ??
+    "Telegram foydalanuvchisi";
+  const enabled = ctx.grants.filter((g) => g.enabled);
+  const lines = [
+    "🆕 Yangi admin tayinlandi!",
+    "",
+    `Foydalanuvchi ${identity} yangi Admin qilib tayinlandi va belgilangan ruxsatlar biriktirildi.`,
+  ];
+  if (enabled.length > 0) {
+    lines.push("", "Berilgan ruxsatlar:", ...enabled.map((g) => `• ${g.label}`));
+  }
+  if (enabled.length !== ctx.grants.length) {
+    lines.push("", "Cheklangan ruxsatlar:", ...ctx.grants.filter((g) => !g.enabled).map((g) => `• ${g.label}`));
+  }
+  return lines.join("\n");
+}
+
 /** Asks the user for their phone number via a Request Contact button. */
 export async function requestContactMessage(chatId: number | string, text: string): Promise<void> {
   await sendTelegramMessage(chatId, text, {

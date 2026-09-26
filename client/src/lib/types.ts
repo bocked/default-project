@@ -312,6 +312,7 @@ export type PermissionMap = Record<string, boolean>;
 export interface AdminFeature {
   key: string;
   label: string;
+  group: string;
   description: string;
   defaultEnabled: boolean;
   source: "builtin" | "runtime";

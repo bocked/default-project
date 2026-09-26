@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useAdminSession } from "@/lib/admin-session";
+import { AdminPermissionModal } from "@/components/admin/permission-modal";
 import {
   AdminActionMenu,
   AdminButton,
@@ -25,6 +27,8 @@ function vipExpiry(days: string): string | null {
 
 export function AdminUsersTab() {
   const { user: me } = useAuth();
+  const { session } = useAdminSession();
+  const features = session?.features ?? [];
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
@@ -32,6 +36,7 @@ export function AdminUsersTab() {
   const [blocked, setBlocked] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [vipDays, setVipDays] = useState<Record<string, string>>({});
+  const [adminTarget, setAdminTarget] = useState<AdminUser | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
@@ -106,6 +111,23 @@ export function AdminUsersTab() {
       await load(search, role, blocked);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Rol o'zgartirilmadi");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function makeAdmin(u: AdminUser, grants: Record<string, boolean>): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await api<{ ok: boolean }>(`/api/admin/users/${u.id}/make-admin`, {
+        method: "PATCH",
+        body: { grants },
+      });
+      setAdminTarget(null);
+      await load(search, role, blocked);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Admin qilib bo'lmadi");
     } finally {
       setBusy(false);
     }
@@ -321,7 +343,9 @@ export function AdminUsersTab() {
                                       ? {
                                           label: "Admin qilish",
                                           disabled: busy,
-                                          onClick: () => void runRole(u, "ADMIN"),
+                                          // Opens the granular permission modal
+                                          // instead of promoting immediately.
+                                          onClick: () => setAdminTarget(u),
                                         }
                                       : {
                                           label: "Foydalanuvchiga tushirish",
@@ -401,6 +425,16 @@ export function AdminUsersTab() {
             </tbody>
           </table>
         </AdminCard>
+      )}
+
+      {adminTarget && (
+        <AdminPermissionModal
+          user={adminTarget}
+          features={features}
+          busy={busy}
+          onCancel={() => setAdminTarget(null)}
+          onConfirm={(grants) => void makeAdmin(adminTarget, grants)}
+        />
       )}
     </div>
   );

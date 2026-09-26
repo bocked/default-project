@@ -460,6 +460,19 @@ export const adminPermissionUpdateSchema = z
   });
 export type AdminPermissionUpdate = z.infer<typeof adminPermissionUpdateSchema>;
 
+/** Make-admin request: promote a USER to ADMIN while persisting the granular
+ *  grants chosen in the "Admin ruxsatlarini tayinlash" modal. The map carries
+ *  every feature key -> boolean; server-side validation rejects keys that are
+ *  not in the registry (mirrors `adminPermissionUpdateSchema`). */
+export const adminMakeUserSchema = z
+  .object({
+    grants: z.record(z.string(), z.boolean()),
+  })
+  .refine((v) => Object.keys(v.grants).length > 0, {
+    message: "Hech bo'lmaganda bitta ruxsat ko'rsatilishi kerak",
+  });
+export type AdminMakeUserInput = z.infer<typeof adminMakeUserSchema>;
+
 /** Manual "run a policy review" trigger (button in the admin panel). */
 export const policyReviewSchema = z.object({
   reason: z.string().trim().min(3).max(400),

@@ -17,18 +17,7 @@ import type {
   AdminSubAdminRow,
   AdminSubAdminsResponse,
 } from "@/lib/types";
-
-const FEATURE_FALLBACK_LABELS: Record<string, string> = {
-  canViewUsers: "Foydalanuvchilar ro'yxati",
-  canManageUsers: "Foydalanuvchilarni boshqarish",
-  canManageQuotes: "Iqtiboslar moderatsiyasi",
-  canManageCategories: "Kategoriya va teglar",
-  canManageQuizzes: "Testlar moduli",
-  canManageAnnouncements: "E'lonlar",
-  canManageFeedback: "Fikr-mulohaza",
-  canManageSettings: "Sayt sozlamalari",
-  canViewAudit: "Audit jurnali",
-};
+import { FEATURE_FALLBACK_LABELS } from "@/lib/feature-labels";
 
 export default function AdminSubAdminsPage() {
   const { user } = useAuth();
