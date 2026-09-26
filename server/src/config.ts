@@ -157,4 +157,12 @@ export const config = {
   // Largest edge (px) the decoded image may keep; larger images are scaled
   // down with `withoutEnlargement` so small files are never upscaled.
   maxUploadDimension: Number(process.env.MAX_UPLOAD_DIMENSION ?? 1280),
+
+  // Optional AI assist for the quote analyzer (auto-tagging + language hints).
+  // When empty, /api/quotes/analyze runs in its deterministic offline mode
+  // only. When set, the rule-based result is enhanced by an OpenAI-compatible
+  // /chat/completions endpoint; any AI failure falls back to the offline mode.
+  aiApiKey: process.env.AI_API_KEY ?? "",
+  aiBaseUrl: process.env.AI_BASE_URL ?? "https://api.openai.com/v1",
+  aiModel: process.env.AI_MODEL ?? "gpt-4o-mini",
 };

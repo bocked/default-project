@@ -46,6 +46,8 @@ export async function cleanDatabase(): Promise<void> {
     prisma.seoRule.deleteMany(),
     prisma.siteSetting.deleteMany(),
     prisma.backup.deleteMany(),
+    prisma.collectionQuote.deleteMany(),
+    prisma.collection.deleteMany(),
     prisma.quote.deleteMany(),
     prisma.user.deleteMany(),
     prisma.tag.deleteMany(),

@@ -144,6 +144,8 @@ export const updateProfileSchema = z.object({
     .refine((v) => v === undefined || v === null || /^https?:\/\//i.test(v), {
       message: "Avatar havolasi http(s) bilan boshlanishi kerak",
     }),
+  // UI interface language (UZ/RU/EN).
+  locale: z.enum(["uz", "ru", "en"]).optional(),
 });
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 
@@ -212,6 +214,8 @@ export const quoteCreateSchema = z.object({
   categorySlug: z.string().trim().min(1).max(60),
   tags: z.array(z.string().trim().max(40)).max(5).default([]),
   anonymous: z.boolean().default(false),
+  // Quote text language (UZ/RU/EN). Feeds can filter on it.
+  locale: z.enum(["uz", "ru", "en"]).default("uz"),
   telegramUrl,
   customStyles: quoteCustomStylesSchema.nullish(),
 });
@@ -223,6 +227,48 @@ export const adminQuoteRejectSchema = z.object({
 export type AdminQuoteReject = z.infer<typeof adminQuoteRejectSchema>;
 
 // ---------------------------------------------------------------------------
+// Quote analyzer (AI auto-tagging + spelling/language hints)
+// ---------------------------------------------------------------------------
+
+export const analyzeSchema = z.object({
+  text: z.string().trim().min(1).max(1000),
+});
+export type AnalyzeInput = z.infer<typeof analyzeSchema>;
+
+// ---------------------------------------------------------------------------
+// Personal collections ("Kolleksiyalarim")
+// ---------------------------------------------------------------------------
+
+export const collectionCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  description: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+  isPrivate: z.boolean().default(false),
+});
+export type CollectionCreate = z.infer<typeof collectionCreateSchema>;
+
+export const collectionUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
+  description: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+  isPrivate: z.boolean().optional(),
+});
+export type CollectionUpdate = z.infer<typeof collectionUpdateSchema>;
+
+export const collectionQuoteSchema = z.object({
+  quoteId: z.string().min(1).max(64),
+});
+export type CollectionQuoteInput = z.infer<typeof collectionQuoteSchema>
+
+// ---------------------------------------------------------------------------
 // Admin panel v2 (moderation console)
 // ---------------------------------------------------------------------------
 
@@ -230,6 +276,8 @@ export const quoteEditSchema = z.object({
   text: z.string().trim().min(1).max(1000).optional(),
   categorySlug: z.string().trim().min(1).max(60).optional(),
   displayAuthor: z.string().trim().min(1).max(100).optional(),
+  // Quote text language (UZ/RU/EN). Feeds can filter on it.
+  locale: z.enum(["uz", "ru", "en"]).optional(),
   tags: z.array(z.string().trim().max(40)).max(5).optional(),
   telegramUrl,
   customStyles: quoteCustomStylesSchema.nullish(),

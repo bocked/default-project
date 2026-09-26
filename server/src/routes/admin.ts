@@ -458,6 +458,7 @@ adminRouter.patch("/quotes/:id", checkPermission("canManageQuotes"), validateBod
     if (body.text !== undefined) data.text = body.text;
     if (body.displayAuthor !== undefined) data.displayAuthor = body.displayAuthor;
     if (body.telegramUrl !== undefined) data.telegramUrl = body.telegramUrl ?? null;
+    if (body.locale !== undefined) data.locale = body.locale.toUpperCase();
     if (body.categorySlug !== undefined) {
       const category = await prisma.category.findUnique({ where: { slug: body.categorySlug } });
       if (!category) {

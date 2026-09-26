@@ -10,14 +10,16 @@ import { QuoteCard } from "@/components/QuoteCard";
 import { QuoteForm } from "@/components/QuoteForm";
 import { isPremiumActive, formatPremiumExpiry } from "@/lib/premium";
 import { useToast } from "@/components/ToastProvider";
-import type { Category, Quote, Quiz, QuizResultSummary, User } from "@/lib/types";
+import { useI18n } from "@/lib/i18n";
+import type { Category, Quote, QuoteCollection, Quiz, QuizResultSummary, User } from "@/lib/types";
 
-type ProfileTab = "quotes" | "tests" | "liked" | "settings";
+type ProfileTab = "quotes" | "tests" | "liked" | "collections" | "settings";
 
 const TABS: Array<{ id: ProfileTab; label: string }> = [
   { id: "quotes", label: "Iqtiboslarim" },
   { id: "tests", label: "Testlarim" },
   { id: "liked", label: "Saqlanganlar" },
+  { id: "collections", label: "Kolleksiyalarim" },
   { id: "settings", label: "Sozlamalar" },
 ];
 
@@ -82,6 +84,7 @@ export default function ProfilePage() {
         {tab === "quotes" && <QuotesTab user={user} />}
         {tab === "tests" && <TestsTab />}
         {tab === "liked" && <LikedTab />}
+        {tab === "collections" && <CollectionsTab />}
         {tab === "settings" && <SettingsTab user={user} onSaved={refresh} />}
       </div>
     </div>
@@ -315,6 +318,205 @@ function LikedTab() {
         </div>
       ) : (
         quotes.map((quote) => <QuoteCard key={quote.id} quote={quote} />)
+      )}
+    </section>
+  );
+}
+
+function CollectionsTab() {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [collections, setCollections] = useState<QuoteCollection[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [isPrivate, setIsPrivate] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api<{ collections: QuoteCollection[] }>("/api/collections/mine")
+      .then((d) => {
+        if (cancelled) return;
+        setCollections(d.collections);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCollections([]);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function createCollection(e: React.FormEvent<HTMLFormElement>): Promise<void> {
+    e.preventDefault();
+    const trimmed = title.trim();
+    if (!trimmed || creating) return;
+    setCreating(true);
+    try {
+      const created = await api<{ collection: QuoteCollection }>("/api/collections", {
+        method: "POST",
+        body: {
+          title: trimmed,
+          description: description.trim() || undefined,
+          isPrivate,
+        },
+      });
+      setCollections((prev) => [created.collection, ...prev]);
+      setTitle("");
+      setDescription("");
+      toast.success(t("collection.created"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "To'plam yaratilmadi");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function togglePrivate(col: QuoteCollection): Promise<void> {
+    if (busyId) return;
+    setBusyId(col.id);
+    try {
+      const updated = await api<{ collection: QuoteCollection }>(`/api/collections/${col.id}`, {
+        method: "PATCH",
+        body: { isPrivate: !col.isPrivate },
+      });
+      setCollections((prev) => prev.map((c) => (c.id === col.id ? updated.collection : c)));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Yangilash amalga oshmadi");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function deleteCollection(col: QuoteCollection): Promise<void> {
+    if (busyId) return;
+    if (!window.confirm(`"${col.title}" to'plami o'chirilsinmi?`)) return;
+    setBusyId(col.id);
+    try {
+      await api<{ ok: boolean }>(`/api/collections/${col.id}`, { method: "DELETE" });
+      setCollections((prev) => prev.filter((c) => c.id !== col.id));
+      if (expandedId === col.id) setExpandedId(null);
+      toast.success(t("collection.deleted"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "O'chirish amalga oshmadi");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="space-y-4">
+      <form
+        onSubmit={(e) => void createCollection(e)}
+        className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+      >
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">{t("collection.create")}</h2>
+        <div className="mt-3 grid gap-2">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={120}
+            placeholder={t("collection.titlePlaceholder")}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+          />
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={280}
+            placeholder={t("collection.description")}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+          />
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={isPrivate}
+                onChange={(e) => setIsPrivate(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+              />
+              {t("collection.private")}
+            </label>
+            <button
+              type="submit"
+              disabled={creating || !title.trim()}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50 dark:hover:bg-blue-500"
+            >
+              {creating ? "..." : t("collection.save")}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      {loading ? (
+        <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">{t("common.loading")}</p>
+      ) : collections.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
+          <p className="text-sm text-slate-500 dark:text-slate-400">{t("collection.currentlyEmpty")}</p>
+        </div>
+      ) : (
+        collections.map((col) => {
+          const expanded = expandedId === col.id;
+          return (
+            <div
+              key={col.id}
+              className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="truncate font-semibold text-slate-900 dark:text-white">{col.title}</h3>
+                  {col.description && (
+                    <p className="mt-0.5 truncate text-sm text-slate-500 dark:text-slate-400">{col.description}</p>
+                  )}
+                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                    {col.quoteCount} ta · {col.isPrivate ? t("collection.private") : t("collection.public")}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={busyId === col.id}
+                    onClick={() => void togglePrivate(col)}
+                    className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-600"
+                  >
+                    {col.isPrivate ? t("collection.public") : t("collection.private")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyId === col.id}
+                    onClick={() => void deleteCollection(col)}
+                    className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:border-red-300 disabled:opacity-50 dark:border-red-900/60 dark:text-red-400 dark:hover:border-red-800"
+                  >
+                    {t("collection.delete")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(expanded ? null : col.id)}
+                    className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-600"
+                  >
+                    {expanded ? t("collection.close") : t("collection.open")}
+                  </button>
+                </div>
+              </div>
+              {expanded && (
+                <div className="mt-4 space-y-3">
+                  {col.previewQuotes.length === 0 ? (
+                    <p className="py-4 text-center text-sm text-slate-400 dark:text-slate-500">
+                      {t("collection.noQuotesIn")}
+                    </p>
+                  ) : (
+                    col.previewQuotes.map((q) => <QuoteCard key={q.id} quote={q} />)
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })
       )}
     </section>
   );

@@ -1,29 +1,30 @@
 import { Router } from "express";
-import { Prisma } from "@prisma/client";
+import { Prisma, Locale } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireFullUser } from "../middleware/auth.js";
-import { quoteCreateLimiter, likeLimiter, searchLimiter } from "../lib/rateLimit.js";
+import { quoteCreateLimiter, likeLimiter, searchLimiter, analyzeLimiter } from "../lib/rateLimit.js";
 import { clientIp } from "../lib/ip.js";
 import { isBotUserAgent, viewDedupe } from "../lib/views.js";
 import { normalizeTagName, slugify } from "../lib/categories.js";
+import { analyzeQuoteText } from "../lib/analyze.js";
 import { sendModerationMessage } from "../lib/telegram.js";
 import { addLog } from "../lib/logstore.js";
 import { recordActivity } from "../lib/activity.js";
-import { validateBody, quoteCreateSchema, type QuoteCreate, type QuoteCustomStyles } from "../schemas.js";
+import { validateBody, quoteCreateSchema, analyzeSchema, type QuoteCreate, type QuoteCustomStyles } from "../schemas.js";
 import { cachedGet, invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { getContent } from "../lib/content.js";
 import { isPremiumActive } from "../lib/premium.js";
 
 export const quotesRouter = Router();
 
-const quoteInclude = {
+export const quoteInclude = {
   category: { select: { id: true, name: true, slug: true } },
   tags: { select: { id: true, name: true, slug: true } },
   user: { select: { isPremium: true, premiumExpiresAt: true } },
   _count: { select: { likes: true } },
 } satisfies Prisma.QuoteInclude;
 
-interface PublicQuote {
+export interface PublicQuote {
   id: string;
   text: string;
   displayAuthor: string;
@@ -31,6 +32,8 @@ interface PublicQuote {
   telegramUrl: string | null;
   authorPremium: boolean;
   customStyles: QuoteCustomStyles | null;
+  locale: Locale;
+  translations: Record<string, string> | null;
   createdAt: Date;
   views: number;
   likeCount: number;
@@ -39,7 +42,7 @@ interface PublicQuote {
   tags: { id: string; name: string; slug: string }[];
 }
 
-function toPublicQuote(q: any, userId?: string): PublicQuote {
+export function toPublicQuote(q: any, userId?: string): PublicQuote {
   const likeCount = Array.isArray(q._count) ? 0 : (q._count?.likes ?? 0);
   const likedByMe = userId
     ? Array.isArray(q.likes)
@@ -56,6 +59,8 @@ function toPublicQuote(q: any, userId?: string): PublicQuote {
     telegramUrl: q.telegramUrl ?? null,
     authorPremium: isPremiumActive(q.user ?? { isPremium: false }),
     customStyles: q.customStyles ?? null,
+    locale: (q.locale as Locale) ?? "UZ",
+    translations: (q.translations as Record<string, string> | null) ?? null,
     createdAt: q.createdAt,
     views: q.views ?? 0,
     likeCount,
@@ -64,6 +69,9 @@ function toPublicQuote(q: any, userId?: string): PublicQuote {
     tags: q.tags,
   };
 }
+
+/** Maps the public `lang` query param (uz/ru/en) onto the Prisma Locale enum. */
+const LOCALE_MAP: Record<string, Locale> = { uz: "UZ", ru: "RU", en: "EN" };
 
 function searchWhere(q: string): Prisma.QuoteWhereInput {
   return {
@@ -110,6 +118,10 @@ quotesRouter.get("/", searchLimiter, async (req, res) => {
     if (tag) where.tags = { some: { slug: tag } };
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (q) where.OR = searchWhere(q).OR;
+    // Optional feed language filter: ?lang=uz|ru|en (strict — only quotes
+    // whose text is written in that language are returned).
+    const lang = typeof req.query.lang === "string" ? req.query.lang.trim().toLowerCase() : "";
+    if (LOCALE_MAP[lang]) where.locale = LOCALE_MAP[lang];
 
     const orderBy = sortOrder(req.query);
 
@@ -227,6 +239,20 @@ async function fetchQuoteOfTheDay(): Promise<PublicQuote | null> {
   return toPublicQuote(candidates[dayNumber % candidates.length]);
 }
 
+// POST /api/quotes/analyze - AI auto-tagging + language/spelling hints before
+// a user submits a quote. Auth required (keeps the dictionary + optional AI
+// call from being scraped by guests). Fully deterministic offline mode; when
+// AI_API_KEY is configured the result is enhanced best-effort.
+quotesRouter.post("/analyze", requireAuth, analyzeLimiter, validateBody(analyzeSchema), async (_req, res) => {
+  const body = res.locals.body as { text: string };
+  try {
+    const result = await analyzeQuoteText(body.text);
+    res.json(result);
+  } catch {
+    res.status(500).json({ error: "Tahlil amalga oshmadi" });
+  }
+});
+
 // GET /api/quotes/mine - the current user's quotes with moderation status
 quotesRouter.get("/mine", requireAuth, async (req, res) => {
   try {
@@ -299,6 +325,8 @@ quotesRouter.post("/", requireAuth, quoteCreateLimiter, requireFullUser, validat
         displayAuthor,
         anonymous: body.anonymous,
         telegramUrl: body.telegramUrl ?? null,
+        // Quote text language (UZ default), set by the author or the analyzer.
+        locale: body.locale.toUpperCase() as Locale,
         // VIP-only: custom post card styling is persisted only for active
         // premium users so normal authors cannot forge it.
         customStyles: isActivePremium ? (body.customStyles ?? Prisma.DbNull) : undefined,

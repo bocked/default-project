@@ -11,6 +11,7 @@ import { apiRouter } from "./routes/api.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
 import { quotesRouter } from "./routes/quotes.js";
+import { collectionsRouter } from "./routes/collections.js";
 import { quizzesRouter } from "./routes/quizzes.js";
 import { policiesRouter } from "./routes/policies.js";
 import { usersRouter } from "./routes/users.js";
@@ -225,6 +226,7 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
     app.use("/api/auth", authRouter);
   }
   app.use("/api/quotes", quotesRouter);
+  app.use("/api/collections", collectionsRouter);
   app.use("/api/quizzes", quizzesRouter);
   app.use("/api/policies", policiesRouter);
   app.use("/api/users", usersRouter);

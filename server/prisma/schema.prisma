@@ -28,6 +28,13 @@ enum UserRole {
   SUPER_ADMIN
 }
 
+// UI/interfacing language of the quote text and of the user's interface.
+enum Locale {
+  UZ
+  RU
+  EN
+}
+
 // Legal policy documents (Terms / Privacy / Cookies). A draft becomes the
 // live document only after a SUPER_ADMIN approves it; approving bumps the
 // public version, which forces users to re-consent on their next login.
@@ -159,7 +166,10 @@ model User {
   blocked                     Boolean         @default(false)
   blockedAt                   DateTime?
   deletedAt                   DateTime?
+  // UI language (UZ/RU/EN) chosen for the interface; default Uzbek.
+  locale                      Locale          @default(UZ)
   quotes                      Quote[]
+  collections                 Collection[]
   feedback                    Feedback[]
   activities                  UserActivity[]
   likes                       QuoteLike[]
@@ -239,6 +249,10 @@ model Quote {
   telegramPostedAt    DateTime? // when the quote was published to the Telegram channel
   customStyles        Json? // VIP-only post card styling (fonts, colors, frame, texture)
   views               Int         @default(0) // public feed views (analytics)
+  // Language of the quote text (UZ default). `translations` holds optional
+  // { "ru": "...", "en": "..." } alternates shown in the UI language switcher.
+  locale              Locale      @default(UZ)
+  translations        Json?
   userId              String
   categoryId          String
   createdAt           DateTime    @default(now())
@@ -248,8 +262,10 @@ model Quote {
   category            Category    @relation(fields: [categoryId], references: [id])
   tags                Tag[]
   likes               QuoteLike[]
+  collections         CollectionQuote[]
 
   @@index([status, createdAt(sort: Desc)])
+  @@index([status, locale, createdAt(sort: Desc)])
   @@index([status, categoryId])
   @@index([status, userId])
   @@index([userId, createdAt(sort: Desc)])
@@ -267,6 +283,37 @@ model QuoteLike {
 
   @@unique([userId, quoteId])
   @@index([quoteId, createdAt(sort: Desc)])
+}
+
+// Personal collection of quotes ("Kolleksiyalarim"). A user groups bookmarked
+// quotes under a titled list; `isPrivate` hides it from other visitors while
+// the owner always sees all of their collections.
+model Collection {
+  id          String            @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  isPrivate   Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quotes      CollectionQuote[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([isPrivate])
+}
+
+// Many-to-many link between a quote and a collection. The composite id keeps
+// the same quote from being added twice to the same collection.
+model CollectionQuote {
+  collectionId String
+  quoteId      String
+  addedAt      DateTime @default(now())
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  quote        Quote      @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, quoteId])
+  @@index([quoteId])
 }
 
 // Legal document versions. At most one open "draft" (isApproved=false) per

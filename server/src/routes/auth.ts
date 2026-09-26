@@ -148,6 +148,8 @@ interface SafeUser {
   isSuperApproved: boolean;
   superApprovedAt: Date | null;
   acceptedTermsVersion: string | null;
+  // UI interface language: "UZ" | "RU" | "EN".
+  locale: "UZ" | "RU" | "EN";
   termsRequired: boolean;
   currentTermsVersion: string;
   createdAt: Date;
@@ -193,6 +195,9 @@ async function toUser(
     isSuperApproved: user.isSuperApproved,
     superApprovedAt: user.superApprovedAt,
     acceptedTermsVersion: user.acceptedTermsVersion,
+    // UI language (UZ default): the client language switcher persists this on
+    // the account so a user's chosen interface follows them across devices.
+    locale: (user.locale as SafeUser["locale"]) ?? "UZ",
     termsRequired: user.acceptedTermsVersion !== termsVersion,
     currentTermsVersion: termsVersion,
     createdAt: user.createdAt,
@@ -508,11 +513,14 @@ authRouter.patch("/me", requireAuth, validateBody(updateProfileSchema), async (r
     nickname?: string | null;
     customWatermark?: string | null;
     avatarUrl?: string | null;
+    locale?: "UZ" | "RU" | "EN";
   } = {};
   if (body.name !== undefined) data.name = body.name;
   if (body.nickname !== undefined) data.nickname = body.nickname;
   if (body.customWatermark !== undefined) data.customWatermark = body.customWatermark;
   if (body.avatarUrl !== undefined) data.avatarUrl = body.avatarUrl;
+  // Locale arrives lowercase ("uz"|"ru"|"en") and is stored as the Prisma enum.
+  if (body.locale !== undefined) data.locale = body.locale.toUpperCase() as "UZ" | "RU" | "EN";
   const user = await prisma.user.update({ where: { id: req.user!.id }, data });
   res.json({ user: await toUser(user) });
 });

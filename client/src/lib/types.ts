@@ -1,5 +1,8 @@
 export type SortKey = "newest" | "most-liked" | "most-viewed";
 
+/** UI / content language. Matches the server Prisma `Locale` enum (stored uppercase). */
+export type Locale = "UZ" | "RU" | "EN";
+
 export interface ServerConfig {
   url: string;
 }
@@ -27,6 +30,8 @@ export interface User {
   acceptedTermsVersion?: string | null;
   termsRequired?: boolean;
   currentTermsVersion?: string;
+  /** Interface language the user selected (UZ | RU | EN). See Locale. */
+  locale?: Locale;
   createdAt: string;
 }
 
@@ -69,12 +74,53 @@ export interface Quote {
   rejectionReason?: string | null;
   authorPremium?: boolean;
   customStyles?: QuoteCustomStyles | null;
+  /** Content language (UZ | RU | EN). */
+  locale?: Locale;
+  /** Optional per-language translations: { ru: "...", en: "..." }. */
+  translations?: Record<string, string> | null;
   createdAt: string;
   views?: number;
   likeCount?: number;
   likedByMe?: boolean;
   category: { id: string; name: string; slug: string };
   tags: Array<{ id: string; name: string; slug: string }>;
+}
+
+// ---------------------------------------------------------------------------
+// Collections ("Kolleksiyalarim") — personal bookmarks grouped by title.
+// ---------------------------------------------------------------------------
+
+export interface CollectionOwner {
+  id: string;
+  nickname: string | null;
+  name: string | null;
+  avatarUrl: string | null;
+}
+
+export interface QuoteCollection {
+  id: string;
+  title: string;
+  description: string | null;
+  isPrivate: boolean;
+  createdAt: string;
+  updatedAt: string;
+  quoteCount: number;
+  /** Up to 3 most recent bookmarks, used as the card preview. */
+  previewQuotes: Quote[];
+  ownerId: string;
+  owner: CollectionOwner | null;
+}
+
+export interface CollectionsResponse {
+  collections: QuoteCollection[];
+  total?: number;
+  page?: number;
+  limit?: number;
+}
+
+export interface CollectionQuoteResponse {
+  quoteId: string;
+  added: boolean;
 }
 
 export interface PaginatedQuotes {

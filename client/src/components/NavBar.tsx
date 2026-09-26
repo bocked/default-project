@@ -4,9 +4,11 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api";
 import { ThemeToggle } from "./ThemeToggle";
 import { TestModeBanner } from "./TestModeBanner";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import type { Category, SortKey, Tag } from "@/lib/types";
 
 const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
@@ -30,6 +32,7 @@ const panel =
 
 export function NavBar() {
   const { user, logout } = useAuth();
+  const { t } = useI18n();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -52,41 +55,43 @@ export function NavBar() {
 
         {/* Desktop nav */}
         <nav className="hidden items-center gap-1 text-sm sm:flex">
+          <LanguageSwitcher />
           <ThemeToggle />
           <Link href="/" className={navLink}>
-            Bosh sahifa
+            {t("nav.home")}
           </Link>
           <FilterDropdowns />
           <Link href="/about" className={navLink}>
-            Sayt haqida
+            {t("nav.about")}
           </Link>
           <Link href="/tests" className={navLink}>
-            Testlar
+            {t("nav.tests")}
           </Link>
           <Link href="/profile" className={navLink}>
-            Profil
+            {t("nav.profile")}
           </Link>
           {user?.role === "ADMIN" || user?.role === "SUPER_ADMIN" ? (
             <Link href="/admin" className="rounded-lg px-3 py-2 text-sm text-amber-700 transition hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-950">
-              Admin
+              {t("nav.admin")}
             </Link>
           ) : null}
           {user ? (
             <button type="button" onClick={handleLogout} className={navLink}>
-              Chiqish
+              {t("nav.logout")}
             </button>
           ) : (
             <Link
               href="/login"
               className="ml-1 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
             >
-              Kirish
+              {t("nav.login")}
             </Link>
           )}
         </nav>
 
-        {/* Mobile: theme toggle + hamburger */}
+        {/* Mobile: language + theme toggle + hamburger */}
         <div className="flex items-center gap-1 sm:hidden">
+          <LanguageSwitcher />
           <ThemeToggle />
           <button
             type="button"
@@ -112,26 +117,26 @@ export function NavBar() {
         <nav className="border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950 sm:hidden">
           <div className="flex flex-col gap-1">
             <Link href="/" className={navLink} onClick={() => setMobileOpen(false)}>
-              Bosh sahifa
+              {t("nav.home")}
             </Link>
             <MobileFilterDropdowns onClose={() => setMobileOpen(false)} />
             <Link href="/about" className={navLink} onClick={() => setMobileOpen(false)}>
-              Sayt haqida
+              {t("nav.about")}
             </Link>
             <Link href="/tests" className={navLink} onClick={() => setMobileOpen(false)}>
-              Testlar
+              {t("nav.tests")}
             </Link>
             <Link href="/profile" className={navLink} onClick={() => setMobileOpen(false)}>
-              Profil
+              {t("nav.profile")}
             </Link>
             {user?.role === "ADMIN" || user?.role === "SUPER_ADMIN" ? (
               <Link href="/admin" className="rounded-lg px-3 py-2 text-sm text-amber-700 transition hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-950" onClick={() => setMobileOpen(false)}>
-                Admin
+                {t("nav.admin")}
               </Link>
             ) : null}
             {user ? (
               <button type="button" onClick={handleLogout} className={`${navLink} text-left`}>
-                Chiqish
+                {t("nav.logout")}
               </button>
             ) : (
               <Link
@@ -139,7 +144,7 @@ export function NavBar() {
                 className="mt-1 rounded-lg bg-blue-600 px-3.5 py-2.5 text-center text-sm font-medium text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
                 onClick={() => setMobileOpen(false)}
               >
-                Kirish
+                {t("nav.login")}
               </Link>
             )}
           </div>
@@ -181,16 +186,17 @@ function FilterDropdowns() {
 }
 
 function MobileFilterDropdowns({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState<OpenMenu>(null);
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex gap-1">
         <button type="button" onClick={() => setOpen(open === "search" ? null : "search")} className={dropdownButton(open === "search")}>
-          Qidiruv
+          {t("nav.search")}
         </button>
         <button type="button" onClick={() => setOpen(open === "filters" ? null : "filters")} className={dropdownButton(open === "filters")}>
-          Filtrlar
+          {t("nav.filters")}
         </button>
       </div>
       {open === "search" && (
@@ -227,9 +233,10 @@ function DropdownTrigger({ label, open, onToggle }: { label: string; open: boole
 }
 
 function SearchDropdown({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const { t } = useI18n();
   return (
     <div className="relative">
-      <DropdownTrigger label="Qidiruv" open={open} onToggle={onToggle} />
+      <DropdownTrigger label={t("nav.search")} open={open} onToggle={onToggle} />
       {open && (
         <Suspense fallback={null}>
           <SearchPanel onClose={onToggle} />
@@ -295,9 +302,10 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
 }
 
 function FiltersDropdown({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const { t } = useI18n();
   return (
     <div className="relative">
-      <DropdownTrigger label="Filtrlar" open={open} onToggle={onToggle} />
+      <DropdownTrigger label={t("nav.filters")} open={open} onToggle={onToggle} />
       {open && (
         <Suspense fallback={null}>
           <FiltersPanel onClose={onToggle} />

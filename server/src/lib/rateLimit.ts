@@ -105,3 +105,23 @@ export const uploadsLimiter = rateLimit({
   ...standard,
   message: { error: "Too many requests" },
 });
+
+/** Guard on POST /api/quotes/analyze (per IP per hour) so the optional AI
+ *  assist and the dictionary scans cannot be hammered by scrapers. */
+export const analyzeLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});
+
+/** Guard on collection mutations (create/update/delete/add-quote) — per IP
+ *  per 15 min, so a bot cannot flood collections with bookmarks. */
+export const collectionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 120,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});

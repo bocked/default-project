@@ -3,6 +3,7 @@ import Script from "next/script";
 import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
+import { I18nProvider } from "@/lib/i18n";
 import { SiteShell } from "@/components/SiteShell";
 import { ToastProvider } from "@/components/ToastProvider";
 import { CookieConsentGate } from "@/components/CookieConsentGate";
@@ -61,9 +62,11 @@ export default function RootLayout({
         <PageViewTracker />
         <ToastProvider>
           <AuthProvider>
-            <CookieConsentGate />
-            <TermsReAcceptGate />
-            <SiteShell>{children}</SiteShell>
+            <I18nProvider>
+              <CookieConsentGate />
+              <TermsReAcceptGate />
+              <SiteShell>{children}</SiteShell>
+            </I18nProvider>
           </AuthProvider>
         </ToastProvider>
       </body>

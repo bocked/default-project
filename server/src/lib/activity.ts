@@ -11,7 +11,10 @@ export interface ActivityEntry {
     | "PROFILE_UPDATE"
     | "FEEDBACK"
     | "QUIZ_CREATE"
-    | "QUIZ_ATTEMPT";
+    | "QUIZ_ATTEMPT"
+    | "COLLECTION_CREATE"
+    | "COLLECTION_DELETE"
+    | "COLLECTION_ADD_QUOTE";
   detail?: string;
   targetId?: string;
 }
