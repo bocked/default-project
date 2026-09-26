@@ -595,12 +595,10 @@ async function handleApprovalAdminText(msg: Record<string, any>): Promise<void> 
     await sendApprovalMessage(
       chatId,
       [
-        "Bu bot faqat foydalanuvchilarni tasdiqlash uchun ishlatiladi.",
+        "Bu bot faqat tasdiqlash uchun — qolgani @yerlikoglonBot.",
         "",
         "`verify <email>` / `tasdiqla <email>` — foydalanuvchini tasdiqlash",
         "`verify off <email>` / `unverify <email>` — tasdiqlashni bekor qilish",
-        "",
-        "Qolgan so'rov va bildirishnomalar @yerlikoglonBot orqali bajariladi.",
       ].join("\n"),
       undefined,
       msg.message_id
