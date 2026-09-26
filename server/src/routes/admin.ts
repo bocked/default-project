@@ -10,7 +10,7 @@ import { bus } from "../lib/bus.js";
 import { config } from "../config.js";
 import { adminLimiter } from "../lib/rateLimit.js";
 import { editModerationMessage, sendTelegramMessage, sendAdminNotification, adminPromotionText, telegramEnabled, channelEnabled, publishQuoteToChannel } from "../lib/telegram.js";
-import { sendEmail } from "../lib/email.js";
+import { sendEmail, sendUserApprovedEmail } from "../lib/email.js";
 import { notifyQuoteModeration } from "../lib/notify.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { listContent, getContent } from "../lib/content.js";
@@ -922,6 +922,7 @@ adminRouter.post("/users/:id/super-approve", requireSuperAdmin, async (req, res)
       detail: target.email ?? target.telegramUsername ?? target.id,
       ip: clientIp(req.headers),
     });
+    if (target.email) void sendUserApprovedEmail(target.email, target.name ?? undefined);
     res.json({ ok: true, user: { id: user.id, isSuperApproved: true, superApprovedAt: user.superApprovedAt?.toISOString() ?? null } });
   } catch {
     res.status(500).json({ error: "Foydalanuvchi tasdiqlanmadi" });

@@ -4,12 +4,15 @@ const standard = { standardHeaders: "draft-7", legacyHeaders: false } as const;
 
 // Disable the in-memory limiters while running the E2E suite (NODE_ENV=test)
 // so fast, repeated requests from the same CI/local IP are not throttled.
-const skip = (): boolean => process.env.NODE_ENV === "test";
+// Set FORCE_RATE_LIMITS=1 (e.g. in a specific rate-limit e2e file) to opt
+// back in and actually exercise the 429 behaviour. Never expose the escape
+// hatch in production.
+const skip = (): boolean => process.env.NODE_ENV === "test" && process.env.FORCE_RATE_LIMITS !== "1";
 
 /** General guard on every /api request. */
 export const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 600,
+  windowMs: 60 * 1000,
+  limit: 100,
   skip,
   ...standard,
   message: { error: "Too many requests" },
@@ -28,6 +31,20 @@ export const adminLimiter = rateLimit({
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 60,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});
+
+/**
+ * Guard on public auth / register endpoints — max 10 requests per 15 minutes
+ * per IP, so a throttling attacker cannot enumerate accounts or spam OTP /
+ * password-reset emails. The tighter authBruteLimiter below still applies on
+ * the credential endpoints (login/register & co.) as a second layer.
+ */
+export const authPublicLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
   skip,
   ...standard,
   message: { error: "Too many requests" },
@@ -74,6 +91,16 @@ export const likeLimiter = rateLimit({
 export const searchLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 180,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});
+
+/** Guard on POST /api/uploads (per IP per hour) so an authenticated client
+ *  cannot flood the disk with image uploads. */
+export const uploadsLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
   skip,
   ...standard,
   message: { error: "Too many requests" },

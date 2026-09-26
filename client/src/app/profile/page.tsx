@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
-import { api } from "@/lib/api";
+import { api, uploadImage } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { QuoteCard } from "@/components/QuoteCard";
 import { QuoteForm } from "@/components/QuoteForm";
@@ -626,8 +626,24 @@ function ProfileSettings({
   const [nickname, setNickname] = useState(user.nickname ?? "");
   const [customWatermark, setCustomWatermark] = useState(user.customWatermark ?? "");
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
   const [profileSaved, setProfileSaved] = useState(false);
   const premium = isPremiumActive(user);
+
+  async function handleAvatarFile(file: File | undefined): Promise<void> {
+    if (!file) return;
+    setAvatarUploadError(null);
+    setAvatarUploading(true);
+    try {
+      const result = await uploadImage(file);
+      setAvatarUrl(result.url);
+    } catch (err) {
+      setAvatarUploadError(err instanceof Error ? err.message : "Rasm yuklanmadi");
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
 
   async function saveProfile(event: React.FormEvent): Promise<void> {
     event.preventDefault();
@@ -661,6 +677,22 @@ function ProfileSettings({
               <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                 Bo&apos;sh qoldirilsa, avatar o&apos;chiriladi va nick dan bosh harflar ko&apos;rinadi.
               </p>
+              <label className="mt-2 inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:text-slate-300 dark:hover:border-blue-500 dark:hover:text-blue-400">
+                {avatarUploading ? "Yuklanmoqda..." : "Rasm yuklash (WebP ga aylantiriladi)"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="hidden"
+                  disabled={avatarUploading}
+                  onChange={(e) => {
+                    void handleAvatarFile(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {avatarUploadError && (
+                <p className="mt-1 text-xs font-medium text-red-500">{avatarUploadError}</p>
+              )}
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@ import { prisma } from "./prisma.js";
 import { config } from "../config.js";
 import { addLog } from "./logstore.js";
 import { recordAudit } from "./audit.js";
+import { sendUserApprovedEmail } from "./email.js";
 import { invalidateCaches, CACHE_PREFIXES } from "./redisCache.js";
 import { editModerationMessage, sendTelegramMessage, telegramEnabled, publishQuoteToChannel } from "./telegram.js";
 import { notifyQuoteModeration } from "./notify.js";
@@ -479,6 +480,7 @@ async function verifyUser(email: string): Promise<string> {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) return `✗ Foydalanuvchi topilmadi: ${email}`;
   if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") return "✗ Admin hisobini qo'lda tasdiqlash shart emas";
+  if (user.isSuperApproved) return `✓ ${email} allaqachon tasdiqlangan (iqtibos joylash huquqi bor)`;
   await prisma.user.update({
     where: { id: user.id },
     data: { isSuperApproved: true, superApprovedAt: new Date() },
@@ -492,6 +494,7 @@ async function verifyUser(email: string): Promise<string> {
     detail: email,
     ip: null,
   });
+  if (user.email) void sendUserApprovedEmail(user.email, user.name ?? undefined);
   return `✓ Topshiriq bajarildi: ${email} foydalanuvchini qo'lda tasdiqlash (iqtibos joylash huquqi berildi)`;
 }
 

@@ -51,6 +51,7 @@ enum EmailType {
   QUOTE_MODERATION
   ANNOUNCEMENT
   TEST
+  USER_APPROVED
 }
 
 enum EmailStatus {

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
@@ -26,11 +27,20 @@ import {
 } from "../lib/tokens.js";
 import { notifyQuoteModeration } from "../lib/notify.js";
 import { recordAudit } from "../lib/audit.js";
+import { sendUserApprovedEmail } from "../lib/email.js";
 import { POLICY_LABELS, approvePolicy } from "../lib/policies.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { executeAdminCommand, executeUserApprovalCommand } from "../lib/adminCommands.js";
 
 export const telegramRouter = Router();
+
+/** Constant-time string comparison so the webhook secret never leaks timing.
+ *  Since the header is untrusted (length leaks lengths), both sides are
+ *  hashed first so timingSafeEqual always compares digest-sized buffers. */
+function secureEqual(a: string, b: string): boolean {
+  const digest = (value: string) => crypto.createHash("sha256").update(value).digest();
+  return crypto.timingSafeEqual(digest(a), digest(b));
+}
 
 /**
  * Only Telegram can call this endpoint — it is verified through the secret
@@ -38,7 +48,7 @@ export const telegramRouter = Router();
  */
 telegramRouter.use((req, res, next) => {
   const secret = req.header("x-telegram-bot-api-secret-token") ?? "";
-  if (!config.telegramWebhookSecret || secret !== config.telegramWebhookSecret) {
+  if (!config.telegramWebhookSecret || !secureEqual(secret, config.telegramWebhookSecret)) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -580,6 +590,7 @@ async function applySuperApproveFromTelegram(userId: string): Promise<{ ok: true
     detail: user.email ?? user.id,
     ip: null,
   });
+  if (user.email) void sendUserApprovedEmail(user.email, user.name ?? undefined);
   addLog("info", `Foydalanuvchi tasdiqlash boti orqali tasdiqlandi: ${user.email ?? user.id}`);
   return { ok: true };
 }

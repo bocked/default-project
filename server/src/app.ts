@@ -16,6 +16,7 @@ import { policiesRouter } from "./routes/policies.js";
 import { usersRouter } from "./routes/users.js";
 import { categoriesRouter, tagsRouter } from "./routes/catalog.js";
 import { contentRouter } from "./routes/content.js";
+import { uploadsRouter } from "./routes/uploads.js";
 import { siteRouter } from "./routes/site.js";
 import { telegramRouter } from "./routes/telegram.js";
 import { resendWebhookRouter } from "./routes/resendWebhook.js";
@@ -26,6 +27,7 @@ import { flushAnalyticsToDb } from "./lib/analytics.js";
 import { verifySmtpAtStartup, verifyResendAtStartup, emailMode } from "./lib/email.js";
 import { logger } from "./lib/logger.js";
 import { apiLimiter, authLimiter } from "./lib/rateLimit.js";
+import { mkdirSync } from "node:fs";
 import { tryEnsureDefaultCategories } from "./lib/categories.js";
 import { tryEnsureDefaultContent } from "./lib/content.js";
 import { tryEnsurePolicyBaseline, tryEnsurePolicyDrafts } from "./lib/policies.js";
@@ -71,6 +73,9 @@ export interface CreateAppOptions {
  */
 export function createApp(options: CreateAppOptions = {}): { app: express.Express; server: http.Server; io: Server } {
   const app = express();
+  // Image uploads land on disk; make sure the directory exists (and stays
+  // outside of git — see .gitignore) before any route can write to it.
+  mkdirSync(config.uploadDir, { recursive: true });
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
@@ -189,6 +194,19 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   });
 
   app.use(compression());
+  // Serve previously uploaded (WebP-optimised) images. Files are immutable
+  // (uuid names), so they can be cached aggressively by browsers/Cloudflare.
+  // The global CORP header is relaxed for this subtree: embedded <img> tags on
+  // the frontend host are normal cross-origin subresource loads, and these
+  // files are public by design (no cookies/credentials are ever required).
+  app.use("/uploads", (_req, res, next) => {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  });
+  app.use(
+    "/uploads",
+    express.static(config.uploadDir, { immutable: true, maxAge: "30d", dotfiles: "ignore" })
+  );
   // Resend delivery webhook must consume the raw body BEFORE express.json()
   // parses it, because the Svix HMAC covers the exact bytes as received.
   app.use("/api/webhooks", resendWebhookRouter);
@@ -213,6 +231,7 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   app.use("/api/categories", categoriesRouter);
   app.use("/api/tags", tagsRouter);
   app.use("/api/content", contentRouter);
+  app.use("/api/uploads", uploadsRouter);
   app.use("/api", siteRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/telegram", telegramRouter);

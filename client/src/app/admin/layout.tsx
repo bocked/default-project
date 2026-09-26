@@ -33,7 +33,7 @@ const NAV: NavItem[] = [
   { href: "/admin/telegram", label: "Telegram Sozlamalari", superOnly: true },
   { href: "/admin/policies", label: "Siyosatlar" },
   { href: "/admin/email-management", label: "📧 Pochta Boshqaruvi", superOnly: true },
-  { href: "/admin/audit", label: "Audit", permissions: ["canViewAudit"] },
+  { href: "/admin/audit", label: "Audit Loglar", permissions: ["canViewAudit"] },
 ];
 
 /** Permission(s) guarding the section a pathname belongs to. */

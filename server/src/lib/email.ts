@@ -492,3 +492,38 @@ export function sendQuoteModerationEmail(
 
   return sendEmail({ to, subject, text, html }, EmailType.QUOTE_MODERATION);
 }
+
+/** Rendered content of the "account approved" mail (also used for previews).
+ *  Sent the moment a SUPER_ADMIN grants iqtibos-posting rights (isSuperApproved). */
+export function buildUserApprovedEmail(displayName: string): { subject: string; text: string; html: string } {
+  const name = displayName.trim().split(/\s+/)[0] || "foydalanuvchi";
+  const subject = "Akkountingiz muvaffaqiyatli tasdiqlandi! 🎉";
+  const text = [
+    `Salom, ${name}!`,
+    "",
+    "Xush kelibsiz! Sizning akkountingiz Super Admin tomonidan tasdiqlandi. Endi platformada iqtiboslar joylashingiz va barcha imkoniyatlardan foydalanishingiz mumkin.",
+    "",
+    `Saytga kirish: ${config.appUrl.replace(/\/$/, "")}`,
+  ].join("\n");
+
+  const html = `
+  <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+    <h2 style="color:#0f172a">yerlikoglon.uz</h2>
+    <p style="font-size:36px;line-height:1;margin:8px 0">🎉</p>
+    <h3 style="color:#16a34a;margin:0 0 8px">${escapeHtml(name)}, akkountingiz muvaffaqiyatli tasdiqlandi!</h3>
+    <p style="color:#334155;line-height:1.6">Xush kelibsiz! Sizning akkountingiz Super Admin tomonidan tasdiqlandi. Endi platformada iqtiboslar joylashingiz va barcha imkoniyatlardan foydalanishingiz mumkin.</p>
+    <p style="margin:24px 0">
+      <a href="${config.appUrl.replace(/\/$/, "")}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block">Saytga o'tish</a>
+    </p>
+    <p style="font-size:13px;color:#94a3b8">Agar bu xabarni siz kutmagansiz, uni e'tiborsiz qoldirishingiz mumkin.</p>
+  </div>`;
+
+  return { subject, text, html };
+}
+
+/** Fire-and-forget approval notice so the moderation action never blocks on an
+ *  email round-trip (sendEmail itself never throws). */
+export function sendUserApprovedEmail(to: string, displayName?: string): Promise<EmailSendResult> {
+  const { subject, text, html } = buildUserApprovedEmail(displayName ?? "");
+  return sendEmail({ to, subject, text, html }, EmailType.USER_APPROVED);
+}

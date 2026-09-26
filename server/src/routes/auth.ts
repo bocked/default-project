@@ -36,7 +36,7 @@ import {
 } from "../lib/email.js";
 import { issueEmailVerification } from "../lib/verifyEmail.js";
 import { logger } from "../lib/logger.js";
-import { authBruteLimiter } from "../lib/rateLimit.js";
+import { authBruteLimiter, authPublicLimiter } from "../lib/rateLimit.js";
 import { getBotUsername, sendAdminNotification, sendUserApprovalPrompt } from "../lib/telegram.js";
 import { recordActivity } from "../lib/activity.js";
 import { publishedPolicyVersion } from "../lib/policies.js";
@@ -217,7 +217,7 @@ async function sendVerificationTo(email: string): Promise<void> {
 }
 
 // POST /api/auth/register
-authRouter.post("/register", authBruteLimiter, validateBody(registerSchema), async (_req, res) => {
+authRouter.post("/register", authPublicLimiter, authBruteLimiter, validateBody(registerSchema), async (_req, res) => {
   const body = res.locals.body as Register;
   const existing = await prisma.user.findUnique({ where: { email: body.email } });
   if (existing) {
@@ -252,7 +252,7 @@ authRouter.post("/register", authBruteLimiter, validateBody(registerSchema), asy
 });
 
 // POST /api/auth/login
-authRouter.post("/login", authBruteLimiter, validateBody(loginSchema), async (_req, res) => {
+authRouter.post("/login", authPublicLimiter, authBruteLimiter, validateBody(loginSchema), async (_req, res) => {
   const body = res.locals.body as Login;
   const user = await prisma.user.findUnique({ where: { email: body.email } });
   if (!user || !user.passwordHash || !(await verifyPassword(body.password, user.passwordHash))) {
@@ -278,7 +278,7 @@ authRouter.post("/login", authBruteLimiter, validateBody(loginSchema), async (_r
 
 // POST /api/auth/verify-email - redeem either the emailed link token or the
 // 6-digit OTP code; both mark emailVerified once matched & unexpired.
-authRouter.post("/verify-email", validateBody(verifyEmailSchema), async (_req, res) => {
+authRouter.post("/verify-email", authPublicLimiter, validateBody(verifyEmailSchema), async (_req, res) => {
   const body = res.locals.body as VerifyEmail;
   const user = await prisma.user.findFirst({
     where: {
@@ -321,7 +321,7 @@ authRouter.post("/verify-email", validateBody(verifyEmailSchema), async (_req, r
 });
 
 // POST /api/auth/resend-verification
-authRouter.post("/resend-verification", authBruteLimiter, validateBody(resendVerificationSchema), async (_req, res) => {
+authRouter.post("/resend-verification", authPublicLimiter, authBruteLimiter, validateBody(resendVerificationSchema), async (_req, res) => {
   const body = res.locals.body as ResendVerification;
   const user = await prisma.user.findUnique({ where: { email: body.email } });
   if (user && !user.emailVerified && user.email) {
@@ -376,7 +376,7 @@ authRouter.post("/send-otp", requireAuth, authBruteLimiter, async (req, res) => 
 // no real email is dispatched for unknown addresses. The code + token are
 // stored SHA-256 hashed under resetTokenExpiry (15 min). Nothing identifying
 // (email/phone) is ever written to the console or logs — only a digest.
-authRouter.post("/forgot-password", authBruteLimiter, validateBody(forgotPasswordSchema), async (_req, res) => {
+authRouter.post("/forgot-password", authPublicLimiter, authBruteLimiter, validateBody(forgotPasswordSchema), async (_req, res) => {
   const body = res.locals.body as ForgotPassword;
   const userEmail = body.email;
   logger.debug({ emailHash: hashPii(userEmail) }, "forgot-password: request received");

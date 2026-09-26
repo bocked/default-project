@@ -165,3 +165,49 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
 
   throw lastError ?? new ApiError("Xatolik yuz berdi.", 0, "UNKNOWN");
 }
+
+export interface UploadResult {
+  ok: boolean;
+  url: string;
+  publicPath: string;
+  width: number;
+  height: number;
+  bytes: number;
+}
+
+/** Hard cap for image uploads (matches MAX_UPLOAD_BYTES=5MB server-side). */
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Uploads an image through /api/uploads (multipart). The server transcodes it
+ * to a compressed WebP and returns an embeddable absolute URL. The browser
+ * sets the multipart Content-Type itself, so no header is added here.
+ */
+export async function uploadImage(file: File): Promise<UploadResult> {
+  if (!file.type.startsWith("image/")) throw new ApiError("Faqat rasm fayli yuklash mumkin", 415);
+  if (file.size > MAX_UPLOAD_BYTES) throw new ApiError("Fayl juda katta (maks. 5MB)", 413);
+
+  const form = new FormData();
+  form.append("file", file);
+  const token = tokenStore.get();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(`${config.url}/api/uploads`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+      signal: controller.signal,
+    });
+    const data = (await res.json().catch(() => null)) as (Partial<UploadResult> & { error?: string }) | null;
+    if (!res.ok) {
+      throw new ApiError(typeof data?.error === "string" ? data.error : `Rasm yuklanmadi (${res.status})`, res.status);
+    }
+    return data as UploadResult;
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError("Rasm yuklanmadi. Internet ulanishini tekshiring.", 0, "NETWORK");
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}

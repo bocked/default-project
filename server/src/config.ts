@@ -144,4 +144,17 @@ export const config = {
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? "",
   // Public HTTPS URL used by scripts/set-telegram-webhook.ts.
   telegramWebhookUrl: process.env.TELEGRAM_WEBHOOK_URL ?? "",
+
+  // Image uploads (profile avatars, etc.): converted to WebP on the server.
+  // Directory is created on boot; it stays out of git (see .gitignore).
+  uploadDir: process.env.UPLOAD_DIR ?? path.join(process.cwd(), "uploads"),
+  // Absolute public base URL prepended to the returned file paths so clients
+  // can always embed /uploads/... URLs. Defaults to the production API origin.
+  uploadsPublicBase: process.env.UPLOADS_PUBLIC_BASE?.replace(/\/+$/, "") ?? "https://api.yerlikoglon.uz",
+  // Hard cap on every uploaded file body (bytes). Multer rejects bigger files
+  // with LIMIT_FILE_SIZE before they are decoded.
+  maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES ?? 5 * 1024 * 1024),
+  // Largest edge (px) the decoded image may keep; larger images are scaled
+  // down with `withoutEnlargement` so small files are never upscaled.
+  maxUploadDimension: Number(process.env.MAX_UPLOAD_DIMENSION ?? 1280),
 };
