@@ -14,22 +14,30 @@ interface StickyBannerProps {
 
 /**
  * Desktop sticky sidebar banner. The `<aside>` is the grid item, so `sticky`
- * keeps it pinned 80px below the top while the page scrolls; hidden below the
- * `xl` breakpoint where the mobile banners take over.
+ * keeps it pinned 112px below the top (clearing the 56px navbar plus breathing
+ * room) while the page scrolls; `z-10` keeps it visually below the `z-30`
+ * navbar. Inside, a full-height flex column centers the banner vertically with
+ * auto margins (overflow-safe), and the slide-in animation runs on load.
+ * Hidden below the `xl` breakpoint where the mobile banners take over.
  */
 export function StickyBanner({ side, overrides, enabled = true }: StickyBannerProps) {
   const def = resolveBanner(side, overrides, enabled);
   if (!def) return null;
 
+  const slideClass = side === "left" ? "animate-slide-in-left" : "animate-slide-in-right";
+
   return (
-    <aside className="sticky top-[80px] hidden max-h-[calc(100vh-96px)] overflow-y-auto xl:block">
-      <BannerWrapper
-        id={`banner.${side}`}
-        contentKey={bannerContentKey(def)}
-        leaveClassName="opacity-0 scale-[0.98]"
-      >
-        <BannerBody def={def} variant="side" />
-      </BannerWrapper>
+    <aside className={`sticky top-28 z-10 hidden xl:flex ${slideClass}`}>
+      <div className="flex h-[calc(100vh-14rem)] flex-col overflow-y-auto">
+        <BannerWrapper
+          id={`banner.${side}`}
+          contentKey={bannerContentKey(def)}
+          className="m-auto min-w-0"
+          leaveClassName="opacity-0 scale-[0.98]"
+        >
+          <BannerBody def={def} variant="side" />
+        </BannerWrapper>
+      </div>
     </aside>
   );
 }

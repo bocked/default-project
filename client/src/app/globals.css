@@ -72,6 +72,16 @@ h3 {
   40%, 80% { transform: translateX(4px); }
 }
 
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
 .animate-fade-in {
   animation: fade-in 0.2s ease-out both;
 }
@@ -90,6 +100,15 @@ h3 {
 
 .animate-shake {
   animation: shake 0.35s ease-in-out;
+}
+
+/* Sidebar banners: slide in from the nearest edge on load. */
+.animate-slide-in-left {
+  animation: slide-in-left 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
 }
 
 /* Skeleton shimmer for loading states (feeds, filters, quote of the day). */
@@ -138,6 +157,8 @@ h3 {
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-slide-up,
+  .animate-slide-in-left,
+  .animate-slide-in-right,
   .animate-pop-in,
   .animate-toast-in,
   .animate-shake,
