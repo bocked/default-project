@@ -122,10 +122,7 @@ export function AdminContentBlocksTab() {
                   <span className="text-xs text-slate-400 dark:text-slate-500">
                     Yangilandi: {new Date(block.updatedAt).toLocaleString("uz-UZ")}
                   </span>
-                  <AdminButton
-                    disabled={saving === block.key || draft.value.trim() === ""}
-                    onClick={() => void save(block.key)}
-                  >
+                  <AdminButton disabled={saving === block.key} onClick={() => void save(block.key)}>
                     {saving === block.key ? "Saqlanmoqda..." : "Saqlash"}
                   </AdminButton>
                 </div>

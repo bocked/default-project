@@ -3,6 +3,23 @@ export type SortKey = "newest" | "most-liked" | "most-viewed";
 /** UI / content language. Matches the server Prisma `Locale` enum (stored uppercase). */
 export type Locale = "UZ" | "RU" | "EN";
 
+/** Server `POST /api/quotes/analyze` result (server/src/lib/analyze.ts). */
+export interface SpellingSuggestion {
+  type: "spelling" | "repeated" | "whitespace" | "punctuation" | "alphabet" | "apostrophe";
+  word?: string;
+  suggestion?: string;
+  reason: string;
+}
+
+export interface AnalyzeResult {
+  language: "uz" | "ru" | "en";
+  suggestions: SpellingSuggestion[];
+  tags: string[];
+  categorySlug: string | null;
+  ai: boolean;
+  available: boolean;
+}
+
 export interface ServerConfig {
   url: string;
 }

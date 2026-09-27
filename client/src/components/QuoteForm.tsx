@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isPremiumActive } from "@/lib/premium";
 import { quoteCardStyle, quoteTextStyle, quoteMarks } from "@/lib/quoteStyles";
-import type { Category, Quote, QuoteCustomStyles } from "@/lib/types";
+import type { AnalyzeResult, Category, Quote, QuoteCustomStyles } from "@/lib/types";
 
 const DEFAULT_STYLES: QuoteCustomStyles = {
   fontFamily: "serif",
@@ -163,6 +163,10 @@ export function QuoteForm({
   const [tagInput, setTagInput] = useState("");
   const [anonymous, setAnonymous] = useState(false);
   const [telegramUrl, setTelegramUrl] = useState("");
+  const [locale, setLocale] = useState<"uz" | "ru" | "en">("uz");
+  const [localeTouched, setLocaleTouched] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeResult, setAnalyzeResult] = useState<AnalyzeResult | null>(null);
   const [customStyles, setCustomStyles] = useState<QuoteCustomStyles>({ ...DEFAULT_STYLES });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -182,6 +186,43 @@ export function QuoteForm({
     }
   }
 
+  /** Runs the offline/AI quote analyzer, then pre-fills detected language,
+   *  category and tags so the author can review before submitting. */
+  async function analyze(event: React.MouseEvent): Promise<void> {
+    event.preventDefault();
+    const trimmed = text.trim();
+    if (!trimmed || analyzing) return;
+    setAnalyzing(true);
+    setError(null);
+    try {
+      const result = await api<AnalyzeResult>("/api/quotes/analyze", {
+        method: "POST",
+        body: { text: trimmed },
+      });
+      setAnalyzeResult(result);
+      if (result.categorySlug && categories.some((c) => c.slug === result.categorySlug) && !categorySlug) {
+        setCategorySlug(result.categorySlug);
+      }
+      setTags((prev) => {
+        const next = [...prev];
+        const seen = new Set(next.map((t) => t.toLowerCase()));
+        for (const slug of result.tags) {
+          if (next.length >= 5) break;
+          if (!seen.has(slug.toLowerCase())) {
+            next.push(slug);
+            seen.add(slug.toLowerCase());
+          }
+        }
+        return next;
+      });
+      if (!localeTouched) setLocale(result.language);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Tahlil amalga oshmadi");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
   async function submit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     setSubmitting(true);
@@ -195,6 +236,7 @@ export function QuoteForm({
           tags,
           anonymous,
           telegramUrl: telegramUrl.trim() || undefined,
+          locale,
           ...(premium ? { customStyles } : {}),
         },
       });
@@ -203,6 +245,7 @@ export function QuoteForm({
       setTags([]);
       setAnonymous(false);
       setTelegramUrl("");
+      setAnalyzeResult(null);
       setCustomStyles({ ...DEFAULT_STYLES });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Xatolik yuz berdi");
@@ -221,13 +264,72 @@ export function QuoteForm({
 
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          if (analyzeResult) setAnalyzeResult(null);
+        }}
         placeholder="Iqtibos matnini yozing..."
         required
         maxLength={1000}
         rows={4}
         className="w-full resize-y rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-900"
       />
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={(e) => void analyze(e)}
+          disabled={analyzing || !text.trim()}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-500/30 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
+        >
+          {analyzing ? (
+            <>
+              <span className="h-3 w-3 animate-spin rounded-full border border-indigo-300 border-t-indigo-700 dark:border-indigo-500 dark:border-t-indigo-300" />
+              Tahlil qilinmoqda...
+            </>
+          ) : (
+            "Tahlil qilish (AI)"
+          )}
+        </button>
+        <span className="text-[11px] text-slate-400 dark:text-slate-500">
+          Til, kategoriya, heshteglar va imlo tavsiyalarini avtomatik to&apos;ldiradi.
+        </span>
+      </div>
+
+      {analyzeResult && (
+        <div className="mt-2 rounded-xl border border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-500/30 dark:bg-indigo-950/30">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 font-semibold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+              Til: {analyzeResult.language === "uz" ? "O'zbekcha" : analyzeResult.language === "ru" ? "Ruscha" : "Inglizcha"}
+            </span>
+            {analyzeResult.ai && (
+              <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300">
+                AI yordamida
+              </span>
+            )}
+            {analyzeResult.categorySlug && (
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                Bo&apos;lim: {categories.find((c) => c.slug === analyzeResult.categorySlug)?.name ?? analyzeResult.categorySlug}
+              </span>
+            )}
+            {analyzeResult.tags.length > 0 && (
+              <span className="text-slate-500 dark:text-slate-400">
+                Heshteglar: {analyzeResult.tags.map((t) => `#${t}`).join(" ")}
+              </span>
+            )}
+          </div>
+          {analyzeResult.suggestions.length > 0 && (
+            <ul className="mt-2 space-y-1 text-xs text-amber-700 dark:text-amber-300">
+              {analyzeResult.suggestions.map((s, idx) => (
+                <li key={idx}>• {s.reason}</li>
+              ))}
+            </ul>
+          )}
+          {analyzeResult.suggestions.length === 0 && (
+            <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">Imlo va imloviy tavsiyalar topilmadi — matn yaxshi.</p>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div>
@@ -246,16 +348,32 @@ export function QuoteForm({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Heshteglar (maks. 5)</label>
-          <input
-            value={tagInput}
-            onChange={(e) => setTagInput(e.target.value)}
-            onKeyDown={handleTagKey}
-            onBlur={addTag}
-            placeholder="Enter bilan qo'shing"
+          <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Matn tili</label>
+          <select
+            value={locale}
+            onChange={(e) => {
+              setLocale(e.target.value as "uz" | "ru" | "en");
+              setLocaleTouched(true);
+            }}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500"
-          />
+          >
+            <option value="uz">O&apos;zbekcha</option>
+            <option value="ru">Русский</option>
+            <option value="en">English</option>
+          </select>
         </div>
+      </div>
+
+      <div className="mt-3">
+        <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Heshteglar (maks. 5)</label>
+        <input
+          value={tagInput}
+          onChange={(e) => setTagInput(e.target.value)}
+          onKeyDown={handleTagKey}
+          onBlur={addTag}
+          placeholder="Enter bilan qo'shing"
+          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500"
+        />
       </div>
 
       {tags.length > 0 && (

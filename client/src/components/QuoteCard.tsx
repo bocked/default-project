@@ -4,18 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, formatLocaleDate } from "@/lib/i18n";
 import { useToast } from "./ToastProvider";
 import { TtsButton } from "./TtsButton";
-import type { Quote, QuoteCollection } from "@/lib/types";
+import type { Locale, Quote, QuoteCollection } from "@/lib/types";
 import { renderQuoteImage, pickVipTheme } from "@/lib/quoteImage";
 import { isPremiumActive } from "@/lib/premium";
 import { quoteCardStyle, quoteTextStyle, quoteMarks } from "@/lib/quoteStyles";
 import { StatusBadge } from "./StatusBadge";
 import { TelegramPost } from "./TelegramPost";
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString("uz-UZ", { day: "numeric", month: "long", year: "numeric" });
+function formatDate(value: string, locale: Locale): string {
+  return formatLocaleDate(value, locale, { day: "numeric", month: "long", year: "numeric" });
 }
 
 export function QuoteCard({
@@ -28,7 +28,7 @@ export function QuoteCard({
   highlight?: boolean;
 }) {
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const toast = useToast();
   const [liked, setLiked] = useState(Boolean(quote.likedByMe));
   const [likeCount, setLikeCount] = useState(quote.likeCount ?? 0);
@@ -294,7 +294,7 @@ export function QuoteCard({
       <figcaption className="mt-4 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <span className="truncate font-medium text-slate-700 dark:text-slate-300">{quote.displayAuthor}</span>
-          <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{formatDate(quote.createdAt)}</span>
+          <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{formatDate(quote.createdAt, locale)}</span>
         </div>
         <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
           {quote.category.name}

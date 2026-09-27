@@ -524,6 +524,8 @@ function CollectionsTab() {
 
 function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<User | null> }) {
   const toast = useToast();
+  const router = useRouter();
+  const { logout } = useAuth();
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
   const [tgSession, setTgSession] = useState<{ botUsername: string; start: string } | null>(null);
@@ -533,6 +535,9 @@ function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<Use
   const [emailOtp, setEmailOtp] = useState("");
   const [emailOtpBusy, setEmailOtpBusy] = useState(false);
   const [emailOtpMessage, setEmailOtpMessage] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const canPost =
     user.emailVerified ||
@@ -541,6 +546,26 @@ function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<Use
     user.role === "ADMIN" ||
     user.role === "SUPER_ADMIN" ||
     isPremiumActive(user);
+
+  /** GDPR self-delete: soft-delete this account, clear the session and leave. */
+  async function deleteAccount(): Promise<void> {
+    if (!window.confirm("Akkaunt va barcha ma'lumotlaringizni o'chirishni siz ham tasdiqlaysizmi?")) {
+      setDeleteConfirm(false);
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api<{ ok: boolean }>("/api/auth/me/delete", { method: "POST" });
+      logout();
+      router.replace("/");
+      toast.success("Akkaunt o'chirildi. Saf bo'lganingiz uchun rahmat!");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "O'chirish amalga oshmadi");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function resendVerification(): Promise<void> {
     if (!user?.email) return;
@@ -779,6 +804,50 @@ function SettingsTab({ user, onSaved }: { user: User; onSaved: () => Promise<Use
       <ProfileSettings user={user} onSaved={onSaved} />
 
       <PremiumCard user={user} onSaved={onSaved} />
+
+      <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm dark:border-rose-500/30 dark:bg-rose-950/30">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-rose-800 dark:text-rose-300">Akkauntni o&apos;chirish (GDPR)</h2>
+            <p className="mt-0.5 text-xs text-rose-700 dark:text-rose-400">
+              Profilingiz, iqtiboslaringiz va barcha shaxsiy ma&apos;lumotlaringiz 30 kundan so&apos;ng butunlay
+              o&apos;chiriladi. Bu amalni bekor qilib bo&apos;lmaydi.
+            </p>
+          </div>
+          {deleteConfirm ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void deleteAccount()}
+                className="rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50 dark:hover:bg-rose-500"
+              >
+                {deleting ? "O&apos;chirilmoqda..." : "Ha, akkauntimni o&apos;chir"}
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => {
+                  setDeleteConfirm(false);
+                  setDeleteError(null);
+                }}
+                className="rounded-xl border border-rose-300 bg-white px-3.5 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-600 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-950"
+              >
+                Bekor qilish
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDeleteConfirm(true)}
+              className="rounded-xl border border-rose-300 bg-white px-3.5 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 dark:border-rose-600 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-950"
+            >
+              Akkauntni o&apos;chirish
+            </button>
+          )}
+        </div>
+        {deleteError && <p className="mt-2 text-xs font-medium text-rose-700 dark:text-rose-400">{deleteError}</p>}
+      </section>
     </div>
   );
 }

@@ -1389,8 +1389,9 @@ adminRouter.get("/content", async (_req, res) => {
   }
 });
 
-// PUT /api/admin/content/:key - update a content block.
-adminRouter.put("/content/:key", validateBody(contentUpdateSchema), async (req, res) => {
+// PUT /api/admin/content/:key - update a content block. Sub-admins need the
+// settings permission (content feeds nav, banners and the home page copy).
+adminRouter.put("/content/:key", checkPermission("canManageSettings"), validateBody(contentUpdateSchema), async (req, res) => {
   try {
     const body = res.locals.body as ContentUpdate;
     const existing = await getContent(req.params.key);
@@ -1434,12 +1435,12 @@ adminRouter.get("/audit-logs", checkPermission("canViewAudit"), async (req, res)
 });
 
 // GET /api/admin/logs - recent in-memory live logs.
-adminRouter.get("/logs", (_req, res) => {
+adminRouter.get("/logs", checkPermission("canViewAudit"), (_req, res) => {
   res.json({ logs: recentLogs(200) });
 });
 
 // GET /api/admin/bans - list banned IPs
-adminRouter.get("/bans", async (_req, res) => {
+adminRouter.get("/bans", checkPermission("canViewUsers"), async (_req, res) => {
   try {
     const bans = await prisma.bannedIp.findMany({ orderBy: { createdAt: "desc" } });
     res.json({ bans });
@@ -1449,7 +1450,7 @@ adminRouter.get("/bans", async (_req, res) => {
 });
 
 // POST /api/admin/bans - ban an IP
-adminRouter.post("/bans", validateBody(banCreateSchema), async (_req, res) => {
+adminRouter.post("/bans", checkPermission("canManageUsers"), validateBody(banCreateSchema), async (_req, res) => {
   try {
     const { ipAddress, reason } = res.locals.body as { ipAddress: string; reason?: string };
     const ban = await prisma.bannedIp.upsert({
@@ -1466,7 +1467,7 @@ adminRouter.post("/bans", validateBody(banCreateSchema), async (_req, res) => {
 });
 
 // DELETE /api/admin/bans/:ip - unban an IP
-adminRouter.delete("/bans/:ip", async (req, res) => {
+adminRouter.delete("/bans/:ip", checkPermission("canManageUsers"), async (req, res) => {
   try {
     await prisma.bannedIp.delete({ where: { ipAddress: req.params.ip } });
     await bus.publish("admin:unban", { ipAddress: req.params.ip });
@@ -1763,7 +1764,7 @@ adminRouter.put("/settings", checkPermission("canManageSettings"), validateBody(
 });
 
 // GET /api/admin/seo - all SEO rules.
-adminRouter.get("/seo", async (_req, res) => {
+adminRouter.get("/seo", checkPermission("canManageSettings"), async (_req, res) => {
   try {
     const rules = await prisma.seoRule.findMany({ orderBy: { page: "asc" } });
     res.json({ rules });
@@ -1773,7 +1774,7 @@ adminRouter.get("/seo", async (_req, res) => {
 });
 
 // PUT /api/admin/seo - upsert a SEO rule for a page.
-adminRouter.put("/seo", validateBody(seoRuleSchema), async (req, res) => {
+adminRouter.put("/seo", checkPermission("canManageSettings"), validateBody(seoRuleSchema), async (req, res) => {
   try {
     const body = res.locals.body as SeoRuleInput;
     const rule = await prisma.seoRule.upsert({
@@ -1800,7 +1801,7 @@ adminRouter.put("/seo", validateBody(seoRuleSchema), async (req, res) => {
 });
 
 // DELETE /api/admin/seo/:id - remove a SEO rule.
-adminRouter.delete("/seo/:id", async (req, res) => {
+adminRouter.delete("/seo/:id", checkPermission("canManageSettings"), async (req, res) => {
   try {
     await prisma.seoRule.delete({ where: { id: req.params.id } });
     await recordAudit({
@@ -1822,7 +1823,7 @@ adminRouter.delete("/seo/:id", async (req, res) => {
 // ---------------------------------------------------------------------------
 
 // GET /api/admin/activity?userId=&action=&q=&limit= - per-user activity feed.
-adminRouter.get("/activity", async (req, res) => {
+adminRouter.get("/activity", checkPermission("canViewAudit"), async (req, res) => {
   try {
     const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
     const userId = typeof req.query.userId === "string" ? req.query.userId.trim() : "";
@@ -1907,8 +1908,10 @@ adminRouter.get("/backups", async (_req, res) => {
   }
 });
 
-// POST /api/admin/backups - create a JSON snapshot.
-adminRouter.post("/backups", validateBody(backupCreateSchema), async (req, res) => {
+// POST /api/admin/backups - create a JSON snapshot. SUPER_ADMIN only, like the
+// download/restore/delete routes: the snapshot contains account data, so a
+// plain ADMIN must not be able to export it.
+adminRouter.post("/backups", requireSuperAdmin, validateBody(backupCreateSchema), async (req, res) => {
   try {
     const body = res.locals.body as BackupCreate;
     const data = JSON.stringify(await backupSnapshot());

@@ -13,8 +13,11 @@ import {
   PageTitle,
 } from "@/components/admin-ui";
 import type { BackupRecord } from "@/lib/types";
+import { useAdminSession } from "@/lib/admin-session";
 
 export function AdminBackupTab() {
+  const { session } = useAdminSession();
+  const isSuperAdmin = session?.admin.isSuperAdmin ?? false;
   const [backups, setBackups] = useState<BackupRecord[]>([]);
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
@@ -152,17 +155,23 @@ export function AdminBackupTab() {
         <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
           Foydalanuvchilar, iqtiboslar, bo&apos;limlar, heshteglar, kontent va sozlamalar JSON sifatida saqlanadi.
         </p>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <AdminInput
-            placeholder="Zaxira nomi (ixtiyoriy)"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            className="flex-1"
-          />
-          <AdminButton disabled={busy} onClick={() => void create()}>
-            Zaxira yaratish
-          </AdminButton>
-        </div>
+        {isSuperAdmin ? (
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <AdminInput
+              placeholder="Zaxira nomi (ixtiyoriy)"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              className="flex-1"
+            />
+            <AdminButton disabled={busy} onClick={() => void create()}>
+              Zaxira yaratish
+            </AdminButton>
+          </div>
+        ) : (
+          <p className="mt-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+            Zaxira yaratish, yuklab olish, tiklash va o&apos;chirish faqat SUPER ADMIN uchun. Siz zaxiralar ro&apos;yxatini ko&apos;rishingiz mumkin.
+          </p>
+        )}
       </AdminCard>
 
       {busy && !error && <p className="text-sm text-slate-400 dark:text-slate-500">Yuklanmoqda...</p>}
@@ -179,15 +188,19 @@ export function AdminBackupTab() {
               </p>
             </div>
             <div className="flex shrink-0 gap-1.5">
-              <AdminButton variant="slate" disabled={busy} onClick={() => void download(backup)}>
-                Yuklab olish
-              </AdminButton>
-              <AdminButton variant="success" disabled={busy} onClick={() => void restore(backup)}>
-                Tiklash
-              </AdminButton>
-              <AdminButton variant="ghost" disabled={busy} onClick={() => void remove(backup)}>
-                O&apos;chirish
-              </AdminButton>
+              {isSuperAdmin && (
+                <>
+                  <AdminButton variant="slate" disabled={busy} onClick={() => void download(backup)}>
+                    Yuklab olish
+                  </AdminButton>
+                  <AdminButton variant="success" disabled={busy} onClick={() => void restore(backup)}>
+                    Tiklash
+                  </AdminButton>
+                  <AdminButton variant="ghost" disabled={busy} onClick={() => void remove(backup)}>
+                    O&apos;chirish
+                  </AdminButton>
+                </>
+              )}
             </div>
           </AdminCard>
         ))}

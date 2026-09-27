@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { Quote } from "@/lib/types";
+import { useI18n, formatLocaleDate } from "@/lib/i18n";
+import type { Locale, Quote } from "@/lib/types";
 import { quoteTextStyle, quoteMarks } from "@/lib/quoteStyles";
 
 interface TodayResponse {
@@ -10,15 +11,16 @@ interface TodayResponse {
   quote: Quote | null;
 }
 
-function formatLongDate(value: string): string {
+function formatLongDate(value: string, locale: Locale): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("uz-UZ", { weekday: "long", day: "numeric", month: "long" });
+  return formatLocaleDate(d, locale, { weekday: "long", day: "numeric", month: "long" });
 }
 
 /** Highlighter block with the server-picked "quote of the day". Hidden when
  *  the admin hasn't enabled it or the API is unavailable. */
 export function QuoteOfDay() {
+  const { locale } = useI18n();
   const [quote, setQuote] = useState<Quote | null | undefined>(undefined);
   const [date, setDate] = useState("");
   const [failed, setFailed] = useState(false);
@@ -41,7 +43,7 @@ export function QuoteOfDay() {
 
   if (failed || quote === null) return null;
 
-  const dateLabel = formatLongDate(date);
+  const dateLabel = formatLongDate(date, locale);
   const [openMark, closeMark] = quote ? quoteMarks(quote.customStyles) : ["\u201C", "\u201D"];
 
   return (

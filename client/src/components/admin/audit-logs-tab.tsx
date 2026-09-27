@@ -45,6 +45,8 @@ const actionLabel: Record<string, string> = {
   "policy.reject-draft": "Siyosat loyihasi rad etildi",
   "policy.review": "Siyosat o'zgarishi ko'rib chiqildi",
   "announcement.create": "E'lon yaratildi",
+  "announcement.active": "E'lon faollashtirildi",
+  "announcement.archived": "E'lon arxivlandi",
   "announcement.delete": "E'lon o'chirildi",
   "feedback.reply": "Fikrga javob berildi",
   "feedback.delete": "Fikr o'chirildi",

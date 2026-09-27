@@ -21,6 +21,11 @@ const ACTIONS: Record<string, { label: string; tone: "blue" | "emerald" | "slate
   QUOTE_COMMENT: { label: "Izoh", tone: "slate" },
   PROFILE_UPDATE: { label: "Profil tahriri", tone: "slate" },
   FEEDBACK: { label: "Shikoyat", tone: "rose" },
+  QUIZ_CREATE: { label: "Test yaratish", tone: "amber" },
+  QUIZ_ATTEMPT: { label: "Test yechish", tone: "blue" },
+  COLLECTION_CREATE: { label: "Kolleksiya yaratish", tone: "emerald" },
+  COLLECTION_DELETE: { label: "Kolleksiya o'chirish", tone: "rose" },
+  COLLECTION_ADD_QUOTE: { label: "Kolleksiyaga qo'shish", tone: "slate" },
 };
 
 export function AdminActivityTab() {

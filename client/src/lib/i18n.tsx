@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { useAuth } from "./auth";
 import type { Locale } from "./types";
@@ -204,6 +204,23 @@ function storedLocale(): Locale {
   return raw === "RU" || raw === "EN" ? raw : "UZ";
 }
 
+/** BCP-47 tag used for `Intl.DateTimeFormat` and `<html lang>` mirroring the UI locale. */
+export function dateLocale(locale: Locale): string {
+  if (locale === "RU") return "ru-RU";
+  if (locale === "EN") return "en-US";
+  return "uz-UZ";
+}
+
+/** Formats a date in the current UI language without requiring a component to
+ *  import both `dateLocale` and `Intl` plumbing. `options` passed through. */
+export function formatLocaleDate(
+  value: Date | string | number,
+  locale: Locale,
+  options?: Intl.DateTimeFormatOptions
+): string {
+  return new Date(value).toLocaleDateString(dateLocale(locale), options);
+}
+
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const { user, refresh } = useAuth();
   // Manual selection made in this session (overrides the persisted choice until
@@ -211,6 +228,13 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [manualLocale, setManualLocale] = useState<Locale | null>(null);
 
   const locale: Locale = user?.locale ?? manualLocale ?? storedLocale();
+
+  // Mirror the chosen language in the live document so assistive tech, TTS and
+  // CSS `:lang()` selectors see the actual interface language instead of the
+  // statically-authored `lang="uz"` from layout.tsx.
+  useEffect(() => {
+    document.documentElement.lang = dateLocale(locale);
+  }, [locale]);
 
   const setLocale = useCallback(
     (next: Locale) => {

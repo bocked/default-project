@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { adminSocket } from "@/lib/realtime";
 import { AdminCard, Badge, EmptyState, ErrorNote, PageTitle } from "@/components/admin-ui";
 import type { AdminLogEntry } from "@/lib/types";
 
@@ -20,6 +21,15 @@ export function AdminLiveLogsTab() {
     void api<{ logs: AdminLogEntry[] }>("/api/admin/logs")
       .then((d) => setLive(d.logs))
       .catch(() => setError("Loglarni yuklab bo'lmadi"));
+
+    const sock = adminSocket();
+    const handler = (log: AdminLogEntry) => {
+      setLive((prev) => [log, ...prev].slice(0, 100));
+    };
+    sock.on("admin:log", handler);
+    return () => {
+      sock.off("admin:log", handler);
+    };
   }, []);
 
   return (

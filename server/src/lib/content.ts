@@ -36,8 +36,7 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
   {
     key: "banner.left.html",
     title: "Chap banner — HTML kodi (reklama)",
-    value:
-      "Chap yon paneldagi banner uchun to'liq HTML (masalan, AdSense yoki boshqa reklama kodi). To'ldirilsa, rasm va havola o'rnini bosadi. Bo'sh qoldirilsa pastdagi rasm/havola ishlaydi.",
+    value: "",
   },
   {
     key: "banner.left.image",
@@ -57,7 +56,7 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
   {
     key: "banner.right.html",
     title: "O'ng banner — HTML kodi (reklama)",
-    value: "O'ng yon paneldagi banner uchun to'liq HTML (masalan, AdSense kodi).",
+    value: "",
   },
   {
     key: "banner.right.image",
@@ -77,7 +76,7 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
   {
     key: "banner.top.html",
     title: "Mobil — yuqori banner HTML kodi (reklama)",
-    value: "Header ostidagi mobil banner uchun to'liq HTML (masalan, AdSense yoki yt banner). Bo'sh qoldirilsa rasm/havola ishlaydi.",
+    value: "",
   },
   {
     key: "banner.top.image",
@@ -97,7 +96,7 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
   {
     key: "banner.feed.html",
     title: "Mobil — feed reklamasi HTML kodi",
-    value: "Iqtiboslar ro'yxatiga har necha iqtibosdan keyin qo'yiladigan reklama kartochkasi uchun HTML kodi.",
+    value: "",
   },
   {
     key: "banner.feed.image",
@@ -122,7 +121,7 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
   {
     key: "banner.bottom.html",
     title: "Mobil — pastki panel banneri HTML kodi (reklama)",
-    value: "Ekran pastki qismiga yopishuvchi mobil banner uchun to'liq HTML kodi.",
+    value: "",
   },
   {
     key: "banner.bottom.image",

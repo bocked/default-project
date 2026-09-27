@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { Prisma, Locale } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth, requireFullUser } from "../middleware/auth.js";
+import { requireAuth, requireFullUser, optionalAuth } from "../middleware/auth.js";
 import { quoteCreateLimiter, likeLimiter, searchLimiter, analyzeLimiter } from "../lib/rateLimit.js";
 import { clientIp } from "../lib/ip.js";
 import { isBotUserAgent, viewDedupe } from "../lib/views.js";
@@ -45,11 +45,13 @@ export interface PublicQuote {
 export function toPublicQuote(q: any, userId?: string): PublicQuote {
   const likeCount = Array.isArray(q._count) ? 0 : (q._count?.likes ?? 0);
   const likedByMe = userId
-    ? Array.isArray(q.likes)
-      ? q.likes.length > 0
-      : Array.isArray(q.likedByMe)
-        ? q.likedByMe.length > 0
-        : false
+    ? typeof q.likedByMe === "boolean"
+      ? q.likedByMe
+      : Array.isArray(q.likes)
+        ? q.likes.length > 0
+        : Array.isArray(q.likedByMe)
+          ? q.likedByMe.length > 0
+          : false
     : false;
   return {
     id: q.id,
@@ -107,8 +109,9 @@ function sortOrder(query: Record<string, unknown>): Prisma.QuoteOrderByWithRelat
   }
 }
 
-// GET /api/quotes - public feed of APPROVED quotes with filters
-quotesRouter.get("/", searchLimiter, async (req, res) => {
+// GET /api/quotes - public feed of APPROVED quotes with filters. optionalAuth
+// personalises the response (likedByMe) when a valid token is presented.
+quotesRouter.get("/", searchLimiter, optionalAuth, async (req, res) => {
   try {
     const { page, limit, skip } = pagination(req.query);
     const where: Prisma.QuoteWhereInput = { status: "APPROVED" };
@@ -372,7 +375,7 @@ quotesRouter.post("/", requireAuth, quoteCreateLimiter, requireFullUser, validat
 // Cloudflare Pages Function that builds link-preview (OpenGraph) tags. Applies
 // the same view-count rules as the feed: bots and deduped visitors never
 // inflate the counter.
-quotesRouter.get("/:id", searchLimiter, async (req, res) => {
+quotesRouter.get("/:id", searchLimiter, optionalAuth, async (req, res) => {
   try {
     const userId = (req as import("express").Request & { user?: { id: string } }).user?.id;
     const quote = await prisma.quote.findFirst({
