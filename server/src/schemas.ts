@@ -30,6 +30,12 @@ export const adminUnbanSchema = z.object({
 });
 export type AdminUnban = z.infer<typeof adminUnbanSchema>;
 
+// Body of POST /api/admin/banners/stats/reset — which banner slot to zero.
+export const bannerStatsResetSchema = z.object({
+  slot: z.string().trim().min(1).max(32),
+});
+export type BannerStatsReset = z.infer<typeof bannerStatsResetSchema>;
+
 // ---------------------------------------------------------------------------
 // HTTP bodies
 // ---------------------------------------------------------------------------

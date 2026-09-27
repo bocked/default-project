@@ -530,6 +530,16 @@ model DailyStat {
   @@index([date])
 }
 
+// Real ad analytics per banner slot (MRC/viewability standard: an impression
+// only counts when ≥50% of the banner was visible for ≥1000ms). One row per
+// slot; increments are deduped server-side to one per visitor+UA per hour.
+model BannerAnalytics {
+  slot      String   @id
+  views     Int      @default(0)
+  clicks    Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
 model TelegramQuickSession {
   id          String    @id @default(uuid())
   // SHA-256 digest of the opaque `quick_<sessionId>` payload.

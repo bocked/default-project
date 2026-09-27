@@ -11,11 +11,19 @@ const TABS = [
   { id: "right", label: "➡️ O'ng Yon Banner (Desktop)" },
   { id: "mobile", label: "📱 Mobil Bannerlar" },
   { id: "feed", label: "📰 Feed Ichidagi Reklama" },
+  { id: "stats", label: "📊 Statistika" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
 const SLOTS: BannerSlot[] = ["left", "right", "top", "feed", "bottom"];
+
+interface BannerStatsRow {
+  slot: BannerSlot;
+  views: number;
+  clicks: number;
+  ctr: number;
+}
 
 function emptyDraft(): SlotDraft {
   return { enabled: true, type: "image", html: "", image: "", href: "", alt: "", every: "4" };
@@ -48,6 +56,20 @@ function bannerTitle(slot: BannerSlot): string {
   }
 }
 
+function deviceLabel(slot: BannerSlot): string {
+  return slot === "top" || slot === "bottom" ? "Mobil qurilmalar" : slot === "feed" ? "Feed (mobil/desktop)" : "Desktop";
+}
+
+function StatBox({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800/60">
+      <div className="text-lg leading-none">{icon}</div>
+      <div className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{value}</div>
+      <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{label}</div>
+    </div>
+  );
+}
+
 export function AdminBannersPage() {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(true);
@@ -65,6 +87,10 @@ export function AdminBannersPage() {
   const [savingMaster, setSavingMaster] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [outerStats, setOuterStats] = useState<BannerStatsRow[] | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [resetting, setResetting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -162,6 +188,41 @@ export function AdminBannersPage() {
     }
   }
 
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    setStatsError(null);
+    try {
+      const data = await api<{ stats: BannerStatsRow[] }>("/api/admin/banners/stats");
+      setOuterStats(data.stats);
+    } catch (err) {
+      setStatsError(err instanceof Error ? err.message : "Statistikani yuklab bo'lmadi");
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (active !== "stats" || outerStats !== null) return;
+    const t = window.setTimeout(() => void loadStats(), 0);
+    return () => window.clearTimeout(t);
+  }, [active, outerStats, loadStats]);
+
+  async function resetSlot(slot: BannerSlot): Promise<void> {
+    setResetting(slot);
+    setStatsError(null);
+    try {
+      await api<{ ok: boolean }>("/api/admin/banners/stats/reset", {
+        method: "POST",
+        body: { slot },
+      });
+      await loadStats();
+    } catch (err) {
+      setStatsError(err instanceof Error ? err.message : "Statistikani tozalab bo'lmadi");
+    } finally {
+      setResetting(null);
+    }
+  }
+
   if (busy) {
     return <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Yuklanmoqda...</p>;
   }
@@ -175,8 +236,10 @@ export function AdminBannersPage() {
     );
   }
 
-  const tabDirty = (id: TabId): boolean =>
-    id === "mobile" ? dirtyBySlot.bottom || dirtyBySlot.top : dirtyBySlot[id];
+  const tabDirty = (id: TabId): boolean => {
+    if (id === "stats") return false;
+    return id === "mobile" ? dirtyBySlot.bottom || dirtyBySlot.top : dirtyBySlot[id];
+  };
 
   const tabFooter = (id: TabId, slots: BannerSlot[]) => (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none">
@@ -303,6 +366,50 @@ export function AdminBannersPage() {
             onChange={(d) => patch("feed", d)}
           />
           {tabFooter("feed", ["feed"])}
+        </div>
+      )}
+
+      {active === "stats" && (
+        <div className="space-y-4">
+          <AdminCard>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Real statistika (MRC Active View)</h3>
+            <p className="mt-0.5 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              Ko&apos;rishlar — banner ekranda kamida 50% ko&apos;rinib 1000ms turganida hisoblanadi
+              (faqat haqiqiy reklama kontenti, placeholder emas). Bir tashrifchidan slot&nbsp;uchun soatiga
+              ko&apos;pi bilan bitta ko&apos;rish/bosish qayd etiladi; botlar filtrlanadi.
+            </p>
+          </AdminCard>
+
+          {statsError && <ErrorNote text={statsError} />}
+
+          {statsLoading && outerStats === null && (
+            <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Statistika yuklanmoqda...</p>
+          )}
+
+          {outerStats !== null && (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {outerStats.map((row) => (
+                <AdminCard key={row.slot}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{bannerTitle(row.slot)}</h3>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{deviceLabel(row.slot)}</p>
+                    </div>
+                    <AdminButton variant="danger" onClick={() => void resetSlot(row.slot)} disabled={resetting === row.slot}>
+                      {resetting === row.slot ? "Tozalanmoqda..." : "Tozalash"}
+                    </AdminButton>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+                    <StatBox icon="👁️" label="Ko'rishlar" value={row.views.toLocaleString("ru-RU")} />
+                    <StatBox icon="👆" label="Bosishlar" value={row.clicks.toLocaleString("ru-RU")} />
+                    <StatBox icon="📈" label="CTR" value={`${row.ctr.toFixed(2)}%`} />
+                  </div>
+                </AdminCard>
+              ))}
+            </div>
+          )}
+
+          {outerStats !== null && outerStats.length === 0 && <EmptyState text="Hozircha statistika yo'q." />}
         </div>
       )}
 

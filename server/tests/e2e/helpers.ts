@@ -55,6 +55,7 @@ export async function cleanDatabase(): Promise<void> {
     prisma.bannedIp.deleteMany(),
     prisma.adminLog.deleteMany(),
     prisma.contentBlock.deleteMany(),
+    prisma.bannerAnalytics.deleteMany(),
     prisma.telegramSettings.upsert({
       where: { id: "main" },
       update: {

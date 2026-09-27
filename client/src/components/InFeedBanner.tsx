@@ -1,6 +1,6 @@
 "use client";
 
-import { bannerContentKey, type BannerDefinition } from "@/config/banners";
+import { bannerContentKey, bannerHasContent, type BannerDefinition } from "@/config/banners";
 import { BannerBody } from "./BannerBody";
 import { BannerWrapper } from "./BannerWrapper";
 
@@ -17,6 +17,8 @@ export function InFeedBanner({ def }: InFeedBannerProps) {
     <BannerWrapper
       id="banner.feed"
       contentKey={bannerContentKey(def)}
+      slot="feed"
+      trackable={bannerHasContent(def)}
       className="w-full xl:hidden"
       leaveClassName="opacity-0 scale-[0.99]"
     >

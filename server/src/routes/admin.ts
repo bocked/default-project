@@ -14,6 +14,7 @@ import { sendEmail, sendUserApprovedEmail } from "../lib/email.js";
 import { notifyQuoteModeration } from "../lib/notify.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { listContent, getContent } from "../lib/content.js";
+import { isBannerSlot, bannerStats, resetBannerStats } from "../lib/bannerAnalytics.js";
 import { clientIp } from "../lib/ip.js";
 import { bulkEffectivePermissions, effectivePermissionsFor, listFeatures } from "../lib/permissionRegistry.js";
 import { runPolicyImpactReview, IMPORTANT_SETTING_KEYS } from "../lib/policyImpact.js";
@@ -43,6 +44,7 @@ import {
   telegramBanSchema,
   adminPermissionUpdateSchema,
   adminMakeUserSchema,
+  bannerStatsResetSchema,
   type AdminQuoteReject,
   type QuoteEdit,
   type BulkQuotes,
@@ -60,6 +62,7 @@ import {
   type TelegramBan,
   type AdminPermissionUpdate,
   type AdminMakeUserInput,
+  type BannerStatsReset,
 } from "../schemas.js";
 
 export const adminRouter = Router();
@@ -1438,6 +1441,49 @@ adminRouter.get("/audit-logs", checkPermission("canViewAudit"), async (req, res)
 adminRouter.get("/logs", checkPermission("canViewAudit"), (_req, res) => {
   res.json({ logs: recentLogs(200) });
 });
+
+// ---------------------------------------------------------------------------
+// Banner analytics (Real/MRC-style per-slot views, clicks and CTR)
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/banners/stats - per-slot ad counters in slot order.
+adminRouter.get("/banners/stats", checkPermission("canManageSettings"), async (_req, res) => {
+  try {
+    const stats = await bannerStats();
+    res.json({ stats });
+  } catch {
+    res.status(500).json({ error: "Statistika o'qilmadi" });
+  }
+});
+
+// POST /api/admin/banners/stats/reset - zero the counters of one slot.
+adminRouter.post(
+  "/banners/stats/reset",
+  checkPermission("canManageSettings"),
+  validateBody(bannerStatsResetSchema),
+  async (req, res) => {
+    try {
+      const { slot } = res.locals.body as BannerStatsReset;
+      if (!isBannerSlot(slot)) {
+        res.status(400).json({ error: "Invalid slot" });
+        return;
+      }
+      await resetBannerStats(slot);
+      await recordAudit({
+        adminId: adminId(req),
+        adminEmail: adminEmail(req),
+        action: "banners.stats.reset",
+        targetType: "banner",
+        targetId: slot,
+        detail: `${slot} slot statistikasi tozalandi`,
+        ip: clientIp(req.headers),
+      });
+      res.json({ ok: true, slot });
+    } catch {
+      res.status(500).json({ error: "Statistika tozalanmadi" });
+    }
+  },
+);
 
 // GET /api/admin/bans - list banned IPs
 adminRouter.get("/bans", checkPermission("canViewUsers"), async (_req, res) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { bannerContentKey, resolveBanner, type BannerSide } from "@/config/banners";
+import { bannerContentKey, bannerHasContent, resolveBanner, type BannerSide } from "@/config/banners";
 import { BannerBody } from "./BannerBody";
 import { BannerWrapper } from "./BannerWrapper";
 
@@ -32,6 +32,8 @@ export function StickyBanner({ side, overrides, enabled = true }: StickyBannerPr
         <BannerWrapper
           id={`banner.${side}`}
           contentKey={bannerContentKey(def)}
+          slot={side}
+          trackable={bannerHasContent(def)}
           className="m-auto min-w-0"
           leaveClassName="opacity-0 scale-[0.98]"
         >

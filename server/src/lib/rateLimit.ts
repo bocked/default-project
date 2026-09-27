@@ -125,3 +125,13 @@ export const collectionLimiter = rateLimit({
   ...standard,
   message: { error: "Too many requests" },
 });
+
+/** Guard on POST /api/banners/track (per IP per hour). The per-visitor 1h
+ *  dedupe already caps DB writes, this only stops scripted floods. */
+export const bannerTrackLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 120,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});

@@ -134,3 +134,13 @@ export function resolveBanner(
 export function bannerContentKey(def: Pick<BannerDefinition, "html" | "image" | "href">): string {
   return [def.html, def.image, def.href].filter(Boolean).join("|");
 }
+
+/**
+ * True when a banner renders a real creative (a configured image or HTML ad)
+ * instead of the branded placeholder. Only real creatives are tracked in the
+ * analytics; placeholders would pollute the counters with meaningless views.
+ */
+export function bannerHasContent(def: BannerDefinition): boolean {
+  const mode = def.type ?? (def.html ? "code" : "image");
+  return mode === "code" ? Boolean(def.html) : Boolean(def.image);
+}
