@@ -16,6 +16,10 @@
 # Usage:
 #   DATABASE_URL="postgresql://..." ./backup-pg.sh
 #   (fallback: DATABASE_URL is read from server/.env automatically)
+#
+# Idempotent per calendar day: if today's archive already exists it exits 0
+# WITHOUT rebuilding or re-uploading (Telegram gets one file per day). Set
+# FORCE=1 to deliberately rebuild today's archive.
 set -euo pipefail
 
 SERVER_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -41,6 +45,18 @@ PG_URL="${PG_URL:-${DATABASE_URL}}"
 STAMP="$(date +%Y%m%d)"
 ARCHIVE="${BACKUP_DIR}/yerlikoglon_full_backup_${STAMP}.tar.gz"
 mkdir -p "${BACKUP_DIR}"
+
+# ---------------------------------------------------------------------------
+# Once-per-day guard. The only recurring trigger is the nightly cron
+# (0 3 * * *) — this must NOT run again for the same calendar day, so the
+# Telegram channel receives exactly one archive per day. Run with FORCE=1 to
+# rebuild today's archive deliberately (manual/emergency re-run).
+# ---------------------------------------------------------------------------
+if [[ "${FORCE:-0}" != "1" && -s "${ARCHIVE}" ]]; then
+  echo "Arxiv bugun allaqachon mavjud: ${ARCHIVE} (kuniga 1 marta — o'tkazib yuborildi)" >&2
+  exit 0
+fi
+
 STAGE="$(mktemp -d)"
 ROOT_NAME="yerlikoglon_full_backup_${STAMP}"
 mkdir -p "${STAGE}/${ROOT_NAME}"
