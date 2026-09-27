@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import {
   AdminButton,
@@ -71,9 +72,28 @@ export function AdminContentBlocksTab() {
     }
   }
 
+  // Banner slots live on the dedicated /admin/banners page; the generic grid
+  // keeps only the remaining text blocks so the panel stays tidy.
+  const visibleBlocks = blocks.filter((b) => !b.key.startsWith("banner."));
+
   return (
     <div className="space-y-4">
       <PageTitle title="Content blocks" subtitle="Saytdagi dinamik matnlarni o'zgartiring." />
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none">
+        <div>
+          <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Reklama sozlamalari</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            Banner va reklama bloklari endi maxsus bo&apos;limda boshqariladi.
+          </p>
+        </div>
+        <Link
+          href="/admin/banners"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
+        >
+          Reklama va bannerlar
+        </Link>
+      </div>
 
       {notice && (
         <p className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -83,10 +103,10 @@ export function AdminContentBlocksTab() {
       {error && <ErrorNote text={error} />}
       {busy && !error && <p className="text-sm text-slate-400 dark:text-slate-500">Yuklanmoqda...</p>}
 
-      {!busy && blocks.length === 0 && <EmptyState text="Kontent bloklari topilmadi." />}
+      {!busy && visibleBlocks.length === 0 && <EmptyState text="Kontent bloklari topilmadi." />}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {blocks.map((block) => {
+        {visibleBlocks.map((block) => {
           const draft = drafts[block.key];
           if (!draft) return null;
           return (

@@ -87,6 +87,8 @@ export function parseBannerOverrides(content: Record<string, string>): BannerOve
 
   for (const slot of SLOT_NAMES) {
     const part: Partial<BannerDefinition> = {};
+    const enabledRaw = content[`banner.${slot}.enabled`];
+    if (typeof enabledRaw === "string") part.enabled = enabledRaw !== "0";
     for (const field of STRING_FIELDS) {
       const raw = content[`banner.${slot}.${field}`];
       if (typeof raw === "string" && raw.trim() !== "") part[field] = raw;
@@ -102,8 +104,8 @@ export function parseBannerOverrides(content: Record<string, string>): BannerOve
 
 /**
  * Resolves a slot's effective banner definition (config merged with runtime
- * overrides). Returns null when the banner is disabled by config or by the
- * master `banner.enabled` switch.
+ * overrides). Returns null when the banner is disabled by config, by the
+ * per-slot `banner.<slot>.enabled` switch, or by the master `banner.enabled`.
  */
 export function resolveBanner(
   slot: BannerSlot,
@@ -112,5 +114,7 @@ export function resolveBanner(
 ): BannerDefinition | null {
   const base = BANNER_CONFIG.slots[slot];
   if (!base.enabled || !masterEnabled) return null;
-  return { ...base, ...(overrides ?? {}) };
+  const def = { ...base, ...(overrides ?? {}) };
+  if (!def.enabled) return null;
+  return def;
 }

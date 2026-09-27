@@ -30,7 +30,12 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
   },
   {
     key: "banner.enabled",
-    title: "Yon bannerlar (umumiy kalit)",
+    title: "Barcha bannerlar (global kalit)",
+    value: "1",
+  },
+  {
+    key: "banner.left.enabled",
+    title: "Chap banner — yoqilgan",
     value: "1",
   },
   {
@@ -54,6 +59,11 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     value: "",
   },
   {
+    key: "banner.right.enabled",
+    title: "O'ng banner — yoqilgan",
+    value: "1",
+  },
+  {
     key: "banner.right.html",
     title: "O'ng banner — HTML kodi (reklama)",
     value: "",
@@ -74,6 +84,11 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     value: "",
   },
   {
+    key: "banner.top.enabled",
+    title: "Mobil yuqori banner — yoqilgan",
+    value: "1",
+  },
+  {
     key: "banner.top.html",
     title: "Mobil — yuqori banner HTML kodi (reklama)",
     value: "",
@@ -92,6 +107,11 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     key: "banner.top.alt",
     title: "Mobil — yuqori banner ALT matni",
     value: "",
+  },
+  {
+    key: "banner.feed.enabled",
+    title: "Feed reklamasi — yoqilgan",
+    value: "1",
   },
   {
     key: "banner.feed.html",
@@ -117,6 +137,11 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     key: "banner.feed.every",
     title: "Mobil — feed reklamasi orasidagi iqtiboslar soni",
     value: "4",
+  },
+  {
+    key: "banner.bottom.enabled",
+    title: "Mobil pastki banner — yoqilgan",
+    value: "1",
   },
   {
     key: "banner.bottom.html",

@@ -21,6 +21,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/admin", label: "Boshqaruv paneli", exact: true },
   { href: "/admin/content", label: "Kontent", permissions: ["canManageQuotes", "canManageCategories"] },
+  { href: "/admin/banners", label: "Reklama va bannerlar", permissions: ["canManageSettings"] },
   { href: "/admin/quizzes", label: "Testlar", permissions: ["canManageQuizzes"] },
   { href: "/admin/users", label: "Foydalanuvchilar", permissions: ["canViewUsers"] },
   {
