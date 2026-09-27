@@ -39,6 +39,11 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     value: "1",
   },
   {
+    key: "banner.left.type",
+    title: "Chap banner — turi (image | code)",
+    value: "image",
+  },
+  {
     key: "banner.left.html",
     title: "Chap banner — HTML kodi (reklama)",
     value: "",
@@ -64,6 +69,11 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     value: "1",
   },
   {
+    key: "banner.right.type",
+    title: "O'ng banner — turi (image | code)",
+    value: "image",
+  },
+  {
     key: "banner.right.html",
     title: "O'ng banner — HTML kodi (reklama)",
     value: "",
@@ -83,10 +93,15 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     title: "O'ng banner — ALT matni",
     value: "",
   },
-  {
+{
     key: "banner.top.enabled",
-    title: "Mobil yuqori banner — yoqilgan",
+    title: "Ustki banner — yoqilgan",
     value: "1",
+  },
+  {
+    key: "banner.top.type",
+    title: "Ustki banner — turi (image | code)",
+    value: "image",
   },
   {
     key: "banner.top.html",
@@ -108,10 +123,15 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     title: "Mobil — yuqori banner ALT matni",
     value: "",
   },
-  {
+{
     key: "banner.feed.enabled",
-    title: "Feed reklamasi — yoqilgan",
+    title: "Feed banner — yoqilgan",
     value: "1",
+  },
+  {
+    key: "banner.feed.type",
+    title: "Feed banner — turi (image | code)",
+    value: "image",
   },
   {
     key: "banner.feed.html",
@@ -138,10 +158,15 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     title: "Mobil — feed reklamasi orasidagi iqtiboslar soni",
     value: "4",
   },
-  {
+{
     key: "banner.bottom.enabled",
-    title: "Mobil pastki banner — yoqilgan",
+    title: "Pastki banner — yoqilgan",
     value: "1",
+  },
+  {
+    key: "banner.bottom.type",
+    title: "Pastki banner — turi (image | code)",
+    value: "image",
   },
   {
     key: "banner.bottom.html",

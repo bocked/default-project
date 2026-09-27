@@ -1,6 +1,6 @@
 "use client";
 
-import { resolveBanner } from "@/config/banners";
+import { bannerContentKey, resolveBanner } from "@/config/banners";
 import { BannerBody } from "./BannerBody";
 import { BannerWrapper } from "./BannerWrapper";
 
@@ -17,6 +17,7 @@ export function MobileTopBanner({ overrides, enabled = true }: MobileTopBannerPr
   return (
     <BannerWrapper
       id="banner.top"
+      contentKey={bannerContentKey(def)}
       className="w-full border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 xl:hidden"
       leaveClassName="opacity-0 -translate-y-2"
     >

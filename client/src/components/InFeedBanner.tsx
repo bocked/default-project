@@ -1,6 +1,6 @@
 "use client";
 
-import type { BannerDefinition } from "@/config/banners";
+import { bannerContentKey, type BannerDefinition } from "@/config/banners";
 import { BannerBody } from "./BannerBody";
 import { BannerWrapper } from "./BannerWrapper";
 
@@ -14,7 +14,12 @@ export function InFeedBanner({ def }: InFeedBannerProps) {
   if (!def.enabled) return null;
 
   return (
-    <BannerWrapper id="banner.feed" className="w-full xl:hidden" leaveClassName="opacity-0 scale-[0.99]">
+    <BannerWrapper
+      id="banner.feed"
+      contentKey={bannerContentKey(def)}
+      className="w-full xl:hidden"
+      leaveClassName="opacity-0 scale-[0.99]"
+    >
       <BannerBody def={def} variant="feed" />
     </BannerWrapper>
   );

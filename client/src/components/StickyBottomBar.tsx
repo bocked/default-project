@@ -1,6 +1,6 @@
 "use client";
 
-import { resolveBanner } from "@/config/banners";
+import { bannerContentKey, resolveBanner } from "@/config/banners";
 import { BannerBody } from "./BannerBody";
 import { BannerWrapper } from "./BannerWrapper";
 
@@ -17,6 +17,7 @@ export function StickyBottomBar({ overrides, enabled = true }: StickyBottomBarPr
   return (
     <BannerWrapper
       id="banner.bottom"
+      contentKey={bannerContentKey(def)}
       className="fixed inset-x-0 bottom-0 z-40 xl:hidden"
       closeClassName="right-3 top-1/2 -translate-y-1/2"
       leaveClassName="opacity-0 translate-y-6"

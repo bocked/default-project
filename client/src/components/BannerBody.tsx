@@ -25,21 +25,31 @@ const PLACEHOLDER_CLASS: Record<BannerVariant, string> = {
 };
 
 /**
- * Renders the actual banner content for a slot: raw HTML first, then a linked
- * image, then a neutral branded placeholder. Variants adapt size/shape to the
- * banner position (sticky column, mobile header row, in-feed card, bottom bar).
+ * Renders the actual banner content for a slot: raw HTML or a linked image
+ * (decided by the persisted `def.type`; when absent, a non-empty `html` wins
+ * over `image`), otherwise a neutral branded placeholder. Variants adapt
+ * size/shape to the banner position (sticky column, mobile header row, in-feed
+ * card, bottom bar).
  */
 export function BannerBody({ def, variant }: BannerBodyProps) {
   const { t } = useI18n();
 
-  if (def.html) {
+  const mode: "image" | "code" = def.type ?? (def.html ? "code" : "image");
+
+  if (mode === "code" && def.html) {
     return <div className="w-full" dangerouslySetInnerHTML={{ __html: def.html }} />;
   }
 
-  if (def.image) {
+  if (mode === "image" && def.image) {
     const img = (
       // eslint-disable-next-line @next/next/no-img-element -- banners accept any external CDN URL
-      <img src={def.image} alt={def.alt ?? ""} className={IMG_CLASS[variant]} />
+      <img
+        src={def.image}
+        alt={def.alt ?? ""}
+        className={IMG_CLASS[variant]}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+      />
     );
     return def.href ? (
       <a href={def.href} target="_blank" rel="noopener noreferrer" className="block w-full">

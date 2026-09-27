@@ -12,13 +12,15 @@ import { StickyBanner } from "./StickyBanner";
 import { StickyBottomBar } from "./StickyBottomBar";
 import { WwwUzTracker } from "./WwwUzTracker";
 
+interface BannerPayload {
+  content: Record<string, string>;
+}
+
 export function SiteShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   // Admin console gets a wider content area so tables and sidebars fit.
   const isAdmin = pathname?.startsWith("/admin") ?? false;
   const [footer, setFooter] = useState("Iqtibosim — fikrlarni to'playdigan joy");
-  // `usePathname` is null during static prerender, so only show the back
-  // button after hydration to keep server and client markup identical.
   const [mounted, setMounted] = useState(false);
   const [bannerOverrides, setBannerOverrides] = useState<BannerOverrides>({});
 
@@ -28,12 +30,21 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void api<{ content: Record<string, string> }>("/api/content")
-      .then((d) => {
+    // Refetch banner overrides on every page focus so edits saved in the admin
+    // panel (or any other tab) appear immediately, without a full reload.
+    async function refresh(): Promise<void> {
+      try {
+        const d = await api<BannerPayload>("/api/content");
         setBannerOverrides(parseBannerOverrides(d.content));
         if (typeof d.content["footer.about"] === "string") setFooter(d.content["footer.about"]);
-      })
-      .catch(() => {});
+      } catch {
+        /* network error — keep previous values */
+      }
+    }
+    void refresh();
+    const onFocus = (): void => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   const backButton = mounted && pathname !== "/" ? <BackButton /> : null;

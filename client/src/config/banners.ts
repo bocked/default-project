@@ -10,6 +10,12 @@ export type BannerSlot = BannerSide | "top" | "feed" | "bottom";
 export interface BannerDefinition {
   /** Master per-slot switch. */
   enabled: boolean;
+  /**
+   * Explicit ad kind persisted from the admin panel as `banner.<slot>.type`.
+   * `image` renders the configured image, `code` renders `html`. When absent
+   * the legacy heuristic is used: a non-empty `html` wins over `image`.
+   */
+  type?: "image" | "code";
   /** Raw HTML (ad code / custom markup). Admin-controlled, trusted input. */
   html?: string;
   image?: string;
@@ -89,6 +95,8 @@ export function parseBannerOverrides(content: Record<string, string>): BannerOve
     const part: Partial<BannerDefinition> = {};
     const enabledRaw = content[`banner.${slot}.enabled`];
     if (typeof enabledRaw === "string") part.enabled = enabledRaw !== "0";
+    const typeRaw = content[`banner.${slot}.type`];
+    if (typeRaw === "image" || typeRaw === "code") part.type = typeRaw;
     for (const field of STRING_FIELDS) {
       const raw = content[`banner.${slot}.${field}`];
       if (typeof raw === "string" && raw.trim() !== "") part[field] = raw;
@@ -117,4 +125,12 @@ export function resolveBanner(
   const def = { ...base, ...(overrides ?? {}) };
   if (!def.enabled) return null;
   return def;
+}
+
+/**
+ * Signature of a banner's effective content. Dismissals in BannerWrapper are
+ * keyed by this, so editing a banner (new image/html/href) makes it reappear.
+ */
+export function bannerContentKey(def: Pick<BannerDefinition, "html" | "image" | "href">): string {
+  return [def.html, def.image, def.href].filter(Boolean).join("|");
 }

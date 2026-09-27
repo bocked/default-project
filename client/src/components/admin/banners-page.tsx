@@ -18,12 +18,13 @@ type TabId = (typeof TABS)[number]["id"];
 const SLOTS: BannerSlot[] = ["left", "right", "top", "feed", "bottom"];
 
 function emptyDraft(): SlotDraft {
-  return { enabled: true, kind: "image", html: "", image: "", href: "", alt: "", every: "4" };
+  return { enabled: true, type: "image", html: "", image: "", href: "", alt: "", every: "4" };
 }
 
 function draftsEqual(a: SlotDraft, b: SlotDraft): boolean {
   return (
     a.enabled === b.enabled &&
+    a.type === b.type &&
     a.html === b.html &&
     a.image === b.image &&
     a.href === b.href &&
@@ -75,9 +76,10 @@ export function AdminBannersPage() {
       const next = {} as Record<BannerSlot, SlotDraft>;
       for (const slot of SLOTS) {
         const html = byKey[`banner.${slot}.html`] ?? "";
+        const typeRaw = byKey[`banner.${slot}.type`];
         next[slot] = {
           enabled: byKey[`banner.${slot}.enabled`] !== "0",
-          kind: html.trim() !== "" ? "code" : "image",
+          type: typeRaw === "image" || typeRaw === "code" ? typeRaw : html.trim() !== "" ? "code" : "image",
           html,
           image: byKey[`banner.${slot}.image`] ?? "",
           href: byKey[`banner.${slot}.href`] ?? "",
@@ -120,6 +122,7 @@ export function AdminBannersPage() {
         const d = drafts[slot];
         const writes: Array<{ key: string; value: string }> = [
           { key: `banner.${slot}.enabled`, value: d.enabled ? "1" : "0" },
+          { key: `banner.${slot}.type`, value: d.type },
           { key: `banner.${slot}.html`, value: d.html },
           { key: `banner.${slot}.image`, value: d.image },
           { key: `banner.${slot}.href`, value: d.href },

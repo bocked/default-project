@@ -1,6 +1,6 @@
 "use client";
 
-import { resolveBanner, type BannerSide } from "@/config/banners";
+import { bannerContentKey, resolveBanner, type BannerSide } from "@/config/banners";
 import { BannerBody } from "./BannerBody";
 import { BannerWrapper } from "./BannerWrapper";
 
@@ -23,7 +23,11 @@ export function StickyBanner({ side, overrides, enabled = true }: StickyBannerPr
 
   return (
     <aside className="sticky top-[80px] hidden max-h-[calc(100vh-96px)] overflow-y-auto xl:block">
-      <BannerWrapper id={`banner.${side}`} leaveClassName="opacity-0 scale-[0.98]">
+      <BannerWrapper
+        id={`banner.${side}`}
+        contentKey={bannerContentKey(def)}
+        leaveClassName="opacity-0 scale-[0.98]"
+      >
         <BannerBody def={def} variant="side" />
       </BannerWrapper>
     </aside>

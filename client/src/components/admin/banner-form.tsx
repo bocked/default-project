@@ -11,8 +11,8 @@ export type AdKind = "image" | "code";
 /** Editable state for a single banner slot (mirrors the content keys). */
 export interface SlotDraft {
   enabled: boolean;
-  /** Chosen ad flavour — cosmetic switch that clears the opposite fields. */
-  kind: AdKind;
+  /** Persisted as `banner.<slot>.type`; decides image vs. code rendering. */
+  type: AdKind;
   html: string;
   image: string;
   href: string;
@@ -82,13 +82,13 @@ export function AdminBannerForm({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  function setKind(kind: AdKind): void {
+  function setType(type: AdKind): void {
     onChange({
       ...draft,
-      kind,
+      type,
       // Keep the two flavours exclusive so the "html wins" rule in BannerBody
       // can never resurrect a code block after an admin switched to an image.
-      ...(kind === "image" ? { html: "" } : { image: "", href: "", alt: "" }),
+      ...(type === "image" ? { html: "" } : { image: "", href: "", alt: "" }),
     });
   }
 
@@ -110,10 +110,11 @@ export function AdminBannerForm({
 
   const previewDef: BannerDefinition = {
     enabled: true,
-    ...(draft.kind === "code" && draft.html.trim() !== "" ? { html: draft.html } : {}),
-    ...(draft.kind === "image" && draft.image.trim() !== "" ? { image: draft.image } : {}),
-    ...(draft.kind === "image" && draft.href.trim() !== "" ? { href: draft.href } : {}),
-    ...(draft.kind === "image" && draft.alt.trim() !== "" ? { alt: draft.alt } : {}),
+    type: draft.type,
+    ...(draft.type === "code" && draft.html.trim() !== "" ? { html: draft.html } : {}),
+    ...(draft.type === "image" && draft.image.trim() !== "" ? { image: draft.image } : {}),
+    ...(draft.type === "image" && draft.href.trim() !== "" ? { href: draft.href } : {}),
+    ...(draft.type === "image" && draft.alt.trim() !== "" ? { alt: draft.alt } : {}),
   };
 
   return (
@@ -137,9 +138,9 @@ export function AdminBannerForm({
         <div className="flex flex-col gap-2 sm:flex-row">
           <button
             type="button"
-            onClick={() => setKind("image")}
+            onClick={() => setType("image")}
             className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
-              draft.kind === "image"
+              draft.type === "image"
                 ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
                 : "border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:text-slate-300"
             }`}
@@ -148,9 +149,9 @@ export function AdminBannerForm({
           </button>
           <button
             type="button"
-            onClick={() => setKind("code")}
+            onClick={() => setType("code")}
             className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
-              draft.kind === "code"
+              draft.type === "code"
                 ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
                 : "border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:text-slate-300"
             }`}
@@ -159,7 +160,7 @@ export function AdminBannerForm({
           </button>
         </div>
 
-        {draft.kind === "image" ? (
+        {draft.type === "image" ? (
           <div className="space-y-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">

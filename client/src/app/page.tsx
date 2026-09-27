@@ -182,9 +182,20 @@ function HomeInner() {
   }, [quoteId]);
 
   useEffect(() => {
-    void api<{ content: Record<string, string> }>("/api/content")
-      .then((data) => setContent(data.content))
-      .catch(() => setContent({}));
+    // Refetch editable content (hero text, banners) on mount and on every
+    // window focus so admin edits appear immediately without a reload.
+    async function refreshContent(): Promise<void> {
+      try {
+        const data = await api<{ content: Record<string, string> }>("/api/content");
+        setContent(data.content);
+      } catch {
+        setContent({});
+      }
+    }
+    void refreshContent();
+    const onFocus = (): void => void refreshContent();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   function clearFilters(): void {

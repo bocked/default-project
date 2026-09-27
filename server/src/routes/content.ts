@@ -7,6 +7,7 @@ export const contentRouter = Router();
 contentRouter.get("/", async (_req, res) => {
   try {
     const blocks = await listContent();
+    res.setHeader("Cache-Control", "no-store");
     res.json({ content: Object.fromEntries(blocks.map((b) => [b.key, b.value])) });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
