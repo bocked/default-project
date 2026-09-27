@@ -20,6 +20,7 @@ export type TranslationKey =
   | "nav.language"
   | "common.loading"
   | "common.error"
+  | "common.close"
   | "hero.title"
   | "hero.subtitle"
   | "share.button"
@@ -65,6 +66,7 @@ const DICT: Record<Locale, Record<TranslationKey, string>> = {
     "nav.language": "Til",
     "common.loading": "Yuklanmoqda...",
     "common.error": "Xatolik yuz berdi",
+    "common.close": "Yopish",
     "hero.title": "Iqtibosim",
     "hero.subtitle": "Dono fikrlarni o'qing va o'zingiznikini qo'shing. Har bir iqtibos moderatsiyadan o'tadi.",
     "share.button": "Ulashish",
@@ -109,6 +111,7 @@ const DICT: Record<Locale, Record<TranslationKey, string>> = {
     "nav.language": "Язык",
     "common.loading": "Загрузка...",
     "common.error": "Произошла ошибка",
+    "common.close": "Закрыть",
     "hero.title": "Цитаты",
     "hero.subtitle": "Читайте мудрые мысли и добавляйте свои. Каждая цитата проходит модерацию.",
     "share.button": "Поделиться",
@@ -153,6 +156,7 @@ const DICT: Record<Locale, Record<TranslationKey, string>> = {
     "nav.language": "Language",
     "common.loading": "Loading...",
     "common.error": "Something went wrong",
+    "common.close": "Close",
     "hero.title": "Quotes",
     "hero.subtitle": "Read wise words and add your own. Every quote is moderated before publishing.",
     "share.button": "Share",

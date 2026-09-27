@@ -1,8 +1,10 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
+import { BANNER_CONFIG, parseBannerOverrides, resolveBanner } from "@/config/banners";
+import { InFeedBanner } from "@/components/InFeedBanner";
 import { QuoteCard } from "@/components/QuoteCard";
 import { QuoteCardSkeleton } from "@/components/QuoteCardSkeleton";
 import { QuoteOfDay } from "@/components/QuoteOfDay";
@@ -52,6 +54,14 @@ function HomeInner() {
   const heroSubtitle =
     content["hero.subtitle"] ??
     "Dono fikrlarni o'qing va o'zingiznikini qo'shing. Har bir iqtibos moderatsiyadan o'tadi.";
+
+  // Mobile in-feed banner: resolved once the content map is known.
+  const bannerOverrides = useMemo(() => parseBannerOverrides(content), [content]);
+  const feedDef = useMemo(
+    () => resolveBanner("feed", bannerOverrides.feed, bannerOverrides.enabled ?? true),
+    [bannerOverrides],
+  );
+  const feedEvery = bannerOverrides.feedEvery ?? BANNER_CONFIG.feedEvery;
 
   // When filters change, drop the old (possibly filtered) list immediately so
   // stale quotes never linger while the new request is in flight.
@@ -258,8 +268,11 @@ function HomeInner() {
       )}
 
       <div className="space-y-4">
-        {quotes.map((quote) => (
-          <QuoteCard key={quote.id} quote={quote} highlight={quote.id === quoteId} />
+        {quotes.map((quote, i) => (
+          <Fragment key={quote.id}>
+            <QuoteCard quote={quote} highlight={quote.id === quoteId} />
+            {feedDef && feedEvery > 0 && (i + 1) % feedEvery === 0 && <InFeedBanner def={feedDef} />}
+          </Fragment>
         ))}
       </div>
 

@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
-import { parseBannerOverrides, type BannerOverrides } from "@/config/banners";
+import { BANNER_CONFIG, parseBannerOverrides, type BannerOverrides } from "@/config/banners";
 import { AnnouncementsBanner } from "./AnnouncementsBanner";
 import { BackButton } from "./BackButton";
+import { MobileTopBanner } from "./MobileTopBanner";
 import { NavBar } from "./NavBar";
 import { StickyBanner } from "./StickyBanner";
+import { StickyBottomBar } from "./StickyBottomBar";
 import { WwwUzTracker } from "./WwwUzTracker";
 
 export function SiteShell({ children }: { children: React.ReactNode }) {
@@ -41,6 +43,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
       <WwwUzTracker />
       <AnnouncementsBanner />
       <NavBar />
+      {!isAdmin && <MobileTopBanner overrides={bannerOverrides.top} enabled={bannerOverrides.enabled} />}
       <main className={`mx-auto w-full flex-1 px-4 py-4 sm:px-6 sm:py-6 ${isAdmin ? "max-w-7xl" : "max-w-3xl xl:max-w-[1440px]"}`}>
         {isAdmin ? (
           <>
@@ -61,6 +64,12 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
       <footer className="border-t border-slate-200 py-4 text-center text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
         {footer}
       </footer>
+      {!isAdmin && BANNER_CONFIG.slots.bottom.enabled && (bannerOverrides.enabled ?? true) && (
+        <>
+          <StickyBottomBar overrides={bannerOverrides.bottom} enabled={bannerOverrides.enabled} />
+          <div className="h-16 shrink-0 xl:hidden" aria-hidden="true" />
+        </>
+      )}
     </div>
   );
 }

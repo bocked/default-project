@@ -74,6 +74,71 @@ export const DEFAULT_CONTENT: Array<{ key: string; title: string; value: string 
     title: "O'ng banner — ALT matni",
     value: "",
   },
+  {
+    key: "banner.top.html",
+    title: "Mobil — yuqori banner HTML kodi (reklama)",
+    value: "Header ostidagi mobil banner uchun to'liq HTML (masalan, AdSense yoki yt banner). Bo'sh qoldirilsa rasm/havola ishlaydi.",
+  },
+  {
+    key: "banner.top.image",
+    title: "Mobil — yuqori banner rasm URL",
+    value: "",
+  },
+  {
+    key: "banner.top.href",
+    title: "Mobil — yuqori banner havola URL",
+    value: "",
+  },
+  {
+    key: "banner.top.alt",
+    title: "Mobil — yuqori banner ALT matni",
+    value: "",
+  },
+  {
+    key: "banner.feed.html",
+    title: "Mobil — feed reklamasi HTML kodi",
+    value: "Iqtiboslar ro'yxatiga har necha iqtibosdan keyin qo'yiladigan reklama kartochkasi uchun HTML kodi.",
+  },
+  {
+    key: "banner.feed.image",
+    title: "Mobil — feed reklamasi rasm URL",
+    value: "",
+  },
+  {
+    key: "banner.feed.href",
+    title: "Mobil — feed reklamasi havola URL",
+    value: "",
+  },
+  {
+    key: "banner.feed.alt",
+    title: "Mobil — feed reklamasi ALT matni",
+    value: "",
+  },
+  {
+    key: "banner.feed.every",
+    title: "Mobil — feed reklamasi orasidagi iqtiboslar soni",
+    value: "4",
+  },
+  {
+    key: "banner.bottom.html",
+    title: "Mobil — pastki panel banneri HTML kodi (reklama)",
+    value: "Ekran pastki qismiga yopishuvchi mobil banner uchun to'liq HTML kodi.",
+  },
+  {
+    key: "banner.bottom.image",
+    title: "Mobil — pastki panel banneri rasm URL",
+    value: "",
+  },
+  {
+    key: "banner.bottom.href",
+    title: "Mobil — pastki panel banneri havola URL",
+    value: "",
+  },
+  {
+    key: "banner.bottom.alt",
+    title: "Mobil — pastki panel banneri ALT matni",
+    value: "",
+  },
 ];
 
 /** Seeding is best-effort and idempotent (keyed on the unique `key`). */
