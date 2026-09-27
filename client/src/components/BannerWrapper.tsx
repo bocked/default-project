@@ -4,10 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { trackBanner } from "@/lib/banner-tracking";
+import { bannerDismissKey, encodeBannerDismissal, isBannerDismissed, purgeStaleDismissals } from "@/lib/banner-dismiss";
 
-const STORAGE_PREFIX = "iqtibosim_banner_closed:";
 const FADE_MS = 320;
-const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // MRC viewability threshold: ≥50% of the banner visible for ≥1000ms.
 const IO_THRESHOLD = 0.5;
 const VIEW_DELAY_MS = 1000;
@@ -42,9 +41,10 @@ interface BannerWrapperProps {
 /**
  * Reusable dismissible banner shell: renders children under an optional close
  * ("X") button, fades the whole banner out smoothly on close and remembers the
- * dismissal in localStorage. Dismissal is scoped to a content signature and
- * expires after 7 days, so a user never permanently loses a banner — and a
- * newly configured ad always reappears even if the old placeholder was closed.
+ * dismissal in localStorage. A dismissal is scoped to the banner's content
+ * signature and expires after 24 hours, so a banner always comes back — and
+ * any edit in the admin panel (new html/image/href) changes the signature,
+ * cancelling the old dismissal and re-showing the banner.
  */
 export function BannerWrapper({
   id,
@@ -70,27 +70,27 @@ export function BannerWrapper({
   const viewedPathRef = useRef<string>("");
   const viewTimerRef = useRef<number | null>(null);
 
-  const storageKey = `${STORAGE_PREFIX}${id}:${shortHash(contentKey)}`;
+  const storageKey = bannerDismissKey(id, contentKey);
 
   // Read the persisted dismissal after mount (never during render, to keep
-  // server and client markup identical for hydration). Legacy entries without
-  // a signature block are treated as expired, so banners hidden by an old
-  // "close once, never again" rule reappear once content is configured.
+  // server and client markup identical for hydration). When the banner is not
+  // dismissed the stale signatures of earlier content versions for this slot
+  // are purged, so an admin edit invalidates the old dismissal immediately.
+  // Re-runs when the content signature changes (SiteShell refetches /api/content
+  // on window focus), which is what re-shows an edited banner in open tabs.
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
         const stored = window.localStorage.getItem(storageKey);
-        if (stored === "1") setVisible(false);
-        else if (stored?.startsWith("1:")) {
-          const ts = Number(stored.slice(2));
-          if (Number.isFinite(ts) && Date.now() - ts < DISMISS_TTL_MS) setVisible(false);
-        }
+        const dismissed = isBannerDismissed(stored);
+        setVisible(!dismissed);
+        if (!dismissed) purgeStaleDismissals(window.localStorage, id, storageKey);
       } catch {
         /* storage unavailable */
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [storageKey]);
+  }, [storageKey, id]);
 
   useEffect(
     () => () => {
@@ -149,7 +149,7 @@ export function BannerWrapper({
       setVisible(false);
       setClosing(false);
       try {
-        window.localStorage.setItem(storageKey, `1:${Date.now()}`);
+        window.localStorage.setItem(storageKey, encodeBannerDismissal());
       } catch {
         /* storage unavailable */
       }
@@ -178,13 +178,4 @@ export function BannerWrapper({
       )}
     </div>
   );
-}
-
-function shortHash(input: string): string {
-  let hash = 0;
-  for (let i = 0; i < input.length; i += 1) {
-    hash = (hash << 5) - hash + input.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(36);
 }
