@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
+import { parseBannerOverrides, type BannerOverrides } from "@/config/banners";
 import { AnnouncementsBanner } from "./AnnouncementsBanner";
 import { BackButton } from "./BackButton";
 import { NavBar } from "./NavBar";
+import { StickyBanner } from "./StickyBanner";
 import { WwwUzTracker } from "./WwwUzTracker";
 
 export function SiteShell({ children }: { children: React.ReactNode }) {
@@ -16,6 +18,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   // `usePathname` is null during static prerender, so only show the back
   // button after hydration to keep server and client markup identical.
   const [mounted, setMounted] = useState(false);
+  const [bannerOverrides, setBannerOverrides] = useState<BannerOverrides>({});
 
   useEffect(() => {
     const id = window.setTimeout(() => setMounted(true), 0);
@@ -25,19 +28,35 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void api<{ content: Record<string, string> }>("/api/content")
       .then((d) => {
+        setBannerOverrides(parseBannerOverrides(d.content));
         if (typeof d.content["footer.about"] === "string") setFooter(d.content["footer.about"]);
       })
       .catch(() => {});
   }, []);
+
+  const backButton = mounted && pathname !== "/" ? <BackButton /> : null;
 
   return (
     <div className="flex min-h-screen flex-col">
       <WwwUzTracker />
       <AnnouncementsBanner />
       <NavBar />
-      <main className={`mx-auto w-full flex-1 px-4 py-4 sm:px-6 sm:py-6 ${isAdmin ? "max-w-7xl" : "max-w-3xl"}`}>
-        {mounted && pathname !== "/" && <BackButton />}
-        {children}
+      <main className={`mx-auto w-full flex-1 px-4 py-4 sm:px-6 sm:py-6 ${isAdmin ? "max-w-7xl" : "max-w-3xl xl:max-w-[1440px]"}`}>
+        {isAdmin ? (
+          <>
+            {backButton}
+            {children}
+          </>
+        ) : (
+          <div className="grid grid-cols-1 items-start xl:grid-cols-[240px_minmax(0,768px)_240px] xl:justify-center xl:gap-8">
+            <StickyBanner side="left" overrides={bannerOverrides.left} enabled={bannerOverrides.enabled} />
+            <div className="min-w-0">
+              {backButton}
+              {children}
+            </div>
+            <StickyBanner side="right" overrides={bannerOverrides.right} enabled={bannerOverrides.enabled} />
+          </div>
+        )}
       </main>
       <footer className="border-t border-slate-200 py-4 text-center text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
         {footer}

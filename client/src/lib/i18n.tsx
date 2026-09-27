@@ -48,7 +48,8 @@ export type TranslationKey =
   | "collection.close"
   | "collection.noQuotesIn"
   | "tts.play"
-  | "tts.stop";
+  | "tts.stop"
+  | "banner.placeholder";
 
 const DICT: Record<Locale, Record<TranslationKey, string>> = {
   UZ: {
@@ -93,6 +94,7 @@ const DICT: Record<Locale, Record<TranslationKey, string>> = {
     "collection.noQuotesIn": "Bu to'plamda hali iqtiboslar yo'q",
     "tts.play": "Eshitish",
     "tts.stop": "To'xtatish",
+    "banner.placeholder": "Reklama maydoni",
   },
   RU: {
     "nav.home": "Главная",
@@ -136,6 +138,7 @@ const DICT: Record<Locale, Record<TranslationKey, string>> = {
     "collection.noQuotesIn": "В этой коллекции пока нет цитат",
     "tts.play": "Слушать",
     "tts.stop": "Стоп",
+    "banner.placeholder": "Рекламное место",
   },
   EN: {
     "nav.home": "Home",
@@ -179,6 +182,7 @@ const DICT: Record<Locale, Record<TranslationKey, string>> = {
     "collection.noQuotesIn": "No quotes in this collection yet",
     "tts.play": "Listen",
     "tts.stop": "Stop",
+    "banner.placeholder": "Ad space",
   },
 };
 
