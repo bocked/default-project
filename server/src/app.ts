@@ -121,11 +121,31 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
           // Strict: no 'unsafe-inline' / 'unsafe-eval' — only first-party
           // scripts plus the Cloudflare NEL/analytics endpoints (Mozilla
           // Observatory / ImmuniWeb deduct points for unsafe script sources).
-          scriptSrc: ["'self'", "https://a.nel.cloudflare.com", "https://static.cloudflareinsights.com"],
+          // Ad/analytics origins are allow-listed for symmetry with the static
+          // site CSP (the API itself serves JSON, never ad markup).
+          scriptSrc: [
+            "'self'",
+            "https://a.nel.cloudflare.com",
+            "https://static.cloudflareinsights.com",
+            "https://pagead2.googlesyndication.com",
+            "https://tpc.googlesyndication.com",
+            "https://googleads.g.doubleclick.net",
+            "https://an.yandex.ru",
+            "https://yastatic.net",
+          ],
           styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
           imgSrc: ["'self'", "data:", "blob:", "https:"],
           fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
-          connectSrc: ["'self'", "https://a.nel.cloudflare.com", "wss:"],
+          connectSrc: [
+            "'self'",
+            "https://a.nel.cloudflare.com",
+            "wss:",
+            "https://pagead2.googlesyndication.com",
+            "https://tpc.googlesyndication.com",
+            "https://googleads.g.doubleclick.net",
+            "https://an.yandex.ru",
+            "https://yastatic.net",
+          ],
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
           formAction: ["'self'"],

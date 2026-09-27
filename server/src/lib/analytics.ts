@@ -24,13 +24,20 @@ import { cachedGet, CACHE_PREFIXES } from "./redisCache.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Day-scoped counters used to grow forever in Redis (every new day INCRs a new
+// key with no TTL). Give them a rolling TTL aligned with the 90-day in-memory
+// retention — the DB is the durable record, so old keys can safely expire.
+const COUNTER_TTL_SECONDS = 90 * 24 * 60 * 60;
+// The days index must outlive the oldest key it lists, hence a longer window.
+const DAY_INDEX_TTL_SECONDS = 120 * 24 * 60 * 60;
+
 // ---------------------------------------------------------------------------
 // Redis key layout
 //   visitor:<day>:<hash>       unique-visitor marker (SET NX, EXPIRE 24h)
-//   analytics:uv:<day>         running unique-visitor counter
-//   analytics:pv:<day>         running page-view counter
+//   analytics:uv:<day>         running unique-visitor counter (EXPIRE 90d)
+//   analytics:pv:<day>         running page-view counter (EXPIRE 90d)
 //   analytics:flushed:<day>    counter snapshots already folded into the DB
-//   analytics:days             index of days that have counters
+//   analytics:days             index of days that have counters (EXPIRE 120d)
 // ---------------------------------------------------------------------------
 
 const VISITOR_PREFIX = "visitor";
@@ -122,12 +129,21 @@ export async function trackPageView(
       pipe.sadd(DAY_INDEX_KEY, day);
       pipe.set(key, "1", "EX", DAY_MS / 1000, "NX");
       pipe.incr(pvKey(day));
+      // Rolling TTLs keep day-scoped keys from accumulating in Redis forever.
+      pipe.expire(DAY_INDEX_KEY, DAY_INDEX_TTL_SECONDS);
+      pipe.expire(uvKey(day), COUNTER_TTL_SECONDS);
+      pipe.expire(pvKey(day), COUNTER_TTL_SECONDS);
       const results = await pipe.exec();
       if (results == null) return;
       // `SET key 1 EX 86400 NX` answers "OK" only when the visitor is new today.
       const setResult = results[1];
       const fresh = setResult != null && setResult[0] == null && setResult[1] === "OK";
-      if (fresh) await client.incr(uvKey(day));
+      if (fresh) {
+        const p = client.pipeline();
+        p.incr(uvKey(day));
+        p.expire(uvKey(day), COUNTER_TTL_SECONDS);
+        await p.exec();
+      }
       return;
     } catch {
       /* fall back to the in-memory counters */
@@ -254,7 +270,7 @@ async function flushFromRedis(): Promise<void> {
     const dPv = pvN - flushedPv;
     if (dUv <= 0 && dPv <= 0) return;
     const ok = await applyDelta(day, dUv, dPv);
-    if (ok) await client.set(flushedKey(day), `${uvN}:${pvN}`);
+    if (ok) await client.setex(flushedKey(day), COUNTER_TTL_SECONDS, `${uvN}:${pvN}`);
   });
   await Promise.all(writes);
 }

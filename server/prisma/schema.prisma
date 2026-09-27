@@ -542,6 +542,10 @@ model BannerAnalytics {
   views     Int      @default(0)
   clicks    Int      @default(0)
   updatedAt DateTime @updatedAt
+
+  // Admin stats reads order backends by freshness; keeping updatedAt indexed
+  // also speeds up "recently active slots" style queries.
+  @@index([updatedAt])
 }
 
 model TelegramQuickSession {

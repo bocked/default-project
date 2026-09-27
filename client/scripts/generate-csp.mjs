@@ -29,6 +29,16 @@ const JS_TYPES = new Set([
   "text/module",
 ]);
 
+// Third-party script/iframe origins the pages may load:
+//  - Google AdSense (admin-authored HTML banners): the loader + async ad units
+//    run from pagead2/tpc.googlesyndication.com, rendered inside Google-hosted
+//    frames from googleads.g.doubleclick.net which also receive the click/fill
+//    beacons (connect-src).
+//  - Yandex Direct (an.yandex.ru hosts the banner script, yastatic.net the
+//    CDN loader) — frames host the actual ad iframe.
+const AD_SOURCES =
+  "https://pagead2.googlesyndication.com https://tpc.googlesyndication.com https://googleads.g.doubleclick.net https://an.yandex.ru https://yastatic.net";
+
 // Next 16 re-injects the beforeInteractive theme script (src/app/layout.tsx)
 // as an inline <script> after hydration, so its hash must be allowed on top of
 // the hashes of the scripts that already live in the static HTML. Read the
@@ -93,19 +103,19 @@ function pagePaths(htmlFile) {
 function cspFor(hashes) {
   const scriptSrc =
     hashes.length > 0
-      ? `'self' ${hashes.join(" ")} ${THEME_HASH} https://telegram.org https://a.nel.cloudflare.com https://static.cloudflareinsights.com`
-      : `'self' ${THEME_HASH} https://telegram.org https://a.nel.cloudflare.com https://static.cloudflareinsights.com`;
+      ? `'self' ${hashes.join(" ")} ${THEME_HASH} https://telegram.org https://a.nel.cloudflare.com https://static.cloudflareinsights.com ${AD_SOURCES}`
+      : `'self' ${THEME_HASH} https://telegram.org https://a.nel.cloudflare.com https://static.cloudflareinsights.com ${AD_SOURCES}`;
   return [
     `default-src 'self'`,
     `script-src ${scriptSrc}`,
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `img-src 'self' data: blob: https:`,
     `font-src 'self' data: https://fonts.gstatic.com`,
-    `connect-src 'self' ${API_ORIGIN} wss: https://a.nel.cloudflare.com`,
+    `connect-src 'self' ${API_ORIGIN} wss: https://a.nel.cloudflare.com ${AD_SOURCES}`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
-    `frame-src https://telegram.org https://t.me`,
+    `frame-src https://telegram.org https://t.me ${AD_SOURCES}`,
     `frame-ancestors 'none'`,
     `upgrade-insecure-requests`,
   ].join("; ") + ";";
