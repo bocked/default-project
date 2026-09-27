@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { prisma } from "./prisma.js";
+import { maskToken } from "./telegramFormat.js";
 
 export interface TelegramRuntimeSettings {
   id: string;
@@ -13,10 +14,12 @@ export interface TelegramRuntimeSettings {
   notifyBackup: boolean;
   botStatus: string;
   botUsername: string | null;
+  botId: string | null;
   lastError: string | null;
   lastCheckedAt: Date | null;
   approvalBotToken: string;
   approvalBotUsername: string | null;
+  approvalBotId: string | null;
   approvalBotStatus: string;
   approvalBotLastError: string | null;
   approvalBotLastCheckedAt: Date | null;
@@ -126,6 +129,7 @@ async function telegramFetch(url: string, init?: RequestInit): Promise<Response>
 export interface BotCheckResult {
   ok: boolean;
   username?: string;
+  id?: number;
   error?: string;
 }
 
@@ -136,11 +140,11 @@ export async function checkBotToken(token: string): Promise<BotCheckResult> {
     const res = await telegramFetch(`${TELEGRAM_API_BASE}/bot${token.trim()}/getMe`);
     const json = (await res.json().catch(() => null)) as {
       ok?: boolean;
-      result?: { username?: string };
+      result?: { username?: string; id?: number };
       description?: string;
     } | null;
     if (res.ok && json?.ok && typeof json.result?.username === "string") {
-      return { ok: true, username: json.result.username };
+      return { ok: true, username: json.result.username, id: json.result.id };
     }
     if (res.status === 401) return { ok: false, error: "Yaroqsiz bot token (401 Unauthorized)" };
     return { ok: false, error: String(json?.description ?? `HTTP ${res.status}`) };
@@ -179,7 +183,13 @@ export async function reinitBot(): Promise<BotCheckResult> {
   if (!settings.botToken) {
     await prisma.telegramSettings.update({
       where: { id: "main" },
-      data: { botStatus: "disabled", botUsername: null, lastError: null, lastCheckedAt: new Date() },
+      data: {
+        botStatus: "disabled",
+        botUsername: null,
+        botId: null,
+        lastError: null,
+        lastCheckedAt: new Date(),
+      },
     });
     invalidateTelegramSettingsCache();
     return { ok: false, error: "Bot token kiritilmagan" };
@@ -194,12 +204,24 @@ export async function reinitBot(): Promise<BotCheckResult> {
     }
     await prisma.telegramSettings.update({
       where: { id: "main" },
-      data: { botStatus: "ok", botUsername: check.username ?? null, lastError: null, lastCheckedAt: new Date() },
+      data: {
+        botStatus: "ok",
+        botUsername: check.username ?? null,
+        botId: check.id !== undefined ? String(check.id) : null,
+        lastError: null,
+        lastCheckedAt: new Date(),
+      },
     });
   } else {
     await prisma.telegramSettings.update({
       where: { id: "main" },
-      data: { botStatus: "error", lastError: check.error ?? "Noma'lum xato", lastCheckedAt: new Date() },
+      data: {
+        botStatus: "error",
+        botUsername: null,
+        botId: null,
+        lastError: check.error ?? "Noma'lum xato",
+        lastCheckedAt: new Date(),
+      },
     });
   }
   invalidateTelegramSettingsCache();
@@ -220,6 +242,7 @@ export async function reinitApprovalBot(): Promise<BotCheckResult> {
       data: {
         approvalBotStatus: "disabled",
         approvalBotUsername: null,
+        approvalBotId: null,
         approvalBotLastError: null,
         approvalBotLastCheckedAt: new Date(),
       },
@@ -241,6 +264,7 @@ export async function reinitApprovalBot(): Promise<BotCheckResult> {
       data: {
         approvalBotStatus: "ok",
         approvalBotUsername: check.username ?? null,
+        approvalBotId: check.id !== undefined ? String(check.id) : null,
         approvalBotLastError: null,
         approvalBotLastCheckedAt: new Date(),
       },
@@ -250,6 +274,8 @@ export async function reinitApprovalBot(): Promise<BotCheckResult> {
       where: { id: "main" },
       data: {
         approvalBotStatus: "error",
+        approvalBotUsername: null,
+        approvalBotId: null,
         approvalBotLastError: check.error ?? "Noma'lum xato",
         approvalBotLastCheckedAt: new Date(),
       },
@@ -271,11 +297,13 @@ export interface SanitizedTelegramSettings {
   notifyBackup: boolean;
   botStatus: string;
   botUsername: string | null;
+  botId: string | null;
   lastError: string | null;
   lastCheckedAt: Date | null;
   approvalBotTokenSet: boolean;
   approvalBotTokenMasked: string;
   approvalBotUsername: string | null;
+  approvalBotId: string | null;
   approvalBotStatus: string;
   approvalBotLastError: string | null;
   approvalBotLastCheckedAt: Date | null;
@@ -285,7 +313,7 @@ export interface SanitizedTelegramSettings {
 export function sanitizeSettings(settings: TelegramRuntimeSettings): SanitizedTelegramSettings {
   return {
     botTokenSet: settings.botToken.length > 0,
-    botTokenMasked: settings.botToken.length > 0 ? `${settings.botToken.slice(0, 6)}…${settings.botToken.slice(-4)}` : "",
+    botTokenMasked: maskToken(settings.botToken),
     superAdminChatId: settings.superAdminChatId,
     channelValue: settings.channelValue,
     channelChatId: settings.channelChatId,
@@ -293,17 +321,16 @@ export function sanitizeSettings(settings: TelegramRuntimeSettings): SanitizedTe
     notifyNewFeature: settings.notifyNewFeature,
     notifyHealth: settings.notifyHealth,
     notifyBackup: settings.notifyBackup,
-    botStatus: settings.botStatus,
-    botUsername: settings.botUsername,
-    lastError: settings.lastError,
-    lastCheckedAt: settings.lastCheckedAt,
-    approvalBotTokenSet: settings.approvalBotToken.length > 0,
-    approvalBotTokenMasked:
-      settings.approvalBotToken.length > 0
-        ? `${settings.approvalBotToken.slice(0, 6)}…${settings.approvalBotToken.slice(-4)}`
-        : "",
-    approvalBotUsername: settings.approvalBotUsername,
-    approvalBotStatus: settings.approvalBotStatus,
+botStatus: settings.botStatus,
+  botUsername: settings.botUsername,
+  botId: settings.botId,
+  lastError: settings.lastError,
+  lastCheckedAt: settings.lastCheckedAt,
+  approvalBotTokenSet: settings.approvalBotToken.length > 0,
+  approvalBotTokenMasked: maskToken(settings.approvalBotToken),
+  approvalBotUsername: settings.approvalBotUsername,
+  approvalBotId: settings.approvalBotId,
+  approvalBotStatus: settings.approvalBotStatus,
     approvalBotLastError: settings.approvalBotLastError,
     approvalBotLastCheckedAt: settings.approvalBotLastCheckedAt,
     updatedAt: settings.updatedAt,

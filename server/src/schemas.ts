@@ -408,6 +408,9 @@ export type TelegramSettingsUpdate = z.infer<typeof telegramSettingsUpdateSchema
 
 export const telegramTestSchema = z.object({
   message: z.string().trim().max(500).optional(),
+  // Which bot should fire the test message: the main system bot (default) or
+  // the approval bot (@nimadur7_bot).
+  bot: z.enum(["main", "approval"]).optional(),
 });
 export type TelegramTest = z.infer<typeof telegramTestSchema>;
 

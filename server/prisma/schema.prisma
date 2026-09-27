@@ -464,6 +464,9 @@ model TelegramSettings {
   // ok | error | disabled
   botStatus        String    @default("disabled")
   botUsername      String?
+  // Numeric bot id returned by Telegram's getMe. Filled automatically when a
+  // token is saved; lets the panel prove which account the token belongs to.
+  botId            String?
   lastError        String?
   lastCheckedAt    DateTime?
   // Approval bot token (@nimadur7_bot). Dedicated to USER approval only: when a
@@ -472,6 +475,7 @@ model TelegramSettings {
   // stays on the main botToken above.
   approvalBotToken      String    @default("")
   approvalBotUsername   String?
+  approvalBotId         String?
   approvalBotStatus     String    @default("disabled")
   approvalBotLastError  String?
   approvalBotLastCheckedAt DateTime?

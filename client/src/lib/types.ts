@@ -432,11 +432,13 @@ export interface TelegramSettings {
   notifyBackup: boolean;
   botStatus: string;
   botUsername: string | null;
+  botId: string | null;
   lastError: string | null;
   lastCheckedAt: string | null;
   approvalBotTokenSet: boolean;
   approvalBotTokenMasked: string;
   approvalBotUsername: string | null;
+  approvalBotId: string | null;
   approvalBotStatus: string;
   approvalBotLastError: string | null;
   approvalBotLastCheckedAt: string | null;
@@ -453,6 +455,7 @@ export interface TelegramStatusResponse {
   configured: boolean;
   botStatus: string;
   botUsername: string | null;
+  botId: string | null;
   lastError: string | null;
   lastCheckedAt: string | null;
   superAdminChatIdSet: boolean;
@@ -469,6 +472,7 @@ export interface TelegramStatusResponse {
   approvalConfigured: boolean;
   approvalBotStatus: string;
   approvalBotUsername: string | null;
+  approvalBotId: string | null;
   approvalBotLastError: string | null;
   approvalBotWebhookUrl: string | null;
   approvalReinitialized?: boolean;
@@ -483,6 +487,11 @@ export interface TelegramSettingsUpdate {
   notifyNewFeature?: boolean;
   notifyHealth?: boolean;
   notifyBackup?: boolean;
+}
+
+export interface TelegramTestRequest {
+  message?: string;
+  bot?: "main" | "approval";
 }
 
 export interface PolicyReviewResponse {

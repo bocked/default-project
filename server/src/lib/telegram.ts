@@ -275,12 +275,13 @@ export async function sendTelegramMessage(
   chatId: number | string,
   text: string,
   replyMarkup?: ReplyKeyboard,
-  replyToMessageId?: number
+  replyToMessageId?: number,
+  token?: string
 ): Promise<boolean> {
   const body: Record<string, unknown> = { chat_id: chatId, text };
   if (replyMarkup) body.reply_markup = replyMarkup;
   if (replyToMessageId !== undefined) body.reply_to_message_id = replyToMessageId;
-  const json = await apiCall<TelegramResult<{ message_id: number }>>("sendMessage", body);
+  const json = await apiCall<TelegramResult<{ message_id: number }>>("sendMessage", body, token);
   return json?.ok === true;
 }
 

@@ -91,6 +91,8 @@ describe("E2E: Telegram settings (admin-managed bot)", () => {
     expect(res.status).toBe(200);
     expect(res.json.settings.botTokenSet).toBe(false);
     expect(res.json.reinitialized).toBe(false);
+    expect(res.json.settings.botId).toBeNull();
+    expect(res.json.settings.approvalBotId).toBeNull();
 
     const row = await prisma.telegramSettings.findUnique({ where: { id: "main" } });
     expect(row?.superAdminChatId).toBe("899933314");
@@ -113,10 +115,14 @@ describe("E2E: Telegram settings (admin-managed bot)", () => {
     expect(res.json.settings.botTokenMasked).not.toContain("invalid-token-for-e2e");
     expect(res.json.settings.botStatus).toBe("error");
     expect(res.json.settings.lastError).toBeTruthy();
+    // identity is unknown until getMe succeeds, so id/username stay clear
+    expect(res.json.settings.botId).toBeNull();
+    expect(res.json.settings.botUsername).toBeNull();
 
     const status = await request(base, "GET", "/api/admin/telegram/status", { token: superAdmin.token });
     expect(status.status).toBe(200);
     expect(status.json.botStatus).toBe("error");
+    expect(status.json.botId).toBeNull();
     expect(status.json.configured).toBe(true);
     expect(status.json.channelResolved).toBeNull();
   });
@@ -130,6 +136,7 @@ describe("E2E: Telegram settings (admin-managed bot)", () => {
     expect(res.json.reinitialized).toBe(true);
     expect(res.json.settings.botTokenSet).toBe(false);
     expect(res.json.settings.botStatus).toBe("disabled");
+    expect(res.json.settings.botId).toBeNull();
   });
 
   it("a stored channelChatId is preferred by status.channelResolved", async () => {

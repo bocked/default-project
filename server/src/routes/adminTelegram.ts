@@ -88,6 +88,7 @@ adminTelegramRouter.get("/status", async (req, res) => {
       configured: Boolean(settings.botToken && settings.superAdminChatId),
       botStatus: settings.botStatus,
       botUsername: settings.botUsername,
+      botId: settings.botId,
       lastError: settings.lastError,
       lastCheckedAt: settings.lastCheckedAt,
       superAdminChatIdSet: settings.superAdminChatId.length > 0,
@@ -104,6 +105,7 @@ adminTelegramRouter.get("/status", async (req, res) => {
       approvalConfigured: Boolean(settings.approvalBotToken && settings.superAdminChatId),
       approvalBotStatus: settings.approvalBotStatus,
       approvalBotUsername: settings.approvalBotUsername,
+      approvalBotId: settings.approvalBotId,
       approvalBotLastError: settings.approvalBotLastError,
       approvalBotWebhookUrl: config.telegramWebhookUrl ? `${config.telegramWebhookUrl}/approval` : null,
       approvalReinitialized,
@@ -114,25 +116,36 @@ adminTelegramRouter.get("/status", async (req, res) => {
 });
 
 // POST /api/admin/telegram/test - fire a test message to the super admin chat.
+// `{ bot: "main" }` sends via the system bot (default), `{ bot: "approval" }`
+// via the approval bot (@nimadur7_bot).
 adminTelegramRouter.post("/test", validateBody(telegramTestSchema), async (_req, res) => {
-  const { message } = res.locals.body as TelegramTest;
+  const { message, bot } = res.locals.body as TelegramTest;
   try {
     const settings = await getTelegramSettings();
-    if (!settings.botToken) {
-      res.status(400).json({ error: "Bot token kiritilmagan" });
+    const isApproval = bot === "approval";
+    const token = isApproval ? settings.approvalBotToken : settings.botToken;
+    const label = isApproval ? "Tasdiqlash boti" : "Asosiy bot";
+    if (!token) {
+      res.status(400).json({ error: `${label} tokeni kiritilmagan` });
       return;
     }
     if (!settings.superAdminChatId) {
       res.status(400).json({ error: "Super admin chat ID kiritilmagan" });
       return;
     }
-    const text = message?.trim() || "✅ Telegram sozlamalari tekshiruvi: bot ulangan va xabar yuborilmoqda.";
-    const sent = await sendTelegramMessage(settings.superAdminChatId, text);
+    const text =
+      message?.trim() ||
+      (isApproval
+        ? "✅ Tasdiqlash boti (approval) tekshiruvi: bot ulangan va xabar yuborilmoqda."
+        : "✅ Telegram sozlamalari tekshiruvi: bot ulangan va xabar yuborilmoqda.");
+    const sent = await sendTelegramMessage(settings.superAdminChatId, text, undefined, undefined, isApproval ? token : undefined);
     if (!sent) {
-      res.status(502).json({ ok: false, error: "Telegram xabarni yuborishga ruxsat bermadi (token yoki chat ID noto'g'ri bomi mumkin)" });
+      res
+        .status(502)
+        .json({ ok: false, error: `Telegram xabarni yuborishga ruxsat bermadi (${label} tokeni yoki chat ID noto'g'ri bomi mumkin)` });
       return;
     }
-    addLog("info", "Telegram sinov xabari yuborildi");
+    addLog("info", `Telegram sinov xabari yuborildi (${label})`);
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: "Sinov xabari yuborilmadi" });

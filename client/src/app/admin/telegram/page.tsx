@@ -16,6 +16,7 @@ import type {
   TelegramSettings,
   TelegramSettingsResponse,
   TelegramStatusResponse,
+  TelegramTestRequest,
 } from "@/lib/types";
 
 const TOGGLE_ITEMS: Array<{
@@ -88,7 +89,7 @@ export default function AdminTelegramPage() {
 
   if (!user || (user.role !== "SUPER_ADMIN" && user.role !== "ADMIN_PASSWORD")) return null;
 
-  async function save(): Promise<void> {
+  async function saveMain(): Promise<void> {
     setBusy(true);
     setError(null);
     setInfo(null);
@@ -101,16 +102,32 @@ export default function AdminTelegramPage() {
         notifyHealth: settings?.notifyHealth ?? true,
         notifyBackup: settings?.notifyBackup ?? true,
       };
-      if (botToken.trim()) body.botToken = botToken.trim();
-      if (approvalBotToken.trim()) body.approvalBotToken = approvalBotToken.trim();
+      const token = botToken.trim();
+      if (token) body.botToken = token;
       await api<TelegramSettingsResponse>("/api/admin/telegram/settings", { method: "PUT", body });
       await Promise.all([loadSettings(), loadStatus(true)]);
       setBotToken("");
+      setInfo(`Sozlamalar saqlandi.${token ? " Asosiy bot qayta ulandi (username avtomatik yangilandi)." : ""}`);
+      window.setTimeout(() => setInfo(null), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sozlamalar saqlanmadi");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveApproval(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const body: Record<string, unknown> = {};
+      const token = approvalBotToken.trim();
+      if (token) body.approvalBotToken = token;
+      await api<TelegramSettingsResponse>("/api/admin/telegram/settings", { method: "PUT", body });
+      await Promise.all([loadSettings(), loadStatus(true)]);
       setApprovalBotToken("");
-      const parts = [];
-      if (body.botToken) parts.push("Asosiy bot qayta ulandi.");
-      if (body.approvalBotToken) parts.push("Tasdiqlash boti qayta ulandi.");
-      setInfo(`Sozlamalar saqlandi. ${parts.join(" ")}`);
+      setInfo(token ? "Tasdiqlash boti qayta ulandi (username avtomatik yangilandi)." : "Tasdiqlash boti sozlamalari saqlandi.");
       window.setTimeout(() => setInfo(null), 4000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sozlamalar saqlanmadi");
@@ -133,13 +150,14 @@ export default function AdminTelegramPage() {
     }
   }
 
-  async function sendTest(): Promise<void> {
+  async function sendTest(bot: "main" | "approval"): Promise<void> {
     setBusy(true);
     setError(null);
     setInfo(null);
     try {
-      await api<{ ok: boolean }>("/api/admin/telegram/test", { method: "POST", body: {} });
-      setInfo("Sinov xabari super admin chatiga yuborildi.");
+      const body: TelegramTestRequest = { bot };
+      await api<{ ok: boolean }>("/api/admin/telegram/test", { method: "POST", body });
+      setInfo(bot === "approval" ? "Sinov xabari tasdiqlash boti orqali super admin chatiga yuborildi." : "Sinov xabari asosiy bot orqali super admin chatiga yuborildi.");
       await loadStatus(true);
       window.setTimeout(() => setInfo(null), 4000);
     } catch (err) {
@@ -174,48 +192,57 @@ export default function AdminTelegramPage() {
       {error && <ErrorNote text={error} />}
 
       <AdminCard>
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
             <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Bot holati</h2>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Yangi token kiritilsa, bot darhol qayta ulanadi (webhook + getMe tekshiruvi).
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Badge tone={badge.tone}>{badge.label}</Badge>
-            <AdminButton variant="slate" disabled={busy} onClick={() => void refreshStatus()}>
+            <AdminButton variant="slate" className="whitespace-nowrap" disabled={busy} onClick={() => void refreshStatus()}>
               Holatni tekshirish
             </AdminButton>
-            <AdminButton disabled={busy || !status?.configured} onClick={() => void sendTest()}>
-              Sinov xabar yuborish
+            <AdminButton
+              className="whitespace-nowrap"
+              disabled={busy || !status?.configured}
+              onClick={() => void sendTest("main")}
+            >
+              Asosiy botga sinov
             </AdminButton>
           </div>
         </div>
 
         {status && (
           <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
+            <div className="min-w-0 rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
               <p className="text-xs text-slate-400 dark:text-slate-500">Bot username</p>
-              <p className="mt-0.5 font-medium text-slate-800 dark:text-slate-200">
-                {status.botUsername ? `@${status.botUsername}` : "—"}
+              <AdminInput
+                readOnly
+                className="mt-1 font-medium text-slate-800 dark:text-slate-200"
+                value={status.botUsername ? `@${status.botUsername}` : "—"}
+              />
+              <p className="mt-1 truncate text-[11px] text-slate-400 dark:text-slate-500">
+                {status.botId ? `Bot ID: ${status.botId}` : "ID noma'lum"}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
+            <div className="min-w-0 rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
               <p className="text-xs text-slate-400 dark:text-slate-500">Oxirgi tekshiruv</p>
-              <p className="mt-0.5 font-medium text-slate-800 dark:text-slate-200">
+              <p className="mt-0.5 break-words font-medium text-slate-800 dark:text-slate-200">
                 {status.lastCheckedAt ? new Date(status.lastCheckedAt).toLocaleString() : "—"}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
+            <div className="min-w-0 rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
               <p className="text-xs text-slate-400 dark:text-slate-500">Kanal (yuklash manzili)</p>
-              <p className="mt-0.5 font-medium text-slate-800 dark:text-slate-200">
+              <p className="mt-0.5 break-all font-medium text-slate-800 dark:text-slate-200">
                 {status.channelResolved ? <code>{status.channelResolved}</code> : "Hali aniqlanmagan"}
               </p>
             </div>
             {status.lastError && (
-              <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 dark:border-rose-800/40 dark:bg-rose-950/30 sm:col-span-2 lg:col-span-3">
+              <div className="min-w-0 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 dark:border-rose-800/40 dark:bg-rose-950/30 sm:col-span-2 lg:col-span-3">
                 <p className="text-xs text-rose-500 dark:text-rose-400">{"So'nggi xato"}</p>
-                <p className="mt-0.5 font-medium text-rose-700 dark:text-rose-300">{status.lastError}</p>
+                <p className="mt-0.5 break-words font-medium text-rose-700 dark:text-rose-300">{status.lastError}</p>
               </div>
             )}
           </div>
@@ -293,52 +320,70 @@ export default function AdminTelegramPage() {
         </div>
 
         <div className="mt-5 flex justify-end">
-          <AdminButton disabled={busy} onClick={() => void save()}>
+          <AdminButton disabled={busy} onClick={() => void saveMain()}>
             Saqlash
           </AdminButton>
         </div>
       </AdminCard>
 
       <AdminCard>
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
             <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Tasdiqlash boti (@nimadur7_bot)</h2>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Faqat foydalanuvchilarni tasdiqlash uchun: yangi ro&apos;yxatdan o&apos;tganlarga [Tasdiqlash / Rad etish]
               tugmalari va <code>verify &lt;email&gt;</code> buyruqlari. Tizim xabarlari asosiy bot orqali yuboriladi.
             </p>
           </div>
-          <Badge tone={approvalBadge(status?.approvalBotStatus ?? settings.approvalBotStatus).tone}>
-            {approvalBadge(status?.approvalBotStatus ?? settings.approvalBotStatus).label}
-          </Badge>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Badge tone={approvalBadge(status?.approvalBotStatus ?? settings.approvalBotStatus).tone}>
+              {approvalBadge(status?.approvalBotStatus ?? settings.approvalBotStatus).label}
+            </Badge>
+            <AdminButton
+              className="whitespace-nowrap"
+              disabled={busy || !status?.approvalConfigured}
+              onClick={() => void sendTest("approval")}
+            >
+              Tasdiqlash botiga sinov
+            </AdminButton>
+          </div>
         </div>
 
         {(status?.approvalBotStatus || settings.approvalBotStatus) && (
           <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
+            <div className="min-w-0 rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
               <p className="text-xs text-slate-400 dark:text-slate-500">Bot username</p>
-              <p className="mt-0.5 font-medium text-slate-800 dark:text-slate-200">
-                {status?.approvalBotUsername ?? settings.approvalBotUsername
-                  ? `@${status?.approvalBotUsername ?? settings.approvalBotUsername}`
-                  : "—"}
+              <AdminInput
+                readOnly
+                className="mt-1 font-medium text-slate-800 dark:text-slate-200"
+                value={
+                  (status?.approvalBotUsername ?? settings.approvalBotUsername)
+                    ? `@${status?.approvalBotUsername ?? settings.approvalBotUsername}`
+                    : "—"
+                }
+              />
+              <p className="mt-1 truncate text-[11px] text-slate-400 dark:text-slate-500">
+                {(status?.approvalBotId ?? settings.approvalBotId)
+                  ? `Bot ID: ${status?.approvalBotId ?? settings.approvalBotId}`
+                  : "ID noma'lum"}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
+            <div className="min-w-0 rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
               <p className="text-xs text-slate-400 dark:text-slate-500">Webhook</p>
-              <p className="mt-0.5 font-medium text-slate-800 dark:text-slate-200">
+              <p className="mt-0.5 break-all font-medium text-slate-800 dark:text-slate-200">
                 {status?.approvalBotWebhookUrl ? <code className="text-xs">{status.approvalBotWebhookUrl}</code> : "—"}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
+            <div className="min-w-0 rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
               <p className="text-xs text-slate-400 dark:text-slate-500">Oxirgi tekshiruv</p>
-              <p className="mt-0.5 font-medium text-slate-800 dark:text-slate-200">
+              <p className="mt-0.5 break-words font-medium text-slate-800 dark:text-slate-200">
                 {settings.approvalBotLastCheckedAt ? new Date(settings.approvalBotLastCheckedAt).toLocaleString() : "—"}
               </p>
             </div>
             {(status?.approvalBotLastError ?? settings.approvalBotLastError) && (
-              <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 dark:border-rose-800/40 dark:bg-rose-950/30 sm:col-span-2 lg:col-span-3">
+              <div className="min-w-0 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 dark:border-rose-800/40 dark:bg-rose-950/30 sm:col-span-2 lg:col-span-3">
                 <p className="text-xs text-rose-500 dark:text-rose-400">So&apos;nggi xato</p>
-                <p className="mt-0.5 font-medium text-rose-700 dark:text-rose-300">
+                <p className="mt-0.5 break-words font-medium text-rose-700 dark:text-rose-300">
                   {status?.approvalBotLastError ?? settings.approvalBotLastError}
                 </p>
               </div>
@@ -372,7 +417,7 @@ export default function AdminTelegramPage() {
         </div>
 
         <div className="mt-4 flex justify-end">
-          <AdminButton disabled={busy} onClick={() => void save()}>
+          <AdminButton disabled={busy} onClick={() => void saveApproval()}>
             Saqlash
           </AdminButton>
         </div>

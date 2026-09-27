@@ -96,16 +96,21 @@ describe("E2E: Approval bot (@nimadur7_bot) — user verification only", () => {
     expect(res.json.settings.approvalBotTokenSet).toBe(true);
     expect(res.json.settings.approvalBotTokenMasked.startsWith("123456")).toBe(true);
     expect(res.json.settings.approvalBotTokenMasked).not.toContain("invalid-token-for-e2e");
+    // identity is unknown until getMe succeeds, so id/username stay clear
+    expect(res.json.settings.approvalBotId).toBeNull();
+    expect(res.json.settings.approvalBotUsername).toBeNull();
 
     const row = await prisma.telegramSettings.findUniqueOrThrow({ where: { id: "main" } });
     expect(row.botToken).toBe("");
     expect(row.approvalBotToken).toBe(APPROVAL_TOKEN);
     expect(row.botStatus).toBe("disabled");
+    expect(row.approvalBotId).toBeNull();
 
     const status = await request(base, "GET", "/api/admin/telegram/status", { token: adminToken });
     expect(status.status).toBe(200);
     expect(status.json.approvalConfigured).toBe(true);
     expect(status.json.approvalBotStatus).toBe("error");
+    expect(status.json.approvalBotId).toBeNull();
     expect(status.json.approvalBotLastError).toBeTruthy();
   });
 
@@ -116,6 +121,42 @@ describe("E2E: Approval bot (@nimadur7_bot) — user verification only", () => {
     });
     expect(res.status).toBe(200);
     expect(res.json.approvalReinitialized).toBe(false);
+  });
+
+  it("approval /test with an invalid token returns 502 without leaking the token", async () => {
+    const res = await request(base, "POST", "/api/admin/telegram/test", {
+      token: adminToken,
+      body: { bot: "approval", message: "sinov" },
+    });
+    expect(res.status).toBe(502);
+    expect(res.json.ok).toBe(false);
+    expect(res.json.error).not.toContain(APPROVAL_TOKEN);
+  });
+
+  it("rejects an unknown test bot value as a malformed body", async () => {
+    const res = await request(base, "POST", "/api/admin/telegram/test", {
+      token: adminToken,
+      body: { bot: "nope" },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("clearing the approval token makes approval /test report the missing token", async () => {
+    const cleared = await request(base, "PUT", "/api/admin/telegram/settings", {
+      token: adminToken,
+      body: { approvalBotToken: "" },
+    });
+    expect(cleared.status).toBe(200);
+    expect(cleared.json.approvalReinitialized).toBe(true);
+    expect(cleared.json.settings.approvalBotStatus).toBe("disabled");
+    expect(cleared.json.settings.approvalBotId).toBeNull();
+
+    const res = await request(base, "POST", "/api/admin/telegram/test", {
+      token: adminToken,
+      body: { bot: "approval" },
+    });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toContain("token");
   });
 
   it("approval webhook verifies and un-verifies users via prompt commands", async () => {

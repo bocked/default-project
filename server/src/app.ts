@@ -34,7 +34,7 @@ import { tryEnsureDefaultCategories } from "./lib/categories.js";
 import { tryEnsureDefaultContent } from "./lib/content.js";
 import { tryEnsurePolicyBaseline, tryEnsurePolicyDrafts } from "./lib/policies.js";
 import { syncBuiltInFeatures } from "./lib/permissionRegistry.js";
-import { ensureTelegramSettings, reinitBot } from "./lib/telegramSettings.js";
+import { ensureTelegramSettings, reinitApprovalBot, reinitBot } from "./lib/telegramSettings.js";
 import { notifyServerError, startHealthMonitor } from "./lib/healthMonitor.js";
 import { initSentry, setupSentryErrorHandler, captureException } from "./lib/sentry.js";
 
@@ -322,6 +322,12 @@ export async function startServer(): Promise<void> {
     // background so the dashboard shows it without waiting for a manual check.
     await ensureTelegramSettings();
     void reinitBot().catch(() => {
+      /* best-effort status refresh */
+    });
+    // The approval bot (@nimadur7_bot) has no .env fallback — its status is
+    // refreshed on boot just like the main bot's, so the panel always shows a
+    // fresh state (getMe + webhook re-registration are best-effort).
+    void reinitApprovalBot().catch(() => {
       /* best-effort status refresh */
     });
   } catch (err) {
