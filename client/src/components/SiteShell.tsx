@@ -8,6 +8,7 @@ import { AnnouncementsBanner } from "./AnnouncementsBanner";
 import { BackButton } from "./BackButton";
 import { MobileTopBanner } from "./MobileTopBanner";
 import { NavBar } from "./NavBar";
+import { OfflineBanner } from "./OfflineBanner";
 import { StickyBanner } from "./StickyBanner";
 import { StickyBottomBar } from "./StickyBottomBar";
 import { WwwUzTracker } from "./WwwUzTracker";
@@ -52,6 +53,9 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col">
       <WwwUzTracker />
+      {/* Must sit above the nav: a dropped connection is the one thing the user
+          needs to know about regardless of which page they are on. */}
+      <OfflineBanner />
       <AnnouncementsBanner />
       <NavBar />
       {!isAdmin && <MobileTopBanner overrides={bannerOverrides.top} enabled={bannerOverrides.enabled} />}

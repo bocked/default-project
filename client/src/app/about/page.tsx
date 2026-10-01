@@ -1,11 +1,15 @@
 import { Metadata } from "next";
 import Link from "next/link";
+import { pageMeta } from "@/lib/siteMeta";
 
-export const metadata: Metadata = {
-  title: "Sayt haqida | Iqtibosim",
+// The root layout defines the title template "%s | Iqtibosim", so this title
+// must stay bare — appending the suffix here too would render it twice.
+export const metadata: Metadata = pageMeta({
+  path: "/about",
+  title: "Sayt haqida",
   description:
     "Iqtibosim saytida nimalar bor: iqtiboslar lentasi, qidiruv, bo'limlar va heshteglar, foydalanuvchi imkoniyatlari hamda qo'shimcha sahifalar haqida to'liq ma'lumot.",
-};
+});
 
 function Section({
   number,

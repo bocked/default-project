@@ -2,11 +2,14 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { PrivacyContent } from "@/components/legal-content";
 import { PolicyViewer } from "@/components/policy-content";
+import { pageMeta } from "@/lib/siteMeta";
 
-export const metadata: Metadata = {
-  title: "Maxfiylik siyosati | Iqtibosim",
+// Bare title — the root layout's "%s | Iqtibosim" template appends the suffix.
+export const metadata: Metadata = pageMeta({
+  path: "/privacy",
+  title: "Maxfiylik siyosati",
   description: "Iqtibosim saytining maxfiylik siyosati. Shaxsiy ma'lumotlar qanday yig'ilishi, saqlanishi va ishlatilishi haqida ma'lumot.",
-};
+});
 
 export default function PrivacyPage() {
   return (

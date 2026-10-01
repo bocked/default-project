@@ -1,0 +1,306 @@
+"use client";
+
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { api } from "@/lib/api";
+import { BANNER_CONFIG, parseBannerOverrides, resolveBanner } from "@/config/banners";
+import { InFeedBanner } from "@/components/InFeedBanner";
+import { QuoteCard } from "@/components/QuoteCard";
+import { QuoteCardSkeleton } from "@/components/QuoteCardSkeleton";
+import { QuoteOfDay } from "@/components/QuoteOfDay";
+import { ServerGame } from "@/components/ServerGame";
+import type { PaginatedQuotes, Quote, SortKey } from "@/lib/types";
+
+/** If a request takes longer than this, show an error fallback instead of hanging. */
+const LOADING_TIMEOUT_MS = 12000;
+/** After this many ms of initial loading (no quotes yet), show the mini-game. */
+const GAME_DELAY_MS = 4000;
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="space-y-6"><p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Yuklanmoqda...</p></div>}>
+      <HomeInner />
+    </Suspense>
+  );
+}
+
+function HomeInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [total, setTotal] = useState(0);
+  const [content, setContent] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showGame, setShowGame] = useState(false);
+  const requestIdRef = useRef(0);
+
+  // Search, category and tag filters are owned by the NavBar dropdowns and
+  // travel through the URL (?q=, ?category=, ?tag=); this page only renders
+  // the matching quotes and handles pagination (?page=).
+  const q = searchParams.get("q")?.trim() ?? "";
+  const category = searchParams.get("category") ?? "";
+  const tag = searchParams.get("tag") ?? "";
+  const sort = (searchParams.get("sort") as SortKey) || "newest";
+  const page = Math.max(1, Number(searchParams.get("page") ?? 1));
+
+  // Share deep link (?quote=<id>): that quote is highlighted and scrolled into
+  // view; if it is not on the loaded page it is fetched and prepended.
+  const quoteId = (searchParams.get("quote") ?? "").trim();
+  const deepLinkedRef = useRef<string | null>(null);
+  const scrolledRef = useRef(false);
+
+  const heroTitle = content["hero.title"] ?? "Iqtibosim";
+  const heroSubtitle =
+    content["hero.subtitle"] ??
+    "Dono fikrlarni o'qing va o'zingiznikini qo'shing. Har bir iqtibos moderatsiyadan o'tadi.";
+
+  // Mobile in-feed banner: resolved once the content map is known.
+  const bannerOverrides = useMemo(() => parseBannerOverrides(content), [content]);
+  const feedDef = useMemo(
+    () => resolveBanner("feed", bannerOverrides.feed, bannerOverrides.enabled ?? true),
+    [bannerOverrides],
+  );
+  const feedEvery = bannerOverrides.feedEvery ?? BANNER_CONFIG.feedEvery;
+
+  // When filters change, drop the old (possibly filtered) list immediately so
+  // stale quotes never linger while the new request is in flight.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setQuotes([]);
+      setTotal(0);
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [q, category, tag, sort]);
+
+  const fetchQuotes = useCallback(
+    async (nextPage: number) => {
+      const requestId = ++requestIdRef.current;
+      setLoading(true);
+      setError(null);
+
+      const watchdog = window.setTimeout(() => {
+        if (requestId === requestIdRef.current) {
+          setError("Serverdan javob kelishida muammo yuz berdi. Qayta urinib ko'ring.");
+          setLoading(false);
+        }
+      }, LOADING_TIMEOUT_MS);
+
+      try {
+        const params = new URLSearchParams();
+        if (q) params.set("q", q);
+        if (category) params.set("category", category);
+        if (tag) params.set("tag", tag);
+        if (sort !== "newest") params.set("sort", sort);
+        params.set("page", String(nextPage));
+        const qs = params.toString();
+        const data = await api<PaginatedQuotes>(`/api/quotes${qs ? `?${qs}` : ""}`);
+        // Ignore stale responses (e.g. a slower filtered request that resolves
+        // after the URL was cleared) so the list always matches the URL.
+        if (requestId !== requestIdRef.current) return;
+        setError(null);
+        if (nextPage === 1) setQuotes(data.quotes);
+        else setQuotes((prev) => [...prev, ...data.quotes]);
+        setTotal(data.total);
+      } catch {
+        if (requestId === requestIdRef.current) {
+          setError("Iqtiboslarni yuklab bo'lmadi");
+        }
+      } finally {
+        window.clearTimeout(watchdog);
+        if (requestId === requestIdRef.current) setLoading(false);
+      }
+    },
+    [q, category, tag, sort]
+  );
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void fetchQuotes(page);
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [fetchQuotes, page]);
+
+  // Show the mini-game after GAME_DELAY_MS of initial loading (no quotes yet).
+  useEffect(() => {
+    if (!loading || quotes.length > 0) return;
+    const id = window.setTimeout(() => setShowGame(true), GAME_DELAY_MS);
+    return () => window.clearTimeout(id);
+  }, [loading, quotes.length]);
+
+  // Also show the game immediately when an error is set (server failed).
+  useEffect(() => {
+    if (!error) return;
+    const id = window.setTimeout(() => setShowGame(true), 0);
+    return () => window.clearTimeout(id);
+  }, [error]);
+
+  // When the health-check in ServerGame succeeds, hide the game and re-fetch.
+  const handleGameReady = useCallback(() => {
+    setShowGame(false);
+    setError(null);
+    void fetchQuotes(page);
+  }, [fetchQuotes, page]);
+
+  // Deep link: prepend the target quote when it is not on the loaded page.
+  useEffect(() => {
+    if (!quoteId || loading) return;
+    if (quotes.some((n) => n.id === quoteId)) return;
+    if (deepLinkedRef.current === quoteId) return;
+    const id = window.setTimeout(() => {
+      deepLinkedRef.current = quoteId;
+      void api<{ quote: Quote | null }>(`/api/quotes/${encodeURIComponent(quoteId)}`)
+        .then((data) => {
+          if (!data.quote) return;
+          setQuotes((prev) => {
+            if (prev.some((n) => n.id === quoteId)) return prev;
+            return [data.quote as Quote, ...prev];
+          });
+          setTotal((t) => t + 1);
+        })
+        .catch(() => {});
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [quoteId, quotes, loading]);
+
+  // Scroll the highlighted quote into view once its card exists.
+  useEffect(() => {
+    if (!quoteId || scrolledRef.current) return;
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(`quote-${quoteId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        scrolledRef.current = true;
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [quoteId, quotes.length, loading]);
+
+  // A new deep-link should scroll again, even within the same session.
+  useEffect(() => {
+    scrolledRef.current = false;
+  }, [quoteId]);
+
+  useEffect(() => {
+    // Refetch editable content (hero text, banners) on mount and on every
+    // window focus so admin edits appear immediately without a reload.
+    async function refreshContent(): Promise<void> {
+      try {
+        const data = await api<{ content: Record<string, string> }>("/api/content");
+        setContent(data.content);
+      } catch {
+        setContent({});
+      }
+    }
+    void refreshContent();
+    const onFocus = (): void => void refreshContent();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
+  function clearFilters(): void {
+    router.push("/", { scroll: false });
+  }
+
+  function loadMore(): void {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (category) params.set("category", category);
+    if (tag) params.set("tag", tag);
+    if (sort !== "newest") params.set("sort", sort);
+    params.set("page", String(page + 1));
+    router.push(`/?${params.toString()}`, { scroll: false });
+  }
+
+  const remaining = total - quotes.length;
+  const activeFilter = Boolean(q || category || tag);
+
+  return (
+    <div className="space-y-6">
+      {showGame && <ServerGame onReady={handleGameReady} />}
+
+      <section className="pt-2 text-center">
+        <h1 className="font-serif text-3xl font-bold text-slate-900 dark:text-white md:text-4xl">{heroTitle}</h1>
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">{heroSubtitle}</p>
+      </section>
+
+      {!activeFilter && !error && <QuoteOfDay />}
+
+      <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
+        <span>
+          {error && quotes.length === 0
+            ? ""
+            : loading && quotes.length === 0
+              ? "Yuklanmoqda..."
+              : total === 0
+                ? "0 ta iqtibos"
+                : `${quotes.length} / ${total} ta iqtibos`}
+          {activeFilter ? " (filtrlangan)" : ""}
+        </span>
+        {activeFilter && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-blue-700 dark:hover:bg-blue-500"
+          >
+            Filtrni tozalash
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-center dark:border-rose-900/50 dark:bg-rose-950/40 sm:p-6">
+          <p className="text-sm font-medium text-rose-700 dark:text-rose-300">{error}</p>
+          <p className="mt-1 text-xs text-rose-500 dark:text-rose-400">
+            Server vaqtincha javob bermasligi mumkin. Qayta urinib ko&apos;ring yoki birozdan keyin kiring.
+          </p>
+          <button
+            type="button"
+            onClick={() => void fetchQuotes(page)}
+            className="mt-3 min-h-[44px] rounded-xl bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700 dark:hover:bg-rose-500"
+          >
+            Qayta urinish
+          </button>
+        </div>
+      )}
+
+      {!loading && quotes.length === 0 && !error && (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
+          <p className="text-sm text-slate-500 dark:text-slate-400">Hozircha iqtiboslar yo&apos;q. Birinchi bo&apos;lib qo&apos;shing!</p>
+        </div>
+      )}
+
+      {loading && quotes.length === 0 && !error && (
+        <div className="space-y-4" aria-busy="true">
+          <QuoteCardSkeleton />
+          <QuoteCardSkeleton />
+          <QuoteCardSkeleton />
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {quotes.map((quote, i) => (
+          <Fragment key={quote.id}>
+            <QuoteCard quote={quote} highlight={quote.id === quoteId} />
+            {feedDef && feedEvery > 0 && (i + 1) % feedEvery === 0 && <InFeedBanner def={feedDef} />}
+          </Fragment>
+        ))}
+      </div>
+
+      {loading && quotes.length > 0 && <QuoteCardSkeleton />}
+
+      {remaining > 0 && !error && (
+        <div className="flex justify-center pt-1">
+          <button
+            type="button"
+            onClick={loadMore}
+            disabled={loading}
+            className="min-h-[44px] rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-400 hover:text-blue-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-500 dark:hover:text-blue-400"
+          >
+            {loading ? "Yuklanmoqda..." : `Ko'proq ko'rsatish (yana ${remaining} ta)`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

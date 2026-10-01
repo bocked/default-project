@@ -2,11 +2,14 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { TermsContent } from "@/components/legal-content";
 import { PolicyViewer } from "@/components/policy-content";
+import { pageMeta } from "@/lib/siteMeta";
 
-export const metadata: Metadata = {
-  title: "Foydalanish shartlari | Iqtibosim",
+// Bare title — the root layout's "%s | Iqtibosim" template appends the suffix.
+export const metadata: Metadata = pageMeta({
+  path: "/terms",
+  title: "Foydalanish shartlari",
   description: "Iqtibosim saytidan foydalanish shartlari va qoidalari. Test rejimi va foydalanuvchi mas'uliyati haqida ma'lumot.",
-};
+});
 
 export default function TermsPage() {
   return (

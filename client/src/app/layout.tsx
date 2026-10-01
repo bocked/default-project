@@ -4,6 +4,7 @@ import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { I18nProvider } from "@/lib/i18n";
+import { DEFAULT_OG_IMAGE, SITE_NAME, SITE_URL } from "@/lib/siteMeta";
 import { SiteShell } from "@/components/SiteShell";
 import { ToastProvider } from "@/components/ToastProvider";
 import { CookieConsentGate } from "@/components/CookieConsentGate";
@@ -29,8 +30,21 @@ const playfair = Playfair_Display({
 const themeInit = `(function(){try{var t=localStorage.getItem('iqtibosim_theme');if(!t){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.classList.add('dark');}}catch(e){}})();`;
 
 export const metadata: Metadata = {
-  title: "Iqtibosim — iqtiboslar to'plami",
+  // Required for any relative URL-based metadata field (og:image, canonical,
+  // icons). Without it, Next raises a build error rather than silently emitting
+  // a broken relative URL that social crawlers cannot resolve.
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Iqtibosim — iqtiboslar to'plami",
+    // Child segments that only set `title` get "… | Iqtibosim" automatically.
+    template: "%s | Iqtibosim",
+  },
   description: "Fikrlarni to'playdigan, bo'limlar va heshteglar bo'yicha saralanadigan iqtiboslar sayti.",
+  applicationName: SITE_NAME,
+  keywords: ["iqtibos", "iqtiboslar", "motivatsiya", "maqolalar", "o'zbekcha iqtiboslar"],
+  authors: [{ name: SITE_NAME }],
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "Iqtibosim" },
   icons: {
@@ -40,6 +54,31 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
+  // Site-wide defaults. Individual routes override these via pageMeta() in
+  // their nested layout.tsx.
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    locale: "uz_UZ",
+    url: SITE_URL,
+    title: "Iqtibosim — iqtiboslar to'plami",
+    description: "Fikrlarni to'playdigan, bo'limlar va heshteglar bo'yicha saralanadigan iqtiboslar sayti.",
+    images: [
+      {
+        url: `${SITE_URL}${DEFAULT_OG_IMAGE.url}`,
+        width: DEFAULT_OG_IMAGE.width,
+        height: DEFAULT_OG_IMAGE.height,
+        alt: DEFAULT_OG_IMAGE.alt,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Iqtibosim — iqtiboslar to'plami",
+    description: "Fikrlarni to'playdigan, bo'limlar va heshteglar bo'yicha saralanadigan iqtiboslar sayti.",
+    images: [`${SITE_URL}${DEFAULT_OG_IMAGE.url}`],
+  },
+  formatDetection: { telephone: false, address: false, email: false },
 };
 
 export const viewport: Viewport = {

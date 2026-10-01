@@ -2,11 +2,14 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { CookieContent } from "@/components/legal-content";
 import { PolicyViewer } from "@/components/policy-content";
+import { pageMeta } from "@/lib/siteMeta";
 
-export const metadata: Metadata = {
-  title: "Cookie fayllari qoidalari | Iqtibosim",
+// Bare title — the root layout's "%s | Iqtibosim" template appends the suffix.
+export const metadata: Metadata = pageMeta({
+  path: "/cookies",
+  title: "Cookie fayllari qoidalari",
   description: "Iqtibosim saytida cookie fayllari qanday ishlatilishi va ularni boshqarish haqida ma'lumot.",
-};
+});
 
 export default function CookiesPage() {
   return (

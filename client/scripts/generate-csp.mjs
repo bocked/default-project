@@ -121,6 +121,25 @@ function cspFor(hashes) {
   ].join("; ") + ";";
 }
 
+// Generated file — do NOT edit out/_headers by hand, and do not keep a copy in
+// public/. This script is the single source of truth and it must be, because a
+// public/_headers cannot contain the per-page script hashes (they are not known
+// until after the export). A stale hand-written copy previously shipped a weak
+// CSP ('unsafe-inline', connect-src https:) whenever the build ran without this
+// post-step; the file is deleted to make that failure mode impossible.
+//
+// CACHE STRATEGY, and why each tier differs:
+//  - `/_next/static/*` and `/_next/*`  immutable 1 year. Next content-hashes
+//    these filenames, and the build id in the other _next paths changes on every
+//    deploy, so a URL can never go stale. (Note: older Next versions emitted
+//    /assets/* — that rule was dead config under Next 16 + Turbopack and was
+//    removed.)
+//  - HTML  max-age=0, must-revalidate. The HTML references the hashed assets
+//    above, so it must never be served from a stale cache entry after a deploy
+//    removed an old build's files. Revalidation returns a cheap 304.
+//  - Unhashed root assets (icons, og-image.png, the counters/PWA files) get a
+//    short TTL instead, because their URL is stable across deploys and they
+//    cannot be immutable.
 const base = [
   "/*",
   "  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload",
@@ -132,11 +151,32 @@ const base = [
   "  Cross-Origin-Resource-Policy: same-origin",
   "  X-XSS-Protection: 1; mode=block",
   "",
-  "/assets/*",
+  "/_next/static/*",
   "  Cache-Control: public, max-age=31536000, immutable",
   "",
+  "/_next/*",
+  "  Cache-Control: public, max-age=31536000, immutable",
+  "",
+  // The service worker must never be served stale: it is what decides which
+  // assets to keep, and a cached copy can resurrect references to files that no
+  // longer exist.
   "/sw.js",
   "  Cache-Control: public, max-age=0, must-revalidate",
+  "",
+  "/manifest.webmanifest",
+  "  Cache-Control: public, max-age=3600",
+  "",
+  "/icons/*",
+  "  Cache-Control: public, max-age=86400",
+  "",
+  "/og-image.png",
+  "  Cache-Control: public, max-age=86400",
+  "",
+  "/robots.txt",
+  "  Cache-Control: public, max-age=3600",
+  "",
+  "/sitemap.xml",
+  "  Cache-Control: public, max-age=3600",
   "",
 ];
 
@@ -152,6 +192,8 @@ for (const { file, hashes } of pages) {
   for (const p of pagePaths(file)) {
     lines.push(p);
     lines.push(`  Content-Security-Policy: ${csp}`);
+    // See the cache strategy note above: HTML revalidates on every request.
+    lines.push(`  Cache-Control: public, max-age=0, must-revalidate`);
     lines.push("");
     ruleCount++;
   }
