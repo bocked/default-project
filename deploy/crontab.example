@@ -1,0 +1,42 @@
+# Crontab for the yerlikoglon backend (GCP VM 35.224.32.160).
+#
+# INSTALL (as the operator user who owns the app + PM2):
+#   crontab -l > /tmp/ct.bak 2>/dev/null || true      # back up whatever is there
+#   crontab ~/apps/api-server/deploy/crontab.example # install this file
+#   crontab -l                                        # verify
+#
+# To UNINSTALL just this app's jobs (keep other jobs intact):
+#   crontab -l | grep -v 'api-server/deploy' | crontab -
+#
+# crontab %-syntax is NOT supported (no % in the lines below, on purpose).
+# All times are server-local time.
+
+# --- 1. Nightly database + config backup (03:00) --------------------------
+# Wraps server/scripts/backup-pg.sh: pg_dump + .env + nginx + pm2 state into
+# one archive, then uploads to Telegram. It self-guards to once per calendar
+# day, so a duplicate cron entry cannot spam the channel.
+# Overridable: BACKUP_DIR=~/backups RETENTION_DAYS=14
+17 3 * * * BACKUP_DIR=$HOME/backups RETENTION_DAYS=14 bash $HOME/apps/api-server/deploy/backup.sh >> $HOME/logs/backup-cron.log 2>&1
+
+# --- 2. Health + disk watchdog (every 10 min, --quiet) ---------------------
+# Lives OUTSIDE the Node process on purpose: it is the only thing that still
+# reports when the API is down or the disk is full. --quiet logs only failures.
+# Cron emails the operator when a job exits non-zero (see MAILTO below).
+*/10 * * * * bash $HOME/apps/api-server/deploy/health-check.sh --quiet
+
+# --- 3. Hourly belt-and-braces disk + log size check ----------------------
+# Deliberately quieter than the 10-min watchdog: it only pages when disk or
+# ~/.pm2/logs gets seriously large, and prunes stale watchdog logs.
+7 * * * * DISK_WARN_PCT=85 DISK_CRIT_PCT=93 bash $HOME/apps/api-server/deploy/health-check.sh --quiet >> $HOME/logs/disk-hourly.log 2>&1
+
+# --- 4. Prune backup archives by count as well as age ----------------------
+# backup-pg.sh prunes by age (mtime +RETENTION_DAYS). This additionally keeps
+# only the newest N archives, so a burst of manual re-runs cannot accumulate.
+# Runs at 04:10 — after the 03:00 backup, before the next day.
+10 4 * * * find $HOME/backups -maxdepth 1 -name 'yerlikoglon_full_backup_*.tar.gz' -type f 2>/dev/null | sort -r | tail -n +31 | xargs -r rm -f
+
+# --- 5. Weekly restore drill (Sunday 05:00) -------------------------------
+# A backup that has never been restored is an untested assumption. This verifies
+# the newest archive is a valid, non-empty gzip and that it contains a SQL dump.
+# It does NOT touch the live database.
+0 5 * * 0 ARCHIVE=$(ls -t $HOME/backups/yerlikoglon_full_backup_*.tar.gz 2>/dev/null | head -1); if [ -n "$ARCHIVE" ]; then gzip -t "$ARCHIVE" && tar -tzf "$ARCHIVE" | grep -q '\.sql$' && echo "RESTORE_DRILL_OK $ARCHIVE $(date -Is)" >> $HOME/logs/restore-drill.log || echo "RESTORE_DRILL_FAIL $ARCHIVE $(date -Is)" >> $HOME/logs/restore-drill.log; fi

@@ -1,0 +1,167 @@
+name: Deploy API Server (SSH)
+
+# Deploys the BACKEND (server/) to the GCP VM that runs PM2 + pm2-logrotate +
+# the backup cron. This is a SEPARATE workflow from deploy.yml, which builds
+# the client and ships it to Cloudflare Pages — different target, different
+# secrets, different failure modes. Both can be green at once.
+on:
+  push:
+    branches: [main]
+    paths:
+      # Only touch the VM when server code or the deploy tooling changes.
+      - "server/**"
+      - "deploy/**"
+      - ".github/workflows/deploy-server.yml"
+  # Manual trigger for a no-code-change redeploy (e.g. after `git pull` drift).
+  workflow_dispatch:
+
+concurrency:
+  group: api-server-deploy
+  # Never cancel a deploy mid-flight: a half-applied `git pull` + `pm2 reload`
+  # leaves the VM on a mixed tree. Let the new run queue instead.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Pull, install, migrate, build, reload PM2
+    runs-on: ubuntu-latest
+    # Production: only allow the GitHub-maintainer roles to run it, even though
+    # the `paths` filter already restricts which pushes can trigger it.
+    environment: production
+
+    steps:
+      - name: Validate required secrets are configured
+        # Fail fast with a clear message instead of an opaque SSH error, and
+        # never echo a secret value.
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          missing=""
+          [ -z "$VPS_HOST" ] && missing="$missing VPS_HOST"
+          [ -z "$VPS_USER" ] && missing="$missing VPS_USER"
+          [ -z "$VPS_SSH_KEY" ] && missing="$missing VPS_SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            exit 1
+          fi
+
+      - name: Write SSH private key to a 0600 file
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          # `install -m600` creates the file with the right mode directly, so
+          # the private key is never briefly world-readable between write and
+          # chmod (SSH refuses such a file anyway, but do not rely on it).
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/vps_key
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/vps_key
+
+      - name: Set up SSH host key
+        # Pin the host key rather than disabling verification. Use the real
+        # fingerprint from `ssh-keygen -lf` output on the VM in production.
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          # Real ed25519 fingerprint of the VM. Filled in as a secret so this
+          # file carries no machine-specific key material in git.
+          VPS_SSH_HOST_KEY: ${{ secrets.VPS_SSH_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          if [ -n "${VPS_SSH_HOST_KEY:-}" ]; then
+            printf '%s\n' "$VPS_SSH_HOST_KEY" > ~/.ssh/known_hosts
+            echo "Pinned host key from VPS_SSH_HOST_KEY."
+          else
+            echo "::warning::VPS_SSH_HOST_KEY not set — falling back to a"
+            echo "::warning::TOFU (Trust On First Use) accept-new for ${VPS_HOST}."
+            ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy (pull, install, migrate, build, reload, verify)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY_PATH: /home/runner/.ssh/vps_key
+          # Read the pushed SHA on the VM and print it, so the run log records
+          # exactly which commit is live.
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Only the SHA crosses the wire. Everything path-shaped ($HOME, the
+          # repo location) is resolved by the REMOTE shell below — expanding
+          # $HOME here would silently yield the runner's /home/runner.
+          ssh -i "$VPS_SSH_KEY_PATH" \
+              -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes \
+              "${VPS_USER}@${VPS_HOST}" \
+              "bash -s -- '$GIT_SHA'" <<'REMOTE'
+          set -euo pipefail
+          want="$1"
+          app_dir="$HOME/apps/api-server"
+          script="$app_dir/deploy/server-deploy.sh"
+
+          echo "== deploying ${want} to ${app_dir} =="
+          if [ ! -f "$script" ]; then
+            echo "::error::missing $script" >&2
+            exit 1
+          fi
+
+          # The script does git pull -> npm install -> prisma migrate deploy ->
+          # npm run build -> pm2 reload -> health/CORS self-check.
+          bash "$script"
+
+          echo "== verifying the VM is on the pushed commit =="
+          actual="$(git -C "$app_dir" rev-parse HEAD)"
+          echo "VM HEAD: $actual"
+          echo "want:    $want"
+          if [ "$actual" = "$want" ]; then
+            echo "exact match"
+          elif git -C "$app_dir" merge-base --is-ancestor "$want" "$actual"; then
+            # Another push landed while this run was deploying, so `git pull`
+            # fetched something newer. The commit we were asked to deploy is
+            # still contained in the deployed tree — that is fine, not a failure.
+            echo "VM is AHEAD of the pushed commit (newer push landed mid-deploy) — ok"
+          else
+            echo "::error::VM HEAD does not contain the pushed commit; the pull did not take effect" >&2
+            exit 1
+          fi
+
+          echo "== pm2 status =="
+          pm2 jlist | node -e '
+            let s = "";
+            process.stdin.on("data", (d) => (s += d)).on("end", () => {
+              const apps = JSON.parse(s);
+              let bad = 0;
+              for (const a of apps) {
+                if (a.name === "pm2-logrotate" || a.name === "keepalive") continue;
+                const st = a.pm2_env?.status;
+                console.log(`${a.name}: ${st} restarts=${a.pm2_env?.restart_time ?? 0}`);
+                if (st !== "online") bad++;
+              }
+              process.exit(bad ? 1 : 0);
+            });
+          ' || { echo "::error::a PM2 process is not online" >&2; exit 1; }
+          REMOTE
+
+      - name: Post-deploy reachability probe from GitHub's network
+        # Catches failures the loopback check cannot see (nginx, TLS, DNS, and
+        # anything Cloudflare does in front of the origin).
+        run: |
+          set -euo pipefail
+          url="https://api.yerlikoglon.uz/health"
+          code="$(curl -sS -o /tmp/h.json -w '%{http_code}' -m 20 "$url" || echo 000)"
+          body="$(cat /tmp/h.json 2>/dev/null || true)"
+          echo "GET $url -> $code $body"
+          [ "$code" = "200" ] || { echo "::error::public health returned $code" >&2; exit 1; }
+          echo "$body" | grep -q '"ok":true' || { echo "::error::unexpected body" >&2; exit 1; }
+
+      - name: Remove SSH key
+        # The runner is destroyed anyway, but do not leave key material behind
+        # for the rest of the job's steps.
+        if: always()
+        run: rm -f ~/.ssh/vps_key
