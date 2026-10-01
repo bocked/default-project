@@ -49,6 +49,14 @@ export async function cleanDatabase(): Promise<void> {
     prisma.collectionQuote.deleteMany(),
     prisma.collection.deleteMany(),
     prisma.quote.deleteMany(),
+    // Standalone (no FK to User). Needed because telegram-quick.test.ts seeds
+    // fixed session ids ("a".repeat(32), "b"..., "c"...) and hit a unique
+    // constraint on tokenHash whenever the test DB already held rows from an
+    // earlier run — i.e. the suite was only green on a freshly created database.
+    // Deliberately NOT wiping AdminFeature/AdminGrant here: the built-in feature
+    // registry is seeded at boot, and clearing those rows mid-suite breaks the
+    // admin RBAC tests.
+    prisma.telegramQuickSession.deleteMany(),
     prisma.user.deleteMany(),
     prisma.tag.deleteMany(),
     prisma.category.deleteMany(),

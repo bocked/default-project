@@ -3,11 +3,14 @@ import { channelChatIdFor, formatLastChecked, maskToken, parseChannelValue } fro
 
 describe("maskToken", () => {
   it("hides the middle of a long token", () => {
-    const masked = maskToken("8998733338:AAFKHKaZh8OXlvHgx7TQ5ae6SPF5DId0AEw");
-    expect(masked.startsWith("899873")).toBe(true);
-    expect(masked.endsWith("AEw")).toBe(true);
+    // Structurally valid but deliberately fake (bot id 1000000000 is reserved
+    // for tests). A real token must NEVER be pasted into this repo: anyone with
+    // read access could use it to control the bot until @BotFather revokes it.
+    const masked = maskToken("1000000000:TESTONLYfakeTokenValue0123456789");
+    expect(masked.startsWith("100000")).toBe(true);
+    expect(masked.endsWith("6789")).toBe(true);
     expect(masked).toContain("…");
-    expect(masked).not.toContain("AFKHKaZh8OX");
+    expect(masked).not.toContain("fakeTokenValue");
   });
 
   it("returns an empty string for an empty token", () => {

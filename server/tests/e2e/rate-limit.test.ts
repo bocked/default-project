@@ -2,7 +2,14 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import type { Server as HttpServer } from "node:http";
 import type { Server as IOServer } from "socket.io";
 import { createApp } from "../../src/app.js";
-import { apiLimiter, authBruteLimiter, authLimiter, authPublicLimiter } from "../../src/lib/rateLimit.js";
+import {
+  apiLimiter,
+  authBruteLimiter,
+  authLimiter,
+  authPublicLimiter,
+  resendWebhookLimiter,
+  telegramWebhookLimiter,
+} from "../../src/lib/rateLimit.js";
 import { request, unique } from "./helpers.js";
 
 /**
@@ -23,7 +30,14 @@ function resetLimiters(): void {
     authLimiter.resetKey(key);
     authPublicLimiter.resetKey(key);
     authBruteLimiter.resetKey(key);
+    telegramWebhookLimiter.resetKey(key);
+    resendWebhookLimiter.resetKey(key);
   }
+}
+
+/** Only the global 100/min API budget, so a per-route limiter can be observed. */
+function resetApiLimiter(): void {
+  for (const key of RATE_KEYS) apiLimiter.resetKey(key);
 }
 
 describe("E2E: HTTP rate limiting (FORCE_RATE_LIMITS=1)", () => {
@@ -96,5 +110,50 @@ describe("E2E: HTTP rate limiting (FORCE_RATE_LIMITS=1)", () => {
     expect(statuses.slice(0, 10)).not.toContain(429);
     expect(statuses[9]).not.toBe(429);
     expect(statuses[10]).toBe(429);
+  });
+
+  /**
+   * The webhook routes are authenticated by a secret/signature, but an unbounded
+   * number of accepted calls still costs signature verification plus DB work.
+   *
+   * These assert the per-webhook cap is wired up. No valid secret is configured
+   * in the test env, so the handlers answer 401/500 rather than doing real work.
+   * That is fine: the limiter runs BEFORE that auth check, so exhausting the
+   * budget yields 429 instead — which is precisely the property we want (the
+   * expensive path is capped for an attacker who does hold a valid secret).
+   *
+   * Note the mount order in app.ts: `/api/webhooks` is registered BEFORE the
+   * global apiLimiter, so the Resend webhook previously had no cap at all;
+   * `/api/telegram` sits after it and inherited 100/min (~6000/hr) from the
+   * global limiter, which the new 1000/hr rule now tightens.
+   */
+  it("caps the Telegram webhook at 1000 requests per hour", async () => {
+    // The global apiLimiter (100/min) also applies to /api/telegram, so it is
+    // periodically reset here to prove the *webhook* limiter is the binding cap
+    // at exactly 1000/hour.
+    for (let i = 0; i < 1002; i++) {
+      if (i % 90 === 0) resetApiLimiter();
+      const res = await fetch(`${base}/api/telegram/webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ update_id: i }),
+      });
+      if (i < 1000) expect(res.status).toBe(401);
+      else expect(res.status).toBe(429);
+    }
+  });
+
+  it("caps the Resend webhook at 300 requests per hour", async () => {
+    // No RESEND_WEBHOOK_SECRET in the test env, so the handler rejects (500)
+    // after logging; anything past the budget is throttled (429).
+    for (let i = 0; i < 302; i++) {
+      const res = await fetch(`${base}/api/webhooks/resend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "email.sent" }),
+      });
+      if (i < 300) expect(res.status).not.toBe(429);
+      else expect(res.status).toBe(429);
+    }
   });
 });

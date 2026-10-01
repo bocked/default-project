@@ -20,9 +20,31 @@ function bool(value: string | undefined, fallback = false): boolean {
  * production. A missing or still-default ADMIN_PASSWORD / JWT_SECRET is a
  * critical vulnerability: the process dies FATAL so it can never run with a
  * guessable key. Dev/test keeps the fallback so local runs stay frictionless.
+ *
+ * `minLength` additionally rejects a secret that is set but too short to be
+ * unguessable. Rejecting only the literal placeholder is not enough — a real
+ * deployment left with `JWT_SECRET=a` passes that check yet lets anyone forge an
+ * admin token, because the signing key is the whole security boundary.
  */
-function required(value: string | undefined, name: string, insecureDefaults: string[]): string {
-  if (value && !insecureDefaults.includes(value)) return value;
+function required(
+  value: string | undefined,
+  name: string,
+  insecureDefaults: string[],
+  minLength = 0,
+): string {
+  if (value && !insecureDefaults.includes(value)) {
+    if (minLength > 0 && value.length < minLength) {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error(
+          `[FATAL] ${name} is only ${value.length} characters long (minimum ${minLength}). ` +
+            `A short ${name} is guessable, so the server refuses to start. ` +
+            `Generate one with: openssl rand -base64 ${Math.ceil((minLength * 3) / 4)}`,
+        );
+      }
+    } else {
+      return value;
+    }
+  }
   if (process.env.NODE_ENV === "production") {
     throw new Error(
       `[FATAL] ${name} is missing or still the insecure default "${insecureDefaults[0]}" in production. ` +
@@ -32,11 +54,46 @@ function required(value: string | undefined, name: string, insecureDefaults: str
   return value ?? insecureDefaults[0];
 }
 
+/**
+ * Comma-separated identity list (ADMIN_EMAILS / SUPER_ADMIN_EMAILS).
+ *
+ * These decide WHO gets admin rights at signup/login, so an unset value in
+ * production must never quietly fall back to a developer's personal address
+ * committed in source. Production therefore fails FATAL unless the list is
+ * explicitly provided — set ADMIN_EMAILS/SUPER_ADMIN_EMAILS in server/.env.
+ */
+function requiredList(value: string | undefined, name: string, devFallback: string): string[] {
+  const parsed = (value ?? devFallback)
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (process.env.NODE_ENV === "production" && !value?.trim()) {
+    throw new Error(
+      `[FATAL] ${name} is not set in production. This list decides which accounts ` +
+        `are granted admin rights at login, so it must be configured explicitly ` +
+        `(comma-separated emails) rather than defaulting. Restart after setting it.`,
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Resolved once, before the `config` object literal, because two fields derive
+ * from it (the SUPER_ADMIN_EMAILS list itself and the Resend sandbox
+ * recipient). Hoisting avoids reading `config.superAdminEmails` from inside the
+ * object literal that defines `config`, which would hit the temporal dead zone.
+ */
+const superAdminEmails = requiredList(process.env.SUPER_ADMIN_EMAILS, "SUPER_ADMIN_EMAILS", "");
+
 export const config = {
   port: num(process.env.PORT, 4000),
   nodeEnv: process.env.NODE_ENV ?? "development",
   isDev: (process.env.NODE_ENV ?? "development") !== "production",
-  databaseUrl: process.env.DATABASE_URL ?? "postgresql://canvas:canvas@localhost:5432/canvas?schema=public",
+  databaseUrl: required(
+    process.env.DATABASE_URL,
+    "DATABASE_URL",
+    ["postgresql://canvas:canvas@localhost:5432/canvas?schema=public"],
+  ),
   redisUrl: process.env.REDIS_URL ?? "",
   // Strict CORS allow-list (defaults to the production origins; the wildcard
   // "*" must never be used). Comma-separated env value overrides this.
@@ -47,20 +104,15 @@ export const config = {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
-  adminPassword: required(process.env.ADMIN_PASSWORD, "ADMIN_PASSWORD", ["change-me"]),
+  adminPassword: required(process.env.ADMIN_PASSWORD, "ADMIN_PASSWORD", ["change-me"], 12),
   // Emails whose accounts are granted the ADMIN role (on startup, register or login).
-  adminEmails: (process.env.ADMIN_EMAILS ?? "mirabbostolqinjonov@gmail.com")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean),
+  // Must be set explicitly in production — see requiredList() for why.
+  adminEmails: requiredList(process.env.ADMIN_EMAILS, "ADMIN_EMAILS", ""),
   // Emails whose accounts get the SUPER_ADMIN role — the only role allowed to
   // manually verify users (bypass email/phone verification for posting) and to
   // permanently delete quotes. Can be extended/overridden via the
   // SUPER_ADMIN_EMAILS env var (comma-separated, later logins never demote).
-  superAdminEmails: (process.env.SUPER_ADMIN_EMAILS ?? "mirabbostolqinjonov@gmail.com")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean),
+  superAdminEmails,
   // Optional comma-separated list of IPs allowed to reach /api/admin/*. When
   // empty, the admin API stays open to any authenticated admin.
   adminIpWhitelist: (process.env.ADMIN_IP_WHITELIST ?? "")
@@ -77,7 +129,10 @@ export const config = {
   // ------------------------------------------------------------------
   // Iqtibosim (auth, email verification, Telegram moderation)
   // ------------------------------------------------------------------
-  jwtSecret: required(process.env.JWT_SECRET, "JWT_SECRET", ["dev-secret-change-me"]),
+  // 32 chars is the practical floor for an HMAC-SHA256 signing key: anything
+  // shorter is brute-forceable, and JWT_SECRET is what makes an admin token
+  // unforgeable.
+  jwtSecret: required(process.env.JWT_SECRET, "JWT_SECRET", ["dev-secret-change-me"], 32),
   // Public frontend origin, used to build email verification links.
   appUrl: process.env.APP_URL ?? "http://localhost:3000",
   // Terms of Use version users must accept. Bump whenever the /terms text is
@@ -109,11 +164,10 @@ export const config = {
       ? bool(process.env.RESEND_SANDBOX, false)
       : (process.env.EMAIL_FROM ?? "").includes("@resend.dev"),
   // The only recipient allowed while sandboxed. Defaults to the first
-  // SUPER_ADMIN_EMAILS entry so the project owner can always receive a test
-  // send; override with RESEND_SANDBOX_TO.
+  // SUPER_ADMIN_EMAILS entry (already validated as set in production) so the
+  // project owner can always receive a test send; override with RESEND_SANDBOX_TO.
   resendSandboxTo:
-    (process.env.RESEND_SANDBOX_TO ?? "").trim().toLowerCase() ||
-    (process.env.SUPER_ADMIN_EMAILS ?? "mirabbostolqinjonov@gmail.com").split(",")[0].trim().toLowerCase(),
+    (process.env.RESEND_SANDBOX_TO ?? "").trim().toLowerCase() || superAdminEmails[0] || "",
   // Resend webhook signing secret (issued by Resend when a webhook endpoint is
   // created). Required by /api/webhooks/resend so delivery events can only be
   // written by Resend itself.

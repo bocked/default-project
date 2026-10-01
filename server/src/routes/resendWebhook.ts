@@ -6,6 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import { sendAdminNotification } from "../lib/telegram.js";
+import { resendWebhookLimiter } from "../lib/rateLimit.js";
 
 /**
  * Resend delivery webhook (Svix envelope). Resend signs every delivery event
@@ -68,6 +69,10 @@ function verifySvixSignature(
 }
 
 export const resendWebhookRouter = Router();
+
+// Per-IP blast-radius cap. Deliberately mounted BEFORE the raw body parser so
+// a flood from one host is rejected without us buffering/parsing every body.
+resendWebhookRouter.use(resendWebhookLimiter);
 
 // Raw body capture (Buffer) — the HMAC covers the exact bytes received.
 resendWebhookRouter.use(express.raw({ type: () => true }));

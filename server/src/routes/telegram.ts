@@ -31,6 +31,7 @@ import { sendUserApprovedEmail } from "../lib/email.js";
 import { POLICY_LABELS, approvePolicy } from "../lib/policies.js";
 import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { executeAdminCommand, executeUserApprovalCommand } from "../lib/adminCommands.js";
+import { telegramWebhookLimiter } from "../lib/rateLimit.js";
 
 export const telegramRouter = Router();
 
@@ -46,7 +47,7 @@ function secureEqual(a: string, b: string): boolean {
  * Only Telegram can call this endpoint — it is verified through the secret
  * token exchanged when the webhook is registered (`X-Telegram-Bot-Api-Secret-Token`).
  */
-telegramRouter.use((req, res, next) => {
+telegramRouter.use(telegramWebhookLimiter, (req, res, next) => {
   const secret = req.header("x-telegram-bot-api-secret-token") ?? "";
   if (!config.telegramWebhookSecret || !secureEqual(secret, config.telegramWebhookSecret)) {
     res.status(401).json({ error: "Unauthorized" });

@@ -135,3 +135,42 @@ export const bannerTrackLimiter = rateLimit({
   ...standard,
   message: { error: "Too many requests" },
 });
+
+/**
+ * Guard on the Telegram webhook routes (per IP per hour, 1000 requests).
+ *
+ * These endpoints are authenticated by the shared secret header
+ * (`X-Telegram-Bot-Api-Secret-Token`), so a limiter alone is not an auth
+ * control — but without one a captured/leaked secret, or a replay flood from
+ * a single host, turns into unbounded DB writes (channel id capture, admin
+ * text handling) and unbounded CPU on the update dispatch. 1000/h is far above
+ * real Telegram traffic (a busy channel is single-digit updates per hour) so
+ * this never throttles the bot, it only caps abuse.
+ *
+ * Note: Telegram fans out from a small set of published egress ranges, so all
+ * legitimate updates can share one source IP. The limit is therefore set high
+ * enough that a shared IP cannot be exhausted by normal traffic.
+ */
+export const telegramWebhookLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 1000,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});
+
+/**
+ * Guard on POST /api/webhooks/resend (per IP per hour, 300 requests).
+ *
+ * Authenticated by a Svix signature over the raw body, so like the Telegram
+ * webhook this is a blast-radius cap rather than an auth control: it bounds how
+ * much signature verification plus DB work a single host can request. Resend
+ * batches are small, so 300/h is generous.
+ */
+export const resendWebhookLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 300,
+  skip,
+  ...standard,
+  message: { error: "Too many requests" },
+});
