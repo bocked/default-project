@@ -7,6 +7,7 @@ import { pinoHttp } from "pino-http";
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { config } from "./config.js";
+import { corsOriginDecision } from "./lib/corsRules.js";
 import { apiRouter } from "./routes/api.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
@@ -44,21 +45,13 @@ function maskSecret(value: string, visible = 2): string {
   return `${value.slice(0, visible)}${"*".repeat(value.length - visible * 2)}${value.slice(-visible)}`;
 }
 
-export function originAllowed(origin: string): boolean {
-  const origins = config.corsOrigins;
-  if (origins.includes("*")) return true;
-  return origins.some((o) => {
-    if (o.startsWith("https://*.")) {
-      const suffix = o.slice("https://*.".length);
-      return origin === `https://${suffix}` || origin.endsWith(`.${suffix}`);
-    }
-    return o === origin;
-  });
-}
+export { originAllowed } from "./lib/corsRules.js";
 
+// `cors` origin callback used by both the HTTP middleware and Socket.IO. A
+// deny simply omits Access-Control-Allow-Origin (browser blocks client-side);
+// it never errors, so disallowed Origins can't produce a 500.
 function corsOrigin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void): void {
-  if (!origin || originAllowed(origin)) callback(null, true);
-  else callback(new Error("CORS policy violation: Access Denied"));
+  callback(null, corsOriginDecision(origin));
 }
 
 export interface CreateAppOptions {
@@ -170,9 +163,11 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
     })
   );
 
-  // Strict CORS allow-list (info-reading requests from unknown origins are
-  // denied). Credentials are required for the HttpOnly refresh cookie, so CORS
-  // must echo the exact origin instead of "*".
+  // Strict CORS allow-list (info-reading requests from unknown origins are not
+  // reflected in Access-Control-Allow-Origin, so the browser blocks them
+  // client-side; the server itself never answers with a 500). Credentials are
+  // required for the HttpOnly refresh cookie, so CORS must echo the exact
+  // origin instead of "*".
   app.use(
     cors({
       origin: corsOrigin,

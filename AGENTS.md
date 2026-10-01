@@ -11,7 +11,7 @@
 - **Frontend Dev Port:** `3000` (Next.js)
 - **PM2 App Name:** `yerlikoglon-api` (`deploy/ecosystem.config.cjs`; reposi `~/apps/api-server`, server katalogi `~/apps/api-server/server`)
 - **PM2 Buyrug'i:** `pm2 reload yerlikoglon-api`
-- **CORS Origins:** `http://localhost:3000`, `https://*.pages.dev`, `https://yerlikoglon.uz`, `https://*.yerlikoglon.uz`, `https://api.yerlikoglon.uz`
+- **CORS Origins:** `http://localhost:3000`, `https://*.pages.dev`, `https://yerlikoglon.uz`, `https://www.yerlikoglon.uz`, `https://*.yerlikoglon.uz`, `https://api.yerlikoglon.uz`
 
 ## 3. Maxfiylik va Muhit Sozlamalari (.env)
 - Maxfiy kalitlar, login, parol va tokenlar kod ichida yozilishi taqiqlanadi (hech qanday hardcode).
