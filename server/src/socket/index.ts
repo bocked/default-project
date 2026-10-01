@@ -50,17 +50,16 @@ function emitToAdmins(io: Server, event: string, payload: unknown): void {
 }
 
 export function initSocket(io: Server): void {
+  // Ban events carry the banned IP address and its reason. They must reach the
+  // affected sockets (via disconnectBannedIp) and the admin panels, never the
+  // public audience: `io.emit` would hand every connected visitor the ban list.
   bus.subscribe("admin:ban", (payload) => {
     const p = payload as { ipAddress: string };
     disconnectBannedIp(io, p.ipAddress);
-    io.emit("admin:ban", payload);
+    emitToAdmins(io, "admin:ban", payload);
   });
-  bus.subscribe("admin:unban", (payload) => io.emit("admin:unban", payload));
-  bus.subscribe("admin:log", (payload) => {
-    for (const socket of io.sockets.sockets.values()) {
-      if (socket.data.isAdmin) socket.emit("admin:log", payload);
-    }
-  });
+  bus.subscribe("admin:unban", (payload) => emitToAdmins(io, "admin:unban", payload));
+  bus.subscribe("admin:log", (payload) => emitToAdmins(io, "admin:log", payload));
   // Dynamic-registry & policy-review push: delivered on top of the bus so every
   // instance forwards it, then re-broadcast to the connected admin sockets.
   bus.subscribe("admin:feature:new", (payload) => emitToAdmins(io, "admin:feature:new", payload));
