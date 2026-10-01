@@ -2,6 +2,7 @@ import { Router } from "express";
 import { clientIp } from "../lib/ip.js";
 import { countBannerEvent, isBannerSlot, isBotUserAgent } from "../lib/bannerAnalytics.js";
 import { bannerTrackLimiter } from "../lib/rateLimit.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 
 export const bannersRouter = Router();
 
@@ -14,7 +15,7 @@ bannersRouter.use(bannerTrackLimiter);
  * Bots and missing User-Agents are rejected (403); the 1h per-visitor dedupe
  * keeps every slot counting at most once per hour per IP+UA combination.
  */
-bannersRouter.post("/track", async (req, res) => {
+bannersRouter.post("/track", asyncHandler(async (req, res) => {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const slot = body.slot;
   const type = body.type;
@@ -36,4 +37,4 @@ bannersRouter.post("/track", async (req, res) => {
   const ip = clientIp(req.headers);
   const counted = await countBannerEvent(slot, type, ip, userAgent ?? "");
   res.status(200).json({ ok: true, counted });
-});
+}));

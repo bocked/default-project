@@ -13,6 +13,8 @@ import {
   sanitizeSettings,
 } from "../lib/telegramSettings.js";
 import { bus } from "../lib/bus.js";
+import { logger } from "../lib/logger.js";
+import { clientIp } from "../lib/ip.js";
 import {
   telegramSettingsUpdateSchema,
   telegramTestSchema,
@@ -51,7 +53,7 @@ adminTelegramRouter.put("/settings", validateBody(telegramSettingsUpdateSchema),
       targetType: "telegram",
       targetId: "main",
       detail: buildChangeSummary(patch, result.reinitialized, result.approvalReinitialized),
-      ip: null,
+      ip: clientIp(req.headers),
     });
     addLog(
       "info",
@@ -63,14 +65,18 @@ adminTelegramRouter.put("/settings", validateBody(telegramSettingsUpdateSchema),
       botCheck: result.botCheck ?? null,
       approvalReinitialized: result.approvalReinitialized,
       approvalBotCheck: result.approvalBotCheck ?? null,
-    });
+    }).catch(() => {});
     res.json({
       settings: result.settings,
       reinitialized: result.reinitialized,
       approvalReinitialized: result.approvalReinitialized,
     });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : "Sozlamalar saqlanmadi" });
+    // Never echo the raw error: Prisma embeds the invocation arguments in its
+    // message, which would put the live bot token in the response body (and in
+    // Sentry). The details go to the server log only.
+    logger.error({ err }, "telegram settings save failed");
+    res.status(500).json({ error: "Sozlamalar saqlanmadi" });
   }
 });
 

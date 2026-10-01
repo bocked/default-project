@@ -255,6 +255,13 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
   app.use("/api/admin", adminRouter);
   app.use("/api/telegram", telegramRouter);
 
+  // Anything under /api that no router claimed answers with JSON. Without this,
+  // Express falls through to its default HTML 404, so a client hitting a
+  // mistyped or removed endpoint gets HTML where it expects a parseable body.
+  app.use("/api", (_req: express.Request, res: express.Response) => {
+    res.status(404).json({ error: "Not found" });
+  });
+
   // Sentry error handler first (captures), then the JSON responder below.
   setupSentryErrorHandler(app);
 

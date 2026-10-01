@@ -361,14 +361,16 @@ export const publicFeedbackSchema = z.object({
 export type PublicFeedback = z.infer<typeof publicFeedbackSchema>;
 
 export const settingsUpdateSchema = z.object({
-  settings: z.array(
-    z.object({
-      key: z.string().trim().min(1).max(120),
-      value: z.string().trim().max(4000),
-      label: z.string().trim().max(200),
-      group: z.enum(["general", "seo"]).default("general"),
-    })
-  ),
+  settings: z
+    .array(
+      z.object({
+        key: z.string().trim().min(1).max(120),
+        value: z.string().trim().max(4000),
+        label: z.string().trim().max(200),
+        group: z.enum(["general", "seo"]).default("general"),
+      })
+    )
+    .max(500),
 });
 export type SettingsUpdate = z.infer<typeof settingsUpdateSchema>;
 

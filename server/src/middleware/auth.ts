@@ -1,10 +1,11 @@
-import { NextFunction, Request, Response } from "express";
+import { NextFunction, Request, RequestHandler, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { verifyAuthToken } from "../lib/tokens.js";
 import { isPremiumActive } from "../lib/premium.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 
 /** Requires a valid `Authorization: Bearer <jwt>` header and a known user. */
-export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+export const requireAuth: RequestHandler = asyncHandler(async (req, res, next) => {
   const token = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!token) {
     res.status(401).json({ error: "Unauthorized" });
@@ -26,13 +27,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
   req.user = user;
   next();
-}
+});
 
 /** Attaches `req.user` when a valid Bearer token is presented; otherwise the
  *  request continues as a guest. Used by public routes that personalize the
  *  response (quiz detail returns the caller's last attempt, quote detail its
  *  liked state) without forcing authentication. */
-export async function optionalAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
+export const optionalAuth: RequestHandler = asyncHandler(async (req, _res, next) => {
   const token = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!token) {
     next();
@@ -50,7 +51,7 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
   }
   req.user = user;
   next();
-}
+});
 
 /** True for a profile that can post without the email/phone verification:
  *  either verified normally, manually cleared by a SUPER_ADMIN, or VIP. */

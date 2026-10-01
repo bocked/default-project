@@ -127,16 +127,22 @@ describe("E2E: Telegram settings (admin-managed bot)", () => {
     expect(status.json.channelResolved).toBeNull();
   });
 
-  it("an empty token clears the token and returns to disabled without a network call", async () => {
+  it("an empty token leaves the stored token untouched", async () => {
+    const before = await prisma.telegramSettings.findUniqueOrThrow({ where: { id: "main" } });
     const res = await request(base, "PUT", "/api/admin/telegram/settings", {
       token: superAdmin.token,
       body: { botToken: "" },
     });
     expect(res.status).toBe(200);
-    expect(res.json.reinitialized).toBe(true);
-    expect(res.json.settings.botTokenSet).toBe(false);
-    expect(res.json.settings.botStatus).toBe("disabled");
-    expect(res.json.settings.botId).toBeNull();
+    // Empty means "keep what is stored", matching the settings form contract
+    // ("bo'sh = eski saqlanadi") and its habit of omitting the field when the
+    // input is untouched. Treating it as "erase" silently took a working bot
+    // offline when an admin saved an unrelated setting.
+    expect(res.json.reinitialized).toBe(false);
+    expect(res.json.settings.botTokenSet).toBe(true);
+    expect((await prisma.telegramSettings.findUniqueOrThrow({ where: { id: "main" } })).botToken).toBe(
+      before.botToken,
+    );
   });
 
   it("a stored channelChatId is preferred by status.channelResolved", async () => {

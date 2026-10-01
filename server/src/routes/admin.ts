@@ -16,6 +16,7 @@ import { invalidateCaches, CACHE_PREFIXES } from "../lib/redisCache.js";
 import { listContent, getContent } from "../lib/content.js";
 import { isBannerSlot, bannerStats, resetBannerStats } from "../lib/bannerAnalytics.js";
 import { clientIp } from "../lib/ip.js";
+import { sanitizeContentValue } from "../lib/sanitizeHtml.js";
 import { bulkEffectivePermissions, effectivePermissionsFor, listFeatures } from "../lib/permissionRegistry.js";
 import { runPolicyImpactReview, IMPORTANT_SETTING_KEYS } from "../lib/policyImpact.js";
 import { todayAnalytics, visitorHistory } from "../lib/analytics.js";
@@ -661,14 +662,22 @@ adminRouter.get("/users", checkPermission("canViewUsers"), async (req, res) => {
   }
 });
 
-async function guardTargetUser(res: import("express").Response, id: string): Promise<boolean> {
+// Moderation guards for accounts other than the acting admin. `allowAdmin`
+// is set by callers that legitimately need to act on an admin account (e.g.
+// unblock) — everything else must refuse admin targets outright, so a
+// sub-admin holding only `canManageUsers` cannot lock the super admin out.
+async function guardTargetUser(
+  res: import("express").Response,
+  id: string,
+  allowAdmin = false,
+): Promise<boolean> {
   const target = await prisma.user.findUnique({ where: { id } });
   if (!target) {
     res.status(404).json({ error: "Foydalanuvchi topilmadi" });
     return false;
   }
-  if (target.role === "ADMIN" || target.role === "SUPER_ADMIN") {
-    res.status(400).json({ error: "Admin hisobini bloklash yoki o'chirish mumkin emas" });
+  if (!allowAdmin && (target.role === "ADMIN" || target.role === "SUPER_ADMIN")) {
+    res.status(403).json({ error: "Admin hisobini bloklash yoki o'chirish mumkin emas" });
     return false;
   }
   return true;
@@ -700,6 +709,10 @@ adminRouter.post("/users/:id/block", checkPermission("canManageUsers"), async (r
 // POST /api/admin/users/:id/unblock
 adminRouter.post("/users/:id/unblock", checkPermission("canManageUsers"), async (req, res) => {
   try {
+    // Unlike block/delete, unblocking an admin account is a legitimate recovery
+    // action, so `allowAdmin` is set — but the target must still exist (a blind
+    // `update` on a deleted id threw P2025 and surfaced as a 500).
+    if (!(await guardTargetUser(res, req.params.id, true))) return;
     await prisma.user.update({
       where: { id: req.params.id },
       data: { blocked: false, blockedAt: null },
@@ -743,9 +756,9 @@ adminRouter.delete("/users/:id", checkPermission("canManageUsers"), async (req, 
 // PATCH /api/admin/users/:id/role - grant, demote or fully revoke admin rights.
 // The chosen role is pinned in `roleOverride`, so config-based auto-promotion
 // (ADMIN_EMAILS / SUPER_ADMIN_EMAILS on login and at boot) can never silently
-// restore a revoked role. Self-change is blocked; only a SUPER_ADMIN may grant
-// or revoke the SUPER_ADMIN role (self-protection: one super admin cannot be
-// locked out by a lesser admin).
+// restore a revoked role. Self-change is blocked; granting ADMIN or SUPER_ADMIN
+// is reserved for SUPER_ADMIN (self-protection: one super admin cannot be locked
+// out by a lesser admin, and a lesser admin cannot promote its peers).
 adminRouter.patch("/users/:id/role", checkPermission("canManageUsers"), validateBody(userRoleUpdateSchema), async (req, res) => {
   try {
     const { role } = res.locals.body as UserRoleUpdate;
@@ -757,6 +770,19 @@ adminRouter.patch("/users/:id/role", checkPermission("canManageUsers"), validate
     const actorId = adminId(req);
     if (actorId && target.id === actorId) {
       res.status(400).json({ error: "O'zingizning rolingizni o'zgartira olmaysiz" });
+      return;
+    }
+    // Granting ADMIN is itself an escalation: a fresh admin inherits every
+    // feature whose registry default is still `true`, so a sub-admin holding
+    // only `canManageUsers` could otherwise mint a peer with broader rights than
+    // its own. Demotions stay with `canManageUsers` so a compromised sub-admin
+    // can still be locked out.
+    if (
+      role === "ADMIN" &&
+      req.admin?.role !== "SUPER_ADMIN" &&
+      req.admin?.role !== "ADMIN_PASSWORD"
+    ) {
+      res.status(403).json({ error: "Admin rolini faqat super admin berishi mumkin" });
       return;
     }
     if ((target.role === "SUPER_ADMIN" || role === "SUPER_ADMIN") && req.admin?.role !== "SUPER_ADMIN" && req.admin?.role !== "ADMIN_PASSWORD") {
@@ -791,6 +817,7 @@ adminRouter.patch("/users/:id/role", checkPermission("canManageUsers"), validate
 // Telegram PUSH. Self-promotion is blocked.
 adminRouter.patch(
   "/users/:id/make-admin",
+  requireSuperAdmin,
   checkPermission("canManageUsers"),
   validateBody(adminMakeUserSchema),
   async (req, res) => {
@@ -820,22 +847,30 @@ adminRouter.patch(
         res.status(400).json({ error: "Faqat USER rolidagi foydalanuvchi admin qilinadi" });
         return;
       }
-      const user = await prisma.user.update({
-        where: { id: target.id },
-        data: { role: "ADMIN", roleOverride: "ADMIN" },
-      });
       const defaultMap = new Map(features.map((f) => [f.key, f.defaultEnabled]));
-      for (const [key, value] of entries) {
-        if (value === defaultMap.get(key)) {
-          await prisma.adminGrant.deleteMany({ where: { adminId: user.id, featureKey: key } });
-        } else {
-          await prisma.adminGrant.upsert({
-            where: { adminId_featureKey: { adminId: user.id, featureKey: key } },
-            update: { enabled: value },
-            create: { adminId: user.id, featureKey: key, enabled: value },
-          });
+      // The role flip and the grant rows must land together. Previously the role
+      // was committed first and each grant was written in its own query, so a
+      // failure part-way through the loop left a brand-new admin holding the
+      // registry defaults (every feature still `defaultEnabled`) instead of the
+      // grants that were actually chosen.
+      const user = await prisma.$transaction(async (tx) => {
+        const updated = await tx.user.update({
+          where: { id: target.id },
+          data: { role: "ADMIN", roleOverride: "ADMIN" },
+        });
+        for (const [key, value] of entries) {
+          if (value === defaultMap.get(key)) {
+            await tx.adminGrant.deleteMany({ where: { adminId: updated.id, featureKey: key } });
+          } else {
+            await tx.adminGrant.upsert({
+              where: { adminId_featureKey: { adminId: updated.id, featureKey: key } },
+              update: { enabled: value },
+              create: { adminId: updated.id, featureKey: key, enabled: value },
+            });
+          }
         }
-      }
+        return updated;
+      });
       await recordAudit({
         adminId: actorId,
         adminEmail: adminEmail(req),
@@ -962,9 +997,14 @@ adminRouter.delete("/users/:id/super-approve", requireSuperAdmin, async (req, re
 });
 
 // POST /api/admin/users/:id/restore
+// Admin accounts are excluded on purpose: restoring one would also clear its
+// `blocked` flag, turning a moderation action into a full re-entry. The bulk
+// endpoint applies the same rule, so the single-item path must match it.
 adminRouter.post("/users/:id/restore", checkPermission("canManageUsers"), async (req, res) => {
   try {
-    const target = await prisma.user.findFirst({ where: { id: req.params.id, deletedAt: { not: null } } });
+    const target = await prisma.user.findFirst({
+      where: { id: req.params.id, deletedAt: { not: null }, role: { notIn: ["ADMIN", "SUPER_ADMIN"] } },
+    });
     if (!target) {
       res.status(404).json({ error: "Foydalanuvchi arxivda topilmadi" });
       return;
@@ -1143,17 +1183,21 @@ adminRouter.patch(
         return;
       }
       const defaultMap = new Map(features.map((f) => [f.key, f.defaultEnabled]));
-      for (const [key, value] of entries) {
-        if (value === defaultMap.get(key)) {
-          await prisma.adminGrant.deleteMany({ where: { adminId: target.id, featureKey: key } });
-        } else {
-          await prisma.adminGrant.upsert({
-            where: { adminId_featureKey: { adminId: target.id, featureKey: key } },
-            update: { enabled: value },
-            create: { adminId: target.id, featureKey: key, enabled: value },
-          });
+      // Grants are applied as one unit so a mid-loop failure cannot leave the
+      // sub-admin with a half-applied permission set.
+      await prisma.$transaction(async (tx) => {
+        for (const [key, value] of entries) {
+          if (value === defaultMap.get(key)) {
+            await tx.adminGrant.deleteMany({ where: { adminId: target.id, featureKey: key } });
+          } else {
+            await tx.adminGrant.upsert({
+              where: { adminId_featureKey: { adminId: target.id, featureKey: key } },
+              update: { enabled: value },
+              create: { adminId: target.id, featureKey: key, enabled: value },
+            });
+          }
         }
-      }
+      });
       const changed = entries.map(([k, v]) => `${k}=${v}`).join(", ");
       await recordAudit({
         adminId: adminId(req),
@@ -1383,10 +1427,16 @@ adminRouter.delete("/categories/:id", checkPermission("canManageCategories"), as
 // Content manager
 // ---------------------------------------------------------------------------
 
-// GET /api/admin/content - all editable content blocks.
+// GET /api/admin/content - all editable content blocks. Banner blocks are
+// returned through the same sanitising policy as the public endpoint, because
+// the admin editor previews them with `dangerouslySetInnerHTML` — serving the
+// raw stored value would let a legacy payload run inside the admin panel.
 adminRouter.get("/content", async (_req, res) => {
   try {
-    res.json({ blocks: await listContent() });
+    const blocks = await listContent();
+    res.json({
+      blocks: blocks.map((b) => ({ ...b, value: sanitizeContentValue(b.key, b.value) })),
+    });
   } catch {
     res.status(500).json({ error: "Database unavailable" });
   }
@@ -1402,9 +1452,15 @@ adminRouter.put("/content/:key", checkPermission("canManageSettings"), validateB
       res.status(404).json({ error: "Kontent bloki topilmadi" });
       return;
     }
+    // Banner blocks are rendered as live markup/links on the public site and in
+    // the admin preview, so they are the one content family that is not plain
+    // text. Enforcing the policy here (server-side, on the write path) is what
+    // actually holds — a client-side filter can be bypassed by calling the API
+    // directly, and stored payloads already in the DB stay inert once re-saved.
+    const value = sanitizeContentValue(req.params.key, body.value);
     const block = await prisma.contentBlock.update({
       where: { key: existing.key },
-      data: { value: body.value, title: body.title ?? existing.title },
+      data: { value, title: body.title ?? existing.title },
     });
     // The content manager can pin `quote.today`; refresh the cached pick.
     void invalidateCaches([CACHE_PREFIXES.quoteOfDay]);
@@ -1602,10 +1658,10 @@ adminRouter.post("/announcements", checkPermission("canManageAnnouncements"), va
       ip: clientIp(req.headers),
     });
     if (announcement.status === "ACTIVE" && (body.channel === "ALL" || body.channel === "TELEGRAM")) {
-      void broadcastTelegram(announcement.title, announcement.message);
+      void broadcastTelegram(announcement.title, announcement.message).catch(() => {});
     }
     if (announcement.status === "ACTIVE" && (body.channel === "ALL" || body.channel === "EMAIL")) {
-      void broadcastEmail(announcement.title, announcement.message);
+      void broadcastEmail(announcement.title, announcement.message).catch(() => {});
     }
     res.status(201).json({ announcement });
   } catch {
@@ -2006,48 +2062,67 @@ adminRouter.post("/backups/:id/restore", requireSuperAdmin, async (req, res) => 
     }
     const snapshot = JSON.parse(backup.data) as Record<string, any>;
     const counts: Record<string, number> = {};
+    // Collect every write first and hand them to Prisma as a single transaction.
+    // Restoring row-by-row meant N+1 round trips and, worse, a mid-way failure
+    // left the database with a partially restored snapshot (categories restored,
+    // settings missing) with nothing to roll back to.
+    const writes: Prisma.PrismaPromise<unknown>[] = [];
     if (Array.isArray(snapshot.categories)) {
       for (const c of snapshot.categories) {
-        await prisma.category.upsert({ where: { slug: c.slug }, update: { name: c.name }, create: { name: c.name, slug: c.slug } });
+        writes.push(
+          prisma.category.upsert({ where: { slug: c.slug }, update: { name: c.name }, create: { name: c.name, slug: c.slug } }),
+        );
       }
       counts.categories = snapshot.categories.length;
     }
     if (Array.isArray(snapshot.tags)) {
       for (const t of snapshot.tags) {
-        await prisma.tag.upsert({ where: { slug: t.slug }, update: { name: t.name }, create: { name: t.name, slug: t.slug } });
+        writes.push(
+          prisma.tag.upsert({ where: { slug: t.slug }, update: { name: t.name }, create: { name: t.name, slug: t.slug } }),
+        );
       }
       counts.tags = snapshot.tags.length;
     }
     if (Array.isArray(snapshot.content)) {
       for (const b of snapshot.content) {
-        await prisma.contentBlock.upsert({
-          where: { key: b.key },
-          update: { value: b.value, title: b.title },
-          create: { key: b.key, value: b.value, title: b.title },
-        });
+        // Re-apply the banner sanitising policy: a snapshot taken before that
+        // policy existed must not be able to reintroduce live payloads.
+        const value = sanitizeContentValue(String(b.key), b.value);
+        writes.push(
+          prisma.contentBlock.upsert({
+            where: { key: b.key },
+            update: { value, title: b.title },
+            create: { key: b.key, value, title: b.title },
+          }),
+        );
       }
       counts.content = snapshot.content.length;
     }
     if (Array.isArray(snapshot.settings)) {
       for (const s of snapshot.settings) {
-        await prisma.siteSetting.upsert({
-          where: { key: s.key },
-          update: { value: s.value, label: s.label, group: s.group },
-          create: { key: s.key, value: s.value, label: s.label, group: s.group },
-        });
+        writes.push(
+          prisma.siteSetting.upsert({
+            where: { key: s.key },
+            update: { value: s.value, label: s.label, group: s.group },
+            create: { key: s.key, value: s.value, label: s.label, group: s.group },
+          }),
+        );
       }
       counts.settings = snapshot.settings.length;
     }
     if (Array.isArray(snapshot.seo)) {
       for (const r of snapshot.seo) {
-        await prisma.seoRule.upsert({
-          where: { page: r.page },
-          update: { title: r.title, description: r.description, keywords: r.keywords },
-          create: { page: r.page, title: r.title, description: r.description, keywords: r.keywords },
-        });
+        writes.push(
+          prisma.seoRule.upsert({
+            where: { page: r.page },
+            update: { title: r.title, description: r.description, keywords: r.keywords },
+            create: { page: r.page, title: r.title, description: r.description, keywords: r.keywords },
+          }),
+        );
       }
       counts.seo = snapshot.seo.length;
     }
+    await prisma.$transaction(writes);
     await recordAudit({
       adminId: adminId(req),
       adminEmail: adminEmail(req),
@@ -2172,10 +2247,15 @@ async function broadcastEmail(title: string, message: string): Promise<number> {
     where: { deletedAt: null, blocked: false, email: { not: null } },
     select: { email: true },
   });
+  const escape = (v: string) =>
+    v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const text = `${title}\n\n${message}`;
+  // Both interpolated values are escaped. The message already was; the title did
+  // not, so an announcement title containing markup was rendered as live HTML in
+  // every recipient's inbox.
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
-    <h2 style="color:#0f172a">${title}</h2>
-    <p style="color:#334155;line-height:1.6;white-space:pre-wrap">${message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>
+    <h2 style="color:#0f172a">${escape(title)}</h2>
+    <p style="color:#334155;line-height:1.6;white-space:pre-wrap">${escape(message)}</p>
   </div>`;
   let sent = 0;
   for (const u of users) {

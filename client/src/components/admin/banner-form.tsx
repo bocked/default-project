@@ -255,7 +255,21 @@ export function AdminBannerForm({
             }`}
           >
             {draft.enabled ? (
-              <BannerBody def={previewDef} variant={variant} />
+              draft.type === "code" ? (
+                // Banner "code" is third-party ad markup. Inlining it in the admin
+                // page would run any script it contains inside the admin panel
+                // origin (a pasted "ad snippet" is enough to steal the session).
+                // An iframe with an empty `sandbox` has neither `allow-scripts`
+                // nor `allow-same-origin`, so the preview is inert.
+                <iframe
+                  title="Banner preview"
+                  sandbox=""
+                  srcDoc={draft.html}
+                  className="h-24 w-full rounded-lg border border-slate-200 bg-white"
+                />
+              ) : (
+                <BannerBody def={previewDef} variant={variant} />
+              )
             ) : (
               <p className="py-4 text-center text-xs text-slate-400 dark:text-slate-500">
                 Banner o&apos;chirilgan — saytda ko&apos;rsatilmaydi.

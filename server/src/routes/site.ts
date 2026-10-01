@@ -6,6 +6,7 @@ import { trackPageView } from "../lib/analytics.js";
 import { validateBody, publicFeedbackSchema, type PublicFeedback } from "../schemas.js";
 import { publishedPolicyVersion } from "../lib/policies.js";
 import { PolicyType } from "@prisma/client";
+import { asyncHandler } from "../lib/asyncHandler.js";
 
 export const siteRouter = Router();
 
@@ -59,10 +60,10 @@ siteRouter.get("/seo", async (req, res) => {
 // POST /api/pageview - anonymous analytics beacon fired by the frontend on
 // every page navigation. Unique visitors are deduplicated server-side in
 // Redis (24h TTL); bots are filtered out and never counted.
-siteRouter.post("/pageview", async (req, res) => {
+siteRouter.post("/pageview", asyncHandler(async (req, res) => {
   await trackPageView(req.headers);
   res.json({ ok: true });
-});
+}));
 
 // POST /api/feedback - authenticated users can send feedback / complaints.
 siteRouter.post("/feedback", requireAuth, validateBody(publicFeedbackSchema), async (req, res) => {

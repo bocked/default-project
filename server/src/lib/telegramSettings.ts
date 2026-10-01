@@ -82,17 +82,23 @@ export async function getTelegramSettings(): Promise<TelegramRuntimeSettings> {
  * and env values are never re-applied.
  */
 export async function ensureTelegramSettings(): Promise<void> {
+  // Upsert instead of find-then-create: two instances booting at the same time
+  // (overlapping deploys, a restart while the old process is still alive) both
+  // saw "no row" and the loser crashed on the unique id.
+  await prisma.telegramSettings.upsert({
+    where: { id: "main" },
+    update: {},
+    create: {
+      id: "main",
+      botToken: config.telegramBotToken,
+      superAdminChatId: config.telegramAdminChatId,
+      channelValue: config.telegramChannelId,
+    },
+  });
   const existing = await prisma.telegramSettings.findUnique({ where: { id: "main" } });
-  if (!existing) {
-    await prisma.telegramSettings.create({
-      data: {
-        id: "main",
-        botToken: config.telegramBotToken,
-        superAdminChatId: config.telegramAdminChatId,
-        channelValue: config.telegramChannelId,
-      },
-    });
-  } else {
+  if (existing) {
+    // Backfill only what is still empty: values saved from the admin panel are
+    // never re-applied from env.
     const patch: Partial<TelegramRuntimeSettings> = {};
     if (!existing.botToken && config.telegramBotToken) patch.botToken = config.telegramBotToken;
     if (!existing.superAdminChatId && config.telegramAdminChatId)
@@ -353,8 +359,16 @@ export async function applyTelegramSettings(patch: TelegramSettingsPatch): Promi
   const data: TelegramSettingsPatch = { ...patch };
   if ("botToken" in data && data.botToken === current.botToken) delete data.botToken;
   if (data.botToken !== undefined) data.botToken = data.botToken.trim();
-  if ("approvalBotToken" in data && data.approvalBotToken === current.approvalBotToken) delete data.approvalBotToken;
+  if ("approvalBotToken" in data && data.approvalBotToken === current.approvalBotToken)
+    delete data.approvalBotToken;
   if (data.approvalBotToken !== undefined) data.approvalBotToken = data.approvalBotToken.trim();
+  // An empty token means "leave it alone", not "erase it". The settings form
+  // renders the stored token masked, so submitting the form for an unrelated
+  // change (a chat id, a channel toggle) used to blank the token in the
+  // database and silently take the bot offline.
+  if (data.botToken !== undefined && data.botToken === "") delete data.botToken;
+  if (data.approvalBotToken !== undefined && data.approvalBotToken === "")
+    delete data.approvalBotToken;
 
   const tokenChanged = data.botToken !== undefined && data.botToken !== current.botToken;
   const approvalTokenChanged =

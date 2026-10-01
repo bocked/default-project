@@ -2,6 +2,7 @@
 
 import type { BannerDefinition } from "@/config/banners";
 import { useI18n } from "@/lib/i18n";
+import { safeBannerUrl } from "@/lib/bannerUrl";
 
 export type BannerVariant = "side" | "top" | "feed" | "bottom";
 
@@ -35,24 +36,32 @@ export function BannerBody({ def, variant }: BannerBodyProps) {
   const { t } = useI18n();
 
   const mode: "image" | "code" = def.type ?? (def.html ? "code" : "image");
+  // `href` and `image` are admin-controlled and land in a real `href`/`src`, so
+  // they are re-checked against the scheme allowlist before use. The server
+  // applies the same policy on the write and read paths; this keeps a stale or
+  // tampered value (e.g. `javascript:`) from ever reaching the DOM.
+  const href = safeBannerUrl(def.href);
+  const image = safeBannerUrl(def.image);
 
   if (mode === "code" && def.html) {
+    // Sanitised server-side before it is stored and again before it is served,
+    // so no script-bearing element can reach the DOM here.
     return <div className="w-full" dangerouslySetInnerHTML={{ __html: def.html }} />;
   }
 
-  if (mode === "image" && def.image) {
+  if (mode === "image" && image) {
     const img = (
       // eslint-disable-next-line @next/next/no-img-element -- banners accept any external CDN URL
       <img
-        src={def.image}
+        src={image}
         alt={def.alt ?? ""}
         className={IMG_CLASS[variant]}
         loading="lazy"
         referrerPolicy="no-referrer"
       />
     );
-    return def.href ? (
-      <a href={def.href} target="_blank" rel="noopener noreferrer" className="block w-full">
+    return href ? (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="block w-full">
         {img}
       </a>
     ) : (
@@ -69,8 +78,8 @@ export function BannerBody({ def, variant }: BannerBodyProps) {
     </div>
   );
 
-  return def.href ? (
-    <a href={def.href} className="block w-full">
+  return href ? (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="block w-full">
       {placeholder}
     </a>
   ) : (

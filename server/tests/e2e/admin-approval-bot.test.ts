@@ -141,22 +141,19 @@ describe("E2E: Approval bot (@nimadur7_bot) — user verification only", () => {
     expect(res.status).toBe(400);
   });
 
-  it("clearing the approval token makes approval /test report the missing token", async () => {
-    const cleared = await request(base, "PUT", "/api/admin/telegram/settings", {
+  it("an empty approval token keeps the stored token in place", async () => {
+    const before = await prisma.telegramSettings.findUniqueOrThrow({ where: { id: "main" } });
+    const res = await request(base, "PUT", "/api/admin/telegram/settings", {
       token: adminToken,
       body: { approvalBotToken: "" },
     });
-    expect(cleared.status).toBe(200);
-    expect(cleared.json.approvalReinitialized).toBe(true);
-    expect(cleared.json.settings.approvalBotStatus).toBe("disabled");
-    expect(cleared.json.settings.approvalBotId).toBeNull();
-
-    const res = await request(base, "POST", "/api/admin/telegram/test", {
-      token: adminToken,
-      body: { bot: "approval" },
-    });
-    expect(res.status).toBe(400);
-    expect(res.json.error).toContain("token");
+    expect(res.status).toBe(200);
+    // Same contract as the main token: an empty field means "unchanged", so
+    // saving an unrelated setting cannot disable the approval bot.
+    expect(res.json.approvalReinitialized).toBe(false);
+    expect(
+      (await prisma.telegramSettings.findUniqueOrThrow({ where: { id: "main" } })).approvalBotToken,
+    ).toBe(before.approvalBotToken);
   });
 
   it("approval webhook verifies and un-verifies users via prompt commands", async () => {

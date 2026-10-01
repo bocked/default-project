@@ -108,26 +108,30 @@ describe("E2E: make-admin (granular promotion from the Users table)", () => {
     const login = await request(base, "POST", "/api/auth/login", { body: { email, password: "s3cret-password" } });
     expect(login.json.user.role).toBe("ADMIN");
 
-    const self = await makeAdmin(base, id, ALL_GRANTS, login.json.token);
-    expect(self.status).toBe(400);
-    expect(self.json.error).toBe("O'zingizni admin qila olmaysiz");
-  });
+const self = await makeAdmin(base, id, ALL_GRANTS, login.json.token);
+        // Promotion is SUPER_ADMIN-only, so an ADMIN actor is rejected by the
+        // route guard before the self-check in the handler is ever reached.
+        expect(self.status).toBe(403);
+      });
 
-  it("a plain ADMIN with canManageUsers can also promote (parity with PATCH /role)", async () => {
-    const subEmail = `${unique("subpromote")}@example.com`;
-    const subReg = await request(base, "POST", "/api/auth/register", {
-      body: { email: subEmail, password: "s3cret-password" },
-    });
-    const subId = subReg.json.user.id;
-    await makeAdmin(base, subId, ALL_GRANTS);
-    const subLogin = await request(base, "POST", "/api/auth/login", { body: { email: subEmail, password: "s3cret-password" } });
-    expect(subLogin.json.user.role).toBe("ADMIN");
+it("refuses to let a plain ADMIN with canManageUsers promote anyone", async () => {
+        const subEmail = `${unique("subpromote")}@example.com`;
+        const subReg = await request(base, "POST", "/api/auth/register", {
+          body: { email: subEmail, password: "s3cret-password" },
+        });
+        const subId = subReg.json.user.id;
+        await makeAdmin(base, subId, ALL_GRANTS);
+        const subLogin = await request(base, "POST", "/api/auth/login", { body: { email: subEmail, password: "s3cret-password" } });
+        expect(subLogin.json.user.role).toBe("ADMIN");
 
-    const { id } = await registerUser(base);
-    const promoted = await makeAdmin(base, id, ALL_GRANTS, subLogin.json.token);
-    expect(promoted.status).toBe(200);
-    expect((await prisma.user.findUniqueOrThrow({ where: { id } })).role).toBe("ADMIN");
-  });
+        const { id } = await registerUser(base);
+        const promoted = await makeAdmin(base, id, ALL_GRANTS, subLogin.json.token);
+        // Minting an admin is a privilege escalation: a new admin inherits every
+        // feature whose registry default is true, so holding `canManageUsers`
+        // must not be enough to create a peer with broader rights than your own.
+        expect(promoted.status).toBe(403);
+        expect((await prisma.user.findUniqueOrThrow({ where: { id } })).role).toBe("USER");
+      });
 
   it("audits every promotion", async () => {
     const { id, email } = await registerUser(base);

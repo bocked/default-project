@@ -31,7 +31,15 @@ class EventBus {
         /* ignore */
       }
     } else {
-      this.emitter.emit(channel, payload);
+      // A listener that throws would otherwise propagate out of the synchronous
+      // `emit`, turning this async method into a rejected promise — and
+      // `unhandledRejection` is fatal for the process. One bad subscriber must
+      // never be able to take the server down.
+      try {
+        this.emitter.emit(channel, payload);
+      } catch {
+        /* ignore */
+      }
     }
   }
 

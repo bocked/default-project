@@ -158,11 +158,13 @@ describe("E2E: admin console v2 (users, quotes, tags, content, audit)", () => {
 
   it("admins cannot block or delete another admin account", async () => {
     const id = (await prisma.user.findUniqueOrThrow({ where: { email: "mirabbostolqinjonov@gmail.com" } })).id;
-    const block = await request(base, "POST", `/api/admin/users/${id}/block`, { token: ADMIN });
-    expect(block.status).toBe(400);
-    const del = await request(base, "DELETE", `/api/admin/users/${id}`, { token: ADMIN });
-    expect(del.status).toBe(400);
-  });
+const block = await request(base, "POST", `/api/admin/users/${id}/block`, { token: ADMIN });
+        // 403 (forbidden), not 400 (bad request): the request is well-formed, the
+        // actor simply is not allowed to touch another admin account.
+        expect(block.status).toBe(403);
+        const del = await request(base, "DELETE", `/api/admin/users/${id}`, { token: ADMIN });
+        expect(del.status).toBe(403);
+      });
 
   it("edits, soft-deletes and restores quotes; bulk actions work", async () => {
     const userId = await makeUser(`${unique("quoter")}@example.com`);

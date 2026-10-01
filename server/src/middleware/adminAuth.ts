@@ -1,9 +1,10 @@
-import { NextFunction, Request, Response } from "express";
+import type { RequestHandler } from "express";
 import crypto from "node:crypto";
 import { config } from "../config.js";
 import { prisma } from "../lib/prisma.js";
 import { verifyAuthToken } from "../lib/tokens.js";
 import { clientIp } from "../lib/ip.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 
 /**
  * Constant-time comparison for the shared admin password. Both values are
@@ -24,7 +25,7 @@ export { safeEqual };
  * When ADMIN_IP_WHITELIST is configured the caller's IP must be listed too.
  * On success `req.admin` carries the acting admin's identity for auditing.
  */
-export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+export const requireAdmin: RequestHandler = asyncHandler(async (req, res, next) => {
   if (config.adminIpWhitelist.length > 0) {
     const ip = clientIp(req.headers);
     if (!config.adminIpWhitelist.includes(ip)) {
@@ -54,14 +55,14 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   }
   req.admin = { id: user.id, email: user.email, role: user.role };
   next();
-}
+});
 
 /**
  * Super-admin gate for top-level actions (e.g. manually verifying users).
  * Only the shared ADMIN_PASSWORD bearer or a SUPER_ADMIN account may pass;
  * a regular ADMIN gets 403. Runs after requireAdmin.
  */
-export async function requireSuperAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+export const requireSuperAdmin: RequestHandler = asyncHandler(async (req, res, next) => {
   const token = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "").trim();
   if (token && safeEqual(token, config.adminPassword)) {
     req.admin = { id: null, email: "ADMIN_PASSWORD", role: "ADMIN_PASSWORD" };
@@ -80,4 +81,4 @@ export async function requireSuperAdmin(req: Request, res: Response, next: NextF
   }
   req.admin = { id: user.id, email: user.email, role: "SUPER_ADMIN" };
   next();
-}
+});

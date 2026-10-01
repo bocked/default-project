@@ -285,11 +285,17 @@ export async function sendTelegramMessage(
   return json?.ok === true;
 }
 
-/** Fires a plain notification to the admin chat (no buttons). */
+/** Fires a plain notification to the admin chat (no buttons).
+ *  Never throws: callers fire it detached (`void sendAdminNotification(...)`), and
+ *  the settings read is a Prisma call that must not escape as a rejection. */
 export async function sendAdminNotification(text: string): Promise<void> {
-  const settings = await getTelegramSettings();
-  if (!settings.botToken || !settings.superAdminChatId) return;
-  await sendTelegramMessage(settings.superAdminChatId, text);
+  try {
+    const settings = await getTelegramSettings();
+    if (!settings.botToken || !settings.superAdminChatId) return;
+    await sendTelegramMessage(settings.superAdminChatId, text);
+  } catch (err) {
+    logger.warn({ err }, "admin notification failed");
+  }
 }
 
 export interface AdminPromotionContext {
