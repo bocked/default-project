@@ -14,6 +14,7 @@ import {
 } from "../lib/telegramSettings.js";
 import { bus } from "../lib/bus.js";
 import { logger } from "../lib/logger.js";
+import { scrubError } from "../lib/redact.js";
 import { clientIp } from "../lib/ip.js";
 import {
   telegramSettingsUpdateSchema,
@@ -71,13 +72,14 @@ adminTelegramRouter.put("/settings", validateBody(telegramSettingsUpdateSchema),
       reinitialized: result.reinitialized,
       approvalReinitialized: result.approvalReinitialized,
     });
-  } catch (err) {
-    // Never echo the raw error: Prisma embeds the invocation arguments in its
-    // message, which would put the live bot token in the response body (and in
-    // Sentry). The details go to the server log only.
-    logger.error({ err }, "telegram settings save failed");
-    res.status(500).json({ error: "Sozlamalar saqlanmadi" });
-  }
+} catch (err) {
+      // Never echo the raw error: Prisma embeds the invocation arguments in its
+      // message, which would put the live bot token in the response body, the log
+      // file and Sentry. `scrubError` strips the token from the message and stack
+      // while keeping the fields (e.g. Prisma's `code`) that make this debuggable.
+      logger.error({ err: scrubError(err) }, "telegram settings save failed");
+      res.status(500).json({ error: "Sozlamalar saqlanmadi" });
+    }
 });
 
 // GET /api/admin/telegram/status?refresh=1 - live bot connection state.

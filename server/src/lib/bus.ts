@@ -32,9 +32,9 @@ class EventBus {
       }
     } else {
       // A listener that throws would otherwise propagate out of the synchronous
-      // `emit`, turning this async method into a rejected promise — and
-      // `unhandledRejection` is fatal for the process. One bad subscriber must
-      // never be able to take the server down.
+      // `emit`, turning this async method into a rejected promise. One bad
+      // subscriber must never be able to take the server down or silently
+      // swallow the deliveries of every other subscriber on this channel.
       try {
         this.emitter.emit(channel, payload);
       } catch {
@@ -43,11 +43,32 @@ class EventBus {
     }
   }
 
-  subscribe(channel: string, handler: Handler): void {
+  /**
+   * Registers a local handler and returns its disposer.
+   *
+   * The bus is a module-level singleton, so a handler that is registered and
+   * never removed keeps its closure - and everything that closure captures, such
+   * as a socket.io `Server` - alive for the life of the process. Any caller that
+   * owns a resource with a lifetime (a server, a client) must keep the returned
+   * disposer and call it when that resource goes away, otherwise repeated
+   * init/teardown cycles stack duplicate listeners that all fire on every event.
+   *
+   * Only the local listener is removed. The Redis channel subscription stays:
+   * it is shared by every handler on that channel via `subscribedChannels`, and
+   * dropping it while another handler still wants it would silently stop
+   * cross-instance delivery for that channel.
+   */
+  subscribe(channel: string, handler: Handler): () => void {
     this.emitter.on(channel, handler);
     if (redis.available) {
       this.ensureRedisSubscriber(channel);
     }
+    let removed = false;
+    return () => {
+      if (removed) return;
+      removed = true;
+      this.emitter.off(channel, handler);
+    };
   }
 
   private ensureRedisSubscriber(channel: string): void {

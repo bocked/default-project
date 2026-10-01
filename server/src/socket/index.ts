@@ -49,23 +49,40 @@ function emitToAdmins(io: Server, event: string, payload: unknown): void {
   }
 }
 
-export function initSocket(io: Server): void {
+// The bus is a module-level singleton while a process owns exactly one HTTP
+// server, so a second initSocket without a matching teardown would otherwise
+// leave the previous set of listeners attached: every admin event would fan out
+// once per init, and each stale listener pins the dead `Server` in memory.
+// Tracking the active disposer makes re-init self-healing, and the returned
+// function lets callers (and the E2E harness) release listeners deterministically.
+let activeDispose: (() => void) | null = null;
+
+export function initSocket(io: Server): () => void {
+  activeDispose?.();
+  activeDispose = null;
+
+  const unsubscribes: Array<() => void> = [];
+  /** Subscribe through the bus so every listener is tracked for teardown. */
+  const on = (channel: string, handler: (payload: unknown) => void): void => {
+    unsubscribes.push(bus.subscribe(channel, handler));
+  };
+
   // Ban events carry the banned IP address and its reason. They must reach the
   // affected sockets (via disconnectBannedIp) and the admin panels, never the
   // public audience: `io.emit` would hand every connected visitor the ban list.
-  bus.subscribe("admin:ban", (payload) => {
+  on("admin:ban", (payload) => {
     const p = payload as { ipAddress: string };
     disconnectBannedIp(io, p.ipAddress);
     emitToAdmins(io, "admin:ban", payload);
   });
-  bus.subscribe("admin:unban", (payload) => emitToAdmins(io, "admin:unban", payload));
-  bus.subscribe("admin:log", (payload) => emitToAdmins(io, "admin:log", payload));
+  on("admin:unban", (payload) => emitToAdmins(io, "admin:unban", payload));
+  on("admin:log", (payload) => emitToAdmins(io, "admin:log", payload));
   // Dynamic-registry & policy-review push: delivered on top of the bus so every
   // instance forwards it, then re-broadcast to the connected admin sockets.
-  bus.subscribe("admin:feature:new", (payload) => emitToAdmins(io, "admin:feature:new", payload));
-  bus.subscribe("admin:policy:review", (payload) => emitToAdmins(io, "admin:policy:review", payload));
-  bus.subscribe("admin:permissions:changed", (payload) => emitToAdmins(io, "admin:permissions:changed", payload));
-  bus.subscribe("admin:telegram:status", (payload) => emitToAdmins(io, "admin:telegram:status", payload));
+  on("admin:feature:new", (payload) => emitToAdmins(io, "admin:feature:new", payload));
+  on("admin:policy:review", (payload) => emitToAdmins(io, "admin:policy:review", payload));
+  on("admin:permissions:changed", (payload) => emitToAdmins(io, "admin:permissions:changed", payload));
+  on("admin:telegram:status", (payload) => emitToAdmins(io, "admin:telegram:status", payload));
 
   io.use(banCheck);
 
@@ -108,6 +125,14 @@ export function initSocket(io: Server): void {
 
     registerAdminHandlers(socket);
   });
+
+  const dispose = () => {
+    for (const u of unsubscribes) u();
+    unsubscribes.length = 0;
+    activeDispose = null;
+  };
+  activeDispose = dispose;
+  return dispose;
 }
 
 function registerAdminHandlers(socket: Socket): void {

@@ -14,7 +14,7 @@ export interface TestServer {
 
 /** Boots the real app (Express + Socket.IO) on an ephemeral local port. */
 export async function startTestServer(): Promise<TestServer> {
-  const { server, io } = createApp({ autoLogging: false, noRateLimits: true });
+  const { server, io, disposeSocket } = createApp({ autoLogging: false, noRateLimits: true });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("server did not bind a port");
@@ -26,6 +26,10 @@ export async function startTestServer(): Promise<TestServer> {
     close: async () => {
       io.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      // Release the bus listeners before disconnecting Prisma: these tests run
+      // many servers in one process, and leaving the listeners attached would
+      // stack a set per server and keep each closed `Server` reachable.
+      disposeSocket();
       await prisma.$disconnect();
     },
   };

@@ -66,7 +66,13 @@ export interface CreateAppOptions {
  * port or starting background loops, so tests can mount it on an ephemeral
  * port. Production wiring (DB connect, Redis, shutdown) lives in startServer().
  */
-export function createApp(options: CreateAppOptions = {}): { app: express.Express; server: http.Server; io: Server } {
+export function createApp(options: CreateAppOptions = {}): {
+  app: express.Express;
+  server: http.Server;
+  io: Server;
+  /** Releases the cross-instance bus listeners registered by initSocket. */
+  disposeSocket: () => void;
+} {
   const app = express();
   // Image uploads land on disk; make sure the directory exists (and stays
   // outside of git — see .gitignore) before any route can write to it.
@@ -281,9 +287,13 @@ export function createApp(options: CreateAppOptions = {}): { app: express.Expres
     }
   );
 
-  initSocket(io);
+  const disposeSocket = initSocket(io);
 
-  return { app, server, io };
+  // `disposeSocket` releases the cross-instance bus listeners this app
+  // registered. Production runs one server per process, but tests build and tear
+  // down many in a row inside one process, where skipping it would stack a fresh
+  // set of listeners on the singleton bus for every server.
+  return { app, server, io, disposeSocket };
 }
 
 /** Grants the ADMIN role to every configured admin email, then the SUPER_ADMIN

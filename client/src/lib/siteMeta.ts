@@ -104,10 +104,12 @@ export function pageMeta({
     // first-class field for og:noindex — and that is what actually suppresses
     // the rich link preview when someone pastes an /admin or /login URL into
     // Slack or Messenger. It has to be passed through `other`.
-    // Caveat worth knowing: Next renders `other` keys as name=, whereas the OG
-    // spec wants property=. Major scrapers accept either for og:* keys, and the
-    // authoritative noindex signal is the robots meta above regardless, so this
-    // is a best-effort extra rather than the mechanism we depend on.
+    // Next always renders `other` keys with `name=`, while the OG spec (and the
+    // Facebook/Slack unfurlers that consume it) keys off `property=`. So
+    // `scripts/generate-csp.mjs` rewrites `name="og:noindex"` to
+    // `property="og:noindex"` in the emitted HTML after the build. The robots
+    // meta above remains the authoritative noindex signal for search engines;
+    // this one only affects link previews.
     ...(index ? {} : { other: { "og:noindex": "true" } }),
   };
 }

@@ -90,6 +90,25 @@ function inlineHashes(html) {
   return hashes;
 }
 
+/**
+ * Rewrites the noindex OpenGraph tag emitted by `privateMeta()` from
+ * `name="og:noindex"` to `property="og:noindex"`.
+ *
+ * Next's Metadata API has no first-class field for `og:noindex`; the only
+ * supported route is `other`, and Next always renders `other` keys with
+ * `name=`. The OG spec - and Facebook's / Slack's link unfurlers - key off
+ * `property=` for `og:*` tags, so `name=` is silently ignored by the very
+ * consumers this tag exists to influence. The robots meta stays authoritative
+ * for search engines; this one only suppresses the rich preview.
+ *
+ * Done here rather than in the layouts because this script already visits every
+ * emitted page, which keeps the fix in one place instead of in ~10 layouts, and
+ * guarantees it applies to any page that calls `privateMeta()` in the future.
+ */
+function normaliseOgNoindex(html) {
+  return html.replace(/<meta\s+name=(["'])og:noindex\1/g, '<meta property="og:noindex"');
+}
+
 function pagePaths(htmlFile) {
   const rel = join(htmlFile)
     .replace(outDir, "")
@@ -180,10 +199,21 @@ const base = [
   "",
 ];
 
-const pages = listHtml(outDir).map((file) => ({
-  file,
-  hashes: inlineHashes(readFileSync(file, "utf8")),
-}));
+const pages = listHtml(outDir).map((file) => {
+  const html = readFileSync(file, "utf8");
+  return { file, hashes: inlineHashes(html), normalised: normaliseOgNoindex(html) };
+});
+
+// Rewrite og:noindex to property= form. `hashes` was computed from the original
+// html, but the rewrite only touches a meta attribute and never an inline
+// <script>, so the CSP hashes stay valid.
+let ogFixed = 0;
+for (const page of pages) {
+  if (page.normalised !== readFileSync(page.file, "utf8")) {
+    writeFileSync(page.file, page.normalised, "utf8");
+    ogFixed++;
+  }
+}
 
 const lines = [...base];
 let ruleCount = 0;
@@ -201,7 +231,7 @@ for (const { file, hashes } of pages) {
 
 writeFileSync(join(outDir, "_headers"), lines.join("\n"), "utf8");
 console.log(
-  `generate-csp: ${pages.length} pages, ${ruleCount} path rules (API_ORIGIN=${API_ORIGIN})`,
+  `generate-csp: ${pages.length} pages, ${ruleCount} path rules, og:noindex property fixed in ${ogFixed} (API_ORIGIN=${API_ORIGIN})`,
 );
 for (const { file, hashes } of pages.slice(0, 3)) {
   console.log(`  ${file.split("out").pop()} -> ${hashes.length} sha256 hashes`);

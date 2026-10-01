@@ -37,6 +37,7 @@ import {
 import { issueEmailVerification } from "../lib/verifyEmail.js";
 import { logger } from "../lib/logger.js";
 import { authBruteLimiter, authPublicLimiter } from "../lib/rateLimit.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 import { getBotUsername, sendAdminNotification, sendUserApprovalPrompt } from "../lib/telegram.js";
 import { recordActivity } from "../lib/activity.js";
 import { publishedPolicyVersion } from "../lib/policies.js";
@@ -222,108 +223,108 @@ async function sendVerificationTo(email: string): Promise<void> {
 }
 
 // POST /api/auth/register
-authRouter.post("/register", authPublicLimiter, authBruteLimiter, validateBody(registerSchema), async (_req, res) => {
-  const body = res.locals.body as Register;
-  const existing = await prisma.user.findUnique({ where: { email: body.email } });
-  if (existing) {
-    // Uniform pre-creation failure: does not confirm whether the address is
-    // already taken, preventing account enumeration through the register flow.
-    res.status(400).json({ error: "Ro'yxatdan o'tishda xatolik yuz berdi. Qayta urinib ko'ring." });
-    return;
-  }
-  const termsVersion = await publishedPolicyVersion(PolicyType.TERMS);
-  const user = await prisma.user.create({
-    data: {
-      email: body.email,
-      passwordHash: await hashPassword(body.password),
-      name: body.name ?? null,
-      nickname: body.nickname ?? null,
-      role: roleForEmail(body.email, "USER"),
-      acceptedTermsVersion: termsVersion,
-    },
-  });
-  await issueEmailVerification(user.email!);
-  // Best-effort: keep the admin informed about new registrations.
-  const handle = [user.nickname, user.name].filter(Boolean).join(" / ") || user.email!;
-  void sendAdminNotification(`🆕 Yangi foydalanuvchi ro'yxatdan o'tdi\n\n${user.email}${handle !== user.email ? `\n${handle}` : ""}`);
-  // Best-effort approval inbox on @nimadur7_bot (no-op while the approval bot
-  // token is unset): asks whether a brand-new USER may post quotes directly.
-  if (user.role === "USER") {
-    void sendUserApprovalPrompt({ user });
-  }
-  void recordActivity({ userId: user.id, action: "REGISTER" });
-  await issueRefreshCookie(res, user.id);
-  res.status(201).json({ token: signAuthToken(user.id), user: await toUser(user, termsVersion) });
-});
+authRouter.post("/register", authPublicLimiter, authBruteLimiter, validateBody(registerSchema), asyncHandler(async (_req, res) => {
+    const body = res.locals.body as Register;
+    const existing = await prisma.user.findUnique({ where: { email: body.email } });
+    if (existing) {
+      // Uniform pre-creation failure: does not confirm whether the address is
+      // already taken, preventing account enumeration through the register flow.
+      res.status(400).json({ error: "Ro'yxatdan o'tishda xatolik yuz berdi. Qayta urinib ko'ring." });
+      return;
+    }
+    const termsVersion = await publishedPolicyVersion(PolicyType.TERMS);
+    const user = await prisma.user.create({
+      data: {
+        email: body.email,
+        passwordHash: await hashPassword(body.password),
+        name: body.name ?? null,
+        nickname: body.nickname ?? null,
+        role: roleForEmail(body.email, "USER"),
+        acceptedTermsVersion: termsVersion,
+      },
+    });
+    await issueEmailVerification(user.email!);
+    // Best-effort: keep the admin informed about new registrations.
+    const handle = [user.nickname, user.name].filter(Boolean).join(" / ") || user.email!;
+    void sendAdminNotification(`🆕 Yangi foydalanuvchi ro'yxatdan o'tdi\n\n${user.email}${handle !== user.email ? `\n${handle}` : ""}`);
+    // Best-effort approval inbox on @nimadur7_bot (no-op while the approval bot
+    // token is unset): asks whether a brand-new USER may post quotes directly.
+    if (user.role === "USER") {
+      void sendUserApprovalPrompt({ user });
+    }
+    void recordActivity({ userId: user.id, action: "REGISTER" });
+    await issueRefreshCookie(res, user.id);
+    res.status(201).json({ token: signAuthToken(user.id), user: await toUser(user, termsVersion) });
+  }));
 
 // POST /api/auth/login
-authRouter.post("/login", authPublicLimiter, authBruteLimiter, validateBody(loginSchema), async (_req, res) => {
-  const body = res.locals.body as Login;
-  const user = await prisma.user.findUnique({ where: { email: body.email } });
-  if (!user || !user.passwordHash || !(await verifyPassword(body.password, user.passwordHash))) {
-    res.status(401).json({ error: "Email yoki parol noto'g'ri" });
-    return;
-  }
-  if (user.blocked) {
-    res.status(403).json({ error: "Hisob bloklangan", code: "ACCOUNT_BLOCKED" });
-    return;
-  }
-  // Promote admin emails lazily so the account gets ADMIN/SUPER_ADMIN even if
-  // it was created before the email was listed (or by the register endpoint).
-  // A manual roleOverride from the admin panel pins the role instead.
-  const targetRole = roleForEmail(user.email, user.role, user.roleOverride);
-  const current =
-    targetRole !== user.role
-      ? await prisma.user.update({ where: { id: user.id }, data: { role: targetRole } })
-      : user;
-  void recordActivity({ userId: current.id, action: "LOGIN" });
-  await issueRefreshCookie(res, current.id);
-  res.json({ token: signAuthToken(user.id), user: await toUser(current) });
-});
+authRouter.post("/login", authPublicLimiter, authBruteLimiter, validateBody(loginSchema), asyncHandler(async (_req, res) => {
+    const body = res.locals.body as Login;
+    const user = await prisma.user.findUnique({ where: { email: body.email } });
+    if (!user || !user.passwordHash || !(await verifyPassword(body.password, user.passwordHash))) {
+      res.status(401).json({ error: "Email yoki parol noto'g'ri" });
+      return;
+    }
+    if (user.blocked) {
+      res.status(403).json({ error: "Hisob bloklangan", code: "ACCOUNT_BLOCKED" });
+      return;
+    }
+    // Promote admin emails lazily so the account gets ADMIN/SUPER_ADMIN even if
+    // it was created before the email was listed (or by the register endpoint).
+    // A manual roleOverride from the admin panel pins the role instead.
+    const targetRole = roleForEmail(user.email, user.role, user.roleOverride);
+    const current =
+      targetRole !== user.role
+        ? await prisma.user.update({ where: { id: user.id }, data: { role: targetRole } })
+        : user;
+    void recordActivity({ userId: current.id, action: "LOGIN" });
+    await issueRefreshCookie(res, current.id);
+    res.json({ token: signAuthToken(user.id), user: await toUser(current) });
+  }));
 
 // POST /api/auth/verify-email - redeem either the emailed link token or the
 // 6-digit OTP code; both mark emailVerified once matched & unexpired.
-authRouter.post("/verify-email", authPublicLimiter, validateBody(verifyEmailSchema), async (_req, res) => {
-  const body = res.locals.body as VerifyEmail;
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [
-        body.token
-          ? { emailVerificationToken: hashEmailVerificationToken(body.token) }
-          : undefined,
-        body.email && body.code
-          ? { email: body.email, emailVerifyCodeHash: hashEmailVerifyCode(body.code) }
-          : undefined,
-      ].filter(Boolean) as Record<string, unknown>[],
-    },
-  });
-  const valid =
-    user &&
-    ((body.token &&
-      user.emailVerificationExpiresAt &&
-      user.emailVerificationExpiresAt >= new Date()) ||
-      (body.email &&
-        body.code &&
-        user.emailVerifyCodeHash === hashEmailVerifyCode(body.code) &&
-        user.emailVerifyCodeExpiresAt &&
-        user.emailVerifyCodeExpiresAt >= new Date()));
-  if (!user || !valid) {
-    res.status(400).json({ error: "Tasdiqlash kodi/havolasi yaroqsiz yoki muddati o'tgan" });
-    return;
-  }
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      emailVerified: true,
-      emailVerifiedAt: new Date(),
-      emailVerificationToken: null,
-      emailVerificationExpiresAt: null,
-      emailVerifyCodeHash: null,
-      emailVerifyCodeExpiresAt: null,
-    },
-  });
-  res.json({ ok: true });
-});
+authRouter.post("/verify-email", authPublicLimiter, validateBody(verifyEmailSchema), asyncHandler(async (_req, res) => {
+    const body = res.locals.body as VerifyEmail;
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          body.token
+            ? { emailVerificationToken: hashEmailVerificationToken(body.token) }
+            : undefined,
+          body.email && body.code
+            ? { email: body.email, emailVerifyCodeHash: hashEmailVerifyCode(body.code) }
+            : undefined,
+        ].filter(Boolean) as Record<string, unknown>[],
+      },
+    });
+    const valid =
+      user &&
+      ((body.token &&
+        user.emailVerificationExpiresAt &&
+        user.emailVerificationExpiresAt >= new Date()) ||
+        (body.email &&
+          body.code &&
+          user.emailVerifyCodeHash === hashEmailVerifyCode(body.code) &&
+          user.emailVerifyCodeExpiresAt &&
+          user.emailVerifyCodeExpiresAt >= new Date()));
+    if (!user || !valid) {
+      res.status(400).json({ error: "Tasdiqlash kodi/havolasi yaroqsiz yoki muddati o'tgan" });
+      return;
+    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
+        emailVerificationToken: null,
+        emailVerificationExpiresAt: null,
+        emailVerifyCodeHash: null,
+        emailVerifyCodeExpiresAt: null,
+      },
+    });
+    res.json({ ok: true });
+  }));
 
 // POST /api/auth/resend-verification
 authRouter.post("/resend-verification", authPublicLimiter, authBruteLimiter, validateBody(resendVerificationSchema), async (_req, res) => {
@@ -442,139 +443,139 @@ authRouter.post("/forgot-password", authPublicLimiter, authBruteLimiter, validat
 // POST /api/auth/reset-password - redeem either the emailed link token or the
 // email+code OTP pair and set a new bcrypt-hashed password. Clears the reset
 // fields so a token/code can never be replayed.
-authRouter.post("/reset-password", authBruteLimiter, validateBody(resetPasswordSchema), async (_req, res) => {
-  const body = res.locals.body as ResetPassword;
-  let user: {
-    id: string;
-    email: string | null;
-    resetTokenExpiry: Date | null;
-    resetPasswordCodeHash?: string | null;
-  } | null = null;
-  if (body.token) {
-    user = await prisma.user.findFirst({
-      where: { resetPasswordToken: hashPasswordResetToken(body.token) },
-      select: { id: true, email: true, resetTokenExpiry: true },
-    });
-  } else if (body.email && body.code) {
-    user = await prisma.user.findUnique({
-      where: { email: body.email },
-      select: { id: true, email: true, resetPasswordCodeHash: true, resetTokenExpiry: true },
-    });
-    if (user && user.resetPasswordCodeHash !== hashPasswordResetCode(body.code)) {
-      user = null;
+authRouter.post("/reset-password", authBruteLimiter, validateBody(resetPasswordSchema), asyncHandler(async (_req, res) => {
+    const body = res.locals.body as ResetPassword;
+    let user: {
+      id: string;
+      email: string | null;
+      resetTokenExpiry: Date | null;
+      resetPasswordCodeHash?: string | null;
+    } | null = null;
+    if (body.token) {
+      user = await prisma.user.findFirst({
+        where: { resetPasswordToken: hashPasswordResetToken(body.token) },
+        select: { id: true, email: true, resetTokenExpiry: true },
+      });
+    } else if (body.email && body.code) {
+      user = await prisma.user.findUnique({
+        where: { email: body.email },
+        select: { id: true, email: true, resetPasswordCodeHash: true, resetTokenExpiry: true },
+      });
+      if (user && user.resetPasswordCodeHash !== hashPasswordResetCode(body.code)) {
+        user = null;
+      }
     }
-  }
-  if (!user || !user.resetTokenExpiry || user.resetTokenExpiry < new Date()) {
-    res.status(400).json({ error: "Tiklash kodi/havolasi yaroqsiz yoki muddati o'tgan" });
-    return;
-  }
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      passwordHash: await hashPassword(body.password),
-      resetPasswordToken: null,
-      resetPasswordCodeHash: null,
-      resetTokenExpiry: null,
-    },
-  });
-  res.json({ ok: true });
-});
+    if (!user || !user.resetTokenExpiry || user.resetTokenExpiry < new Date()) {
+      res.status(400).json({ error: "Tiklash kodi/havolasi yaroqsiz yoki muddati o'tgan" });
+      return;
+    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await hashPassword(body.password),
+        resetPasswordToken: null,
+        resetPasswordCodeHash: null,
+        resetTokenExpiry: null,
+      },
+    });
+    res.json({ ok: true });
+  }));
 
 // GET /api/auth/me
-authRouter.get("/me", requireAuth, async (req, res) => {
-  res.json({ user: await toUser(req.user!) });
-});
+authRouter.get("/me", requireAuth, asyncHandler(async (req, res) => {
+    res.json({ user: await toUser(req.user!) });
+  }));
 
 // POST /api/auth/accept-terms - record consent for the current Terms of Use
 // version. Login responses flag `termsRequired` when the account accepted an
 // older version; the client must call this before letting the user in.
-authRouter.post("/accept-terms", requireAuth, validateBody(acceptTermsSchema), async (req, res) => {
-  const body = res.locals.body as AcceptTerms;
-  const termsVersion = await publishedPolicyVersion(PolicyType.TERMS);
-  if (body.version !== termsVersion) {
-    res.status(400).json({
-      error: "Qoidalarning eski versiyasi. Yangi shartlarga rozilik bering",
-      code: "TERMS_VERSION_MISMATCH",
+authRouter.post("/accept-terms", requireAuth, validateBody(acceptTermsSchema), asyncHandler(async (req, res) => {
+    const body = res.locals.body as AcceptTerms;
+    const termsVersion = await publishedPolicyVersion(PolicyType.TERMS);
+    if (body.version !== termsVersion) {
+      res.status(400).json({
+        error: "Qoidalarning eski versiyasi. Yangi shartlarga rozilik bering",
+        code: "TERMS_VERSION_MISMATCH",
+      });
+      return;
+    }
+    const updated = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { acceptedTermsVersion: termsVersion },
     });
-    return;
-  }
-  const updated = await prisma.user.update({
-    where: { id: req.user!.id },
-    data: { acceptedTermsVersion: termsVersion },
-  });
-  res.json({ ok: true, user: await toUser(updated, termsVersion) });
-});
+    res.json({ ok: true, user: await toUser(updated, termsVersion) });
+  }));
 
 // PATCH /api/auth/me - update real name / nickname / avatar
-authRouter.patch("/me", requireAuth, validateBody(updateProfileSchema), async (req, res) => {
-  const body = res.locals.body as UpdateProfile;
-  const data: {
-    name?: string | null;
-    nickname?: string | null;
-    customWatermark?: string | null;
-    avatarUrl?: string | null;
-    locale?: "UZ" | "RU" | "EN";
-  } = {};
-  if (body.name !== undefined) data.name = body.name;
-  if (body.nickname !== undefined) data.nickname = body.nickname;
-  if (body.customWatermark !== undefined) data.customWatermark = body.customWatermark;
-  if (body.avatarUrl !== undefined) data.avatarUrl = body.avatarUrl;
-  // Locale arrives lowercase ("uz"|"ru"|"en") and is stored as the Prisma enum.
-  if (body.locale !== undefined) data.locale = body.locale.toUpperCase() as "UZ" | "RU" | "EN";
-  const user = await prisma.user.update({ where: { id: req.user!.id }, data });
-  res.json({ user: await toUser(user) });
-});
+authRouter.patch("/me", requireAuth, validateBody(updateProfileSchema), asyncHandler(async (req, res) => {
+    const body = res.locals.body as UpdateProfile;
+    const data: {
+      name?: string | null;
+      nickname?: string | null;
+      customWatermark?: string | null;
+      avatarUrl?: string | null;
+      locale?: "UZ" | "RU" | "EN";
+    } = {};
+    if (body.name !== undefined) data.name = body.name;
+    if (body.nickname !== undefined) data.nickname = body.nickname;
+    if (body.customWatermark !== undefined) data.customWatermark = body.customWatermark;
+    if (body.avatarUrl !== undefined) data.avatarUrl = body.avatarUrl;
+    // Locale arrives lowercase ("uz"|"ru"|"en") and is stored as the Prisma enum.
+    if (body.locale !== undefined) data.locale = body.locale.toUpperCase() as "UZ" | "RU" | "EN";
+    const user = await prisma.user.update({ where: { id: req.user!.id }, data });
+    res.json({ user: await toUser(user) });
+  }));
 
 // POST /api/auth/telegram/session - start phone verification via Telegram.
-authRouter.post("/telegram/session", requireAuth, async (req, res) => {
-  if (req.user!.phoneVerified) {
-    res.status(400).json({ error: "Profil allaqachon faollashtirilgan" });
-    return;
-  }
-  const botUsername = await getBotUsername();
-  if (!botUsername) {
-    res.status(500).json({ error: "Telegram bot sozlanmagan" });
-    return;
-  }
-  const token = generateTelegramVerifyToken();
-  await prisma.user.update({
-    where: { id: req.user!.id },
-    data: {
-      telegramVerifyToken: hashTelegramVerifyToken(token),
-      telegramVerifyExpiresAt: telegramVerifyExpiry(),
-      telegramVerifyChatId: null,
-      telegramVerifyCode: null,
-      telegramVerifyCodeExpiresAt: null,
-    },
-  });
-  res.json({ botUsername, start: `verify_${token}`, expiresAt: telegramVerifyExpiry().toISOString() });
-});
+authRouter.post("/telegram/session", requireAuth, asyncHandler(async (req, res) => {
+    if (req.user!.phoneVerified) {
+      res.status(400).json({ error: "Profil allaqachon faollashtirilgan" });
+      return;
+    }
+    const botUsername = await getBotUsername();
+    if (!botUsername) {
+      res.status(500).json({ error: "Telegram bot sozlanmagan" });
+      return;
+    }
+    const token = generateTelegramVerifyToken();
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: {
+        telegramVerifyToken: hashTelegramVerifyToken(token),
+        telegramVerifyExpiresAt: telegramVerifyExpiry(),
+        telegramVerifyChatId: null,
+        telegramVerifyCode: null,
+        telegramVerifyCodeExpiresAt: null,
+      },
+    });
+    res.json({ botUsername, start: `verify_${token}`, expiresAt: telegramVerifyExpiry().toISOString() });
+  }));
 
 // POST /api/auth/telegram/verify - redeem the 6-digit code from Telegram.
-authRouter.post("/telegram/verify", requireAuth, validateBody(telegramVerifySchema), async (req, res) => {
-  const body = res.locals.body as TelegramVerify;
-  const user = req.user!;
-  if (!user.telegramVerifyCode || !user.telegramVerifyCodeExpiresAt || user.telegramVerifyCodeExpiresAt < new Date()) {
-    res.status(400).json({ error: "Kod yaroqsiz yoki muddati o'tgan" });
-    return;
-  }
-  if (user.telegramVerifyCode !== hashTelegramVerifyCode(body.code)) {
-    res.status(400).json({ error: "Kod noto'g'ri" });
-    return;
-  }
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      phoneVerified: true,
-      telegramVerifyCode: null,
-      telegramVerifyCodeExpiresAt: null,
-      telegramVerifyToken: null,
-      telegramVerifyExpiresAt: null,
-      telegramVerifyChatId: null,
-    },
-  });
-  res.json({ ok: true, user: await toUser(updated) });
-});
+authRouter.post("/telegram/verify", requireAuth, validateBody(telegramVerifySchema), asyncHandler(async (req, res) => {
+    const body = res.locals.body as TelegramVerify;
+    const user = req.user!;
+    if (!user.telegramVerifyCode || !user.telegramVerifyCodeExpiresAt || user.telegramVerifyCodeExpiresAt < new Date()) {
+      res.status(400).json({ error: "Kod yaroqsiz yoki muddati o'tgan" });
+      return;
+    }
+    if (user.telegramVerifyCode !== hashTelegramVerifyCode(body.code)) {
+      res.status(400).json({ error: "Kod noto'g'ri" });
+      return;
+    }
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        phoneVerified: true,
+        telegramVerifyCode: null,
+        telegramVerifyCodeExpiresAt: null,
+        telegramVerifyToken: null,
+        telegramVerifyExpiresAt: null,
+        telegramVerifyChatId: null,
+      },
+    });
+    res.json({ ok: true, user: await toUser(updated) });
+  }));
 
 // ---------------------------------------------------------------------------
 // Telegram one-tap login ("tezkor kirish"): like-only until full registration.
@@ -608,79 +609,79 @@ authRouter.post("/telegram/quick/session", async (_req, res) => {
 
 // POST /api/auth/telegram/quick/status - poll the session until the bot
 // confirms the /start quick_<id>. Always answers 200 so the client can poll.
-authRouter.post("/telegram/quick/status", validateBody(telegramQuickSessionSchema), async (_req, res) => {
-  const body = res.locals.body as TelegramQuickSession;
-  const session = await prisma.telegramQuickSession.findUnique({
-    where: { tokenHash: hashQuickLoginSessionId(body.sessionId) },
-  });
-  if (!session) {
-    res.json({ status: "EXPIRED" });
-    return;
-  }
-  if (session.expiresAt < new Date() || session.status === "EXPIRED") {
-    if (session.status !== "EXPIRED") {
-      await prisma.telegramQuickSession.update({ where: { id: session.id }, data: { status: "EXPIRED" } });
-    }
-    res.json({ status: "EXPIRED" });
-    return;
-  }
-  if (session.status === "PENDING") {
-    res.json({ status: "PENDING" });
-    return;
-  }
-  if (session.status === "ERROR") {
-    res.json({ status: "ERROR", error: session.error ?? "Kirish tasdiqlanmadi" });
-    return;
-  }
-  if (session.status === "COMPLETE" && session.userId) {
-    const user = await prisma.user.findUnique({ where: { id: session.userId } });
-    if (!user || user.blocked) {
-      res.json({ status: "ERROR", error: "Hisob bloklangan" });
+authRouter.post("/telegram/quick/status", validateBody(telegramQuickSessionSchema), asyncHandler(async (_req, res) => {
+    const body = res.locals.body as TelegramQuickSession;
+    const session = await prisma.telegramQuickSession.findUnique({
+      where: { tokenHash: hashQuickLoginSessionId(body.sessionId) },
+    });
+    if (!session) {
+      res.json({ status: "EXPIRED" });
       return;
     }
-    // One token per completion: consume the session so it cannot be re-polled.
-    await prisma.telegramQuickSession.delete({ where: { id: session.id } });
-    void recordActivity({ userId: user.id, action: "LOGIN" });
-    await issueRefreshCookie(res, user.id);
-    res.json({ status: "COMPLETE", token: signAuthToken(user.id), user: await toUser(user) });
-    return;
-  }
-  res.json({ status: "PENDING" });
-});
+    if (session.expiresAt < new Date() || session.status === "EXPIRED") {
+      if (session.status !== "EXPIRED") {
+        await prisma.telegramQuickSession.update({ where: { id: session.id }, data: { status: "EXPIRED" } });
+      }
+      res.json({ status: "EXPIRED" });
+      return;
+    }
+    if (session.status === "PENDING") {
+      res.json({ status: "PENDING" });
+      return;
+    }
+    if (session.status === "ERROR") {
+      res.json({ status: "ERROR", error: session.error ?? "Kirish tasdiqlanmadi" });
+      return;
+    }
+    if (session.status === "COMPLETE" && session.userId) {
+      const user = await prisma.user.findUnique({ where: { id: session.userId } });
+      if (!user || user.blocked) {
+        res.json({ status: "ERROR", error: "Hisob bloklangan" });
+        return;
+      }
+      // One token per completion: consume the session so it cannot be re-polled.
+      await prisma.telegramQuickSession.delete({ where: { id: session.id } });
+      void recordActivity({ userId: user.id, action: "LOGIN" });
+      await issueRefreshCookie(res, user.id);
+      res.json({ status: "COMPLETE", token: signAuthToken(user.id), user: await toUser(user) });
+      return;
+    }
+    res.json({ status: "PENDING" });
+  }));
 
 // POST /api/auth/upgrade - complete a Telegram quick-login account into a full
 // registration (sets email + password). After email verification the account
 // can submit quotes like any other user.
-authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), async (_req, res) => {
-  const body = res.locals.body as UpgradeAccount;
-  const user = _req.user!;
-  if (!user.quickLogin) {
-    res.status(400).json({ error: "Bu hisob allaqachon to'liq ro'yxatdan o'tgan" });
-    return;
-  }
-  const existing = await prisma.user.findUnique({ where: { email: body.email } });
-  if (existing && existing.id !== user.id) {
-    res.status(409).json({ error: "Bu email allaqachon ro'yxatdan o'tgan" });
-    return;
-  }
-  const termsVersion = await publishedPolicyVersion(PolicyType.TERMS);
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      email: body.email,
-      passwordHash: await hashPassword(body.password),
-      quickLogin: false,
-      acceptedTermsVersion: termsVersion,
-      ...(body.name !== undefined ? { name: body.name } : {}),
-      ...(body.nickname !== undefined ? { nickname: body.nickname } : {}),
-      role: roleForEmail(body.email, user.role, user.roleOverride),
-    },
-  });
-  await issueEmailVerification(updated.email!);
-  void recordActivity({ userId: updated.id, action: "REGISTER" });
-  await issueRefreshCookie(res, updated.id);
-  res.json({ token: signAuthToken(updated.id), user: await toUser(updated, termsVersion) });
-});
+authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), asyncHandler(async (_req, res) => {
+    const body = res.locals.body as UpgradeAccount;
+    const user = _req.user!;
+    if (!user.quickLogin) {
+      res.status(400).json({ error: "Bu hisob allaqachon to'liq ro'yxatdan o'tgan" });
+      return;
+    }
+    const existing = await prisma.user.findUnique({ where: { email: body.email } });
+    if (existing && existing.id !== user.id) {
+      res.status(409).json({ error: "Bu email allaqachon ro'yxatdan o'tgan" });
+      return;
+    }
+    const termsVersion = await publishedPolicyVersion(PolicyType.TERMS);
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        email: body.email,
+        passwordHash: await hashPassword(body.password),
+        quickLogin: false,
+        acceptedTermsVersion: termsVersion,
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.nickname !== undefined ? { nickname: body.nickname } : {}),
+        role: roleForEmail(body.email, user.role, user.roleOverride),
+      },
+    });
+    await issueEmailVerification(updated.email!);
+    void recordActivity({ userId: updated.id, action: "REGISTER" });
+    await issueRefreshCookie(res, updated.id);
+    res.json({ token: signAuthToken(updated.id), user: await toUser(updated, termsVersion) });
+  }));
 
 // ---------------------------------------------------------------------------
 // Refresh / logout (rotating HttpOnly cookie)
@@ -689,35 +690,35 @@ authRouter.post("/upgrade", requireAuth, validateBody(upgradeAccountSchema), asy
 // POST /api/auth/refresh - redeem the HttpOnly refresh cookie for a new
 // short-lived access token. The cookie is rotated on every use; a revoked or
 // expired cookie returns 401 and is cleared on the client.
-authRouter.post("/refresh", async (req, res) => {
-  const raw = cookieRefreshToken(req);
-  if (!raw) {
-    res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
-    return;
-  }
-  const digest = hashRefreshToken(raw);
-  const user = await prisma.user.findUnique({ where: { refreshTokenHash: digest } });
-  if (!user || user.blocked || !user.refreshTokenExpiresAt || user.refreshTokenExpiresAt < new Date()) {
-    clearRefreshCookie(res);
-    res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
-    return;
-  }
-  // Refresh-token replay detection: every successful refresh rotates the digest,
-  // so a cookie whose digest is already gone must have been stolen (or shipped
-  // by an old client copy). Revoke the session entirely and flag it. This is
-  // the strongest cheap invariant available — a second use of a consumed token
-  // can only be an attacker replaying a leaked cookie.
-  const current = await prisma.user.findUnique({ where: { id: user.id }, select: { refreshTokenHash: true } });
-  if (!current || current.refreshTokenHash !== digest) {
-    await prisma.user.update({ where: { id: user.id }, data: { refreshTokenHash: null, refreshTokenExpiresAt: null } });
-    logger.warn({ userId: user.id }, "refresh: token replay detected, session revoked");
-    clearRefreshCookie(res);
-    res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
-    return;
-  }
-  await issueRefreshCookie(res, user.id);
-  res.json({ token: signAuthToken(user.id) });
-});
+authRouter.post("/refresh", asyncHandler(async (req, res) => {
+    const raw = cookieRefreshToken(req);
+    if (!raw) {
+      res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
+      return;
+    }
+    const digest = hashRefreshToken(raw);
+    const user = await prisma.user.findUnique({ where: { refreshTokenHash: digest } });
+    if (!user || user.blocked || !user.refreshTokenExpiresAt || user.refreshTokenExpiresAt < new Date()) {
+      clearRefreshCookie(res);
+      res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
+      return;
+    }
+    // Refresh-token replay detection: every successful refresh rotates the digest,
+    // so a cookie whose digest is already gone must have been stolen (or shipped
+    // by an old client copy). Revoke the session entirely and flag it. This is
+    // the strongest cheap invariant available — a second use of a consumed token
+    // can only be an attacker replaying a leaked cookie.
+    const current = await prisma.user.findUnique({ where: { id: user.id }, select: { refreshTokenHash: true } });
+    if (!current || current.refreshTokenHash !== digest) {
+      await prisma.user.update({ where: { id: user.id }, data: { refreshTokenHash: null, refreshTokenExpiresAt: null } });
+      logger.warn({ userId: user.id }, "refresh: token replay detected, session revoked");
+      clearRefreshCookie(res);
+      res.status(401).json({ error: "Avtorizatsiya muddati tugagan. Qayta kiring" });
+      return;
+    }
+    await issueRefreshCookie(res, user.id);
+    res.json({ token: signAuthToken(user.id) });
+  }));
 
 // POST /api/auth/me/delete - GDPR right-to-erasure: soft-delete the current
 // account and irreversibly anonymize every piece of personal data. The email
@@ -726,67 +727,67 @@ authRouter.post("/refresh", async (req, res) => {
 // verification/reset digests are dropped. The user is flagged blocked so the
 // existing requireAuth 403 (ACCOUNT_BLOCKED) immediately invalidates any
 // outstanding access tokens, and the refresh cookie is revoked.
-authRouter.post("/me/delete", requireAuth, async (req, res) => {
-  const user = req.user!;
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      email: `deleted-${user.id}@deleted.local`,
-      passwordHash: null,
-      name: null,
-      nickname: null,
-      role: "USER",
-      roleOverride: null,
-      emailVerified: false,
-      emailVerifiedAt: null,
-      emailVerificationToken: null,
-      emailVerificationExpiresAt: null,
-      emailVerifyCodeHash: null,
-      emailVerifyCodeExpiresAt: null,
-      resetPasswordToken: null,
-      resetPasswordCodeHash: null,
-      resetTokenExpiry: null,
-      telegramId: null,
-      phoneNumber: null,
-      phoneVerified: false,
-      telegramUsername: null,
-      telegramFirstName: null,
-      telegramLastName: null,
-      quickLogin: false,
-      telegramVerifyToken: null,
-      telegramVerifyExpiresAt: null,
-      telegramVerifyChatId: null,
-      telegramVerifyCode: null,
-      telegramVerifyCodeExpiresAt: null,
-      isPremium: false,
-      premiumExpiresAt: null,
-      customWatermark: null,
-      isSuperApproved: false,
-      superApprovedAt: null,
-      avatarUrl: null,
-      refreshTokenHash: null,
-      refreshTokenExpiresAt: null,
-      blocked: true,
-      blockedAt: new Date(),
-      deletedAt: new Date(),
-    },
-  });
-  clearRefreshCookie(res);
-  logger.info({ userId: user.id }, "account self-deleted and anonymized (GDPR)");
-  res.json({ ok: true, message: "Hisobingiz o'chirildi" });
-});
+authRouter.post("/me/delete", requireAuth, asyncHandler(async (req, res) => {
+    const user = req.user!;
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        email: `deleted-${user.id}@deleted.local`,
+        passwordHash: null,
+        name: null,
+        nickname: null,
+        role: "USER",
+        roleOverride: null,
+        emailVerified: false,
+        emailVerifiedAt: null,
+        emailVerificationToken: null,
+        emailVerificationExpiresAt: null,
+        emailVerifyCodeHash: null,
+        emailVerifyCodeExpiresAt: null,
+        resetPasswordToken: null,
+        resetPasswordCodeHash: null,
+        resetTokenExpiry: null,
+        telegramId: null,
+        phoneNumber: null,
+        phoneVerified: false,
+        telegramUsername: null,
+        telegramFirstName: null,
+        telegramLastName: null,
+        quickLogin: false,
+        telegramVerifyToken: null,
+        telegramVerifyExpiresAt: null,
+        telegramVerifyChatId: null,
+        telegramVerifyCode: null,
+        telegramVerifyCodeExpiresAt: null,
+        isPremium: false,
+        premiumExpiresAt: null,
+        customWatermark: null,
+        isSuperApproved: false,
+        superApprovedAt: null,
+        avatarUrl: null,
+        refreshTokenHash: null,
+        refreshTokenExpiresAt: null,
+        blocked: true,
+        blockedAt: new Date(),
+        deletedAt: new Date(),
+      },
+    });
+    clearRefreshCookie(res);
+    logger.info({ userId: user.id }, "account self-deleted and anonymized (GDPR)");
+    res.json({ ok: true, message: "Hisobingiz o'chirildi" });
+  }));
 
 // POST /api/auth/logout - revoke the stored refresh digest and clear the
 // cookie. The access token itself is short-lived and simply ignored.
-authRouter.post("/logout", async (req, res) => {
-  const raw = cookieRefreshToken(req);
-  if (raw) {
-    const digest = hashRefreshToken(raw);
-    await prisma.user.updateMany({
-      where: { refreshTokenHash: digest },
-      data: { refreshTokenHash: null, refreshTokenExpiresAt: null },
-    });
-  }
-  clearRefreshCookie(res);
-  res.json({ ok: true });
-});
+authRouter.post("/logout", asyncHandler(async (req, res) => {
+    const raw = cookieRefreshToken(req);
+    if (raw) {
+      const digest = hashRefreshToken(raw);
+      await prisma.user.updateMany({
+        where: { refreshTokenHash: digest },
+        data: { refreshTokenHash: null, refreshTokenExpiresAt: null },
+      });
+    }
+    clearRefreshCookie(res);
+    res.json({ ok: true });
+  }));
