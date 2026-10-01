@@ -1,5 +1,8 @@
 import { Router } from "express";
-import type { Prisma, QuoteStatus, UserRole } from "@prisma/client";
+// `Prisma` is a value import, not a type-only one: the last-super-admin guard
+// reads Prisma.TransactionIsolationLevel at runtime.
+import { Prisma } from "@prisma/client";
+import type { QuoteStatus, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin, requireSuperAdmin } from "../middleware/adminAuth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -21,6 +24,11 @@ import { bulkEffectivePermissions, effectivePermissionsFor, listFeatures } from 
 import { runPolicyImpactReview, IMPORTANT_SETTING_KEYS } from "../lib/policyImpact.js";
 import { todayAnalytics, visitorHistory } from "../lib/analytics.js";
 import { normalizeTagName, slugify } from "../lib/categories.js";
+import {
+  applyModerationDecision,
+  claimTelegramPublish,
+  releaseTelegramPublish,
+} from "../lib/quoteModeration.js";
 import { adminPoliciesRouter } from "./adminPolicies.js";
 import { adminQuizzesRouter } from "./adminQuizzes.js";
 import { adminEmailsRouter } from "./adminEmails.js";
@@ -229,27 +237,34 @@ adminRouter.post("/quotes/bulk", checkPermission("canManageQuotes"), validateBod
     const body = res.locals.body as BulkQuotes;
     const ip = clientIp(req.headers);
     let count = 0;
+    // Moderation scope: the requested ids minus anything already archived.
+    // Declared out here because the Telegram follow-up block below reuses it.
+    let liveIds = body.ids;
     if (body.action === "approve" || body.action === "reject") {
-      // Remember which quotes were still PENDING so each owner is notified
-      // exactly once (only on the PENDING -> APPROVED/REJECTED transition).
-      const before = await prisma.quote.findMany({
-        where: { id: { in: body.ids }, deletedAt: null },
-        select: { id: true, status: true },
+      const decision = body.action === "approve" ? "APPROVED" : "REJECTED";
+      const rejectionReason = body.action === "reject" ? body.reason ?? "Admin tomonidan rad etildi" : null;
+      // Archived quotes are out of scope for moderation, as before.
+      const archived = await prisma.quote.findMany({
+        where: { id: { in: body.ids }, deletedAt: { not: null } },
+        select: { id: true },
       });
-      const pendingIds = before.filter((q) => q.status === "PENDING").map((q) => q.id);
+      const archivedIds = new Set(archived.map((q) => q.id));
+      liveIds = body.ids.filter((id) => !archivedIds.has(id));
+      // Each quote goes through the same compare-and-swap as the single-item
+      // route, so a quote that is already in the requested state is left alone and
+      // never re-notified. Doing it per id (rather than one bulk UPDATE) is what
+      // makes that guarantee hold under a concurrent request.
+      const outcomes = await Promise.all(
+        liveIds.map((id) => applyModerationDecision(id, decision, { rejectionReason: rejectionReason ?? undefined }))
+      );
+      // Only quotes this request actually moved PENDING -> decided notify their
+      // author; `already-applied` ones would otherwise send a duplicate email.
+      const transitioned = outcomes.filter((o) => o.kind === "transitioned");
+      count = transitioned.length;
 
-      const result = await prisma.quote.updateMany({
-        where: { id: { in: body.ids }, deletedAt: null },
-        data:
-          body.action === "approve"
-            ? { status: "APPROVED", awaitingRejection: false, rejectionReason: null }
-            : { status: "REJECTED", rejectionReason: body.reason ?? "Admin tomonidan rad etildi", awaitingRejection: false },
-      });
-      count = result.count;
-
-      for (const id of pendingIds) {
+      for (const outcome of transitioned) {
         void notifyQuoteModeration({
-          quoteId: id,
+          quoteId: outcome.quote.id,
           decision: body.action === "approve" ? "approved" : "rejected",
           reason: body.action === "reject" ? body.reason : undefined,
         });
@@ -284,20 +299,27 @@ adminRouter.post("/quotes/bulk", checkPermission("canManageQuotes"), validateBod
       if (body.action === "approve") {
         // Auto-publish approved quotes (freshly approved or already approved
         // but never posted) to the Telegram channel — those not posted yet.
+        // The claim is taken atomically per quote so a concurrent bulk approve (or
+        // the single-item route) cannot post the same quote to the channel twice.
         const toPublish = await prisma.quote.findMany({
-          where: { id: { in: body.ids }, status: "APPROVED", telegramPostedAt: null },
+          where: { id: { in: liveIds }, status: "APPROVED", telegramPostedAt: null },
           select: { id: true, text: true, displayAuthor: true },
         });
         for (const q of toPublish) {
+          const claim = await claimTelegramPublish(q.id);
+          if (!claim) continue;
           void (async () => {
             try {
               const posted = await publishQuoteToChannel(q);
               if (posted) {
                 await prisma.quote.update({ where: { id: q.id }, data: { telegramPostedAt: new Date() } });
                 addLog("info", `Iqtibos Telegram kanalga joylandi: ${q.text.slice(0, 40)}...`);
+              } else {
+                await releaseTelegramPublish(q.id, claim);
               }
             } catch {
               /* channel failures must never break the bulk action */
+              await releaseTelegramPublish(q.id, claim);
             }
           })();
         }
@@ -321,16 +343,22 @@ adminRouter.post("/quotes/bulk", checkPermission("canManageQuotes"), validateBod
 // POST /api/admin/quotes/:id/approve
 adminRouter.post("/quotes/:id/approve", checkPermission("canManageQuotes"), async (req, res) => {
   try {
-    const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
-    if (!quote) {
+    const outcome = await applyModerationDecision(req.params.id, "APPROVED");
+    if (outcome.kind === "not-found") {
       res.status(404).json({ error: "Quote not found" });
       return;
     }
-    const wasPending = quote.status === "PENDING";
-    await prisma.quote.update({
-      where: { id: quote.id },
-      data: { status: "APPROVED", awaitingRejection: false, rejectionReason: null },
-    });
+    if (outcome.kind === "conflict") {
+      res.status(409).json({ error: "Iqtibos holati shu vaqtga o'zgardi. Qayta urinib ko'ring." });
+      return;
+    }
+    // Already approved: a repeated or retried request is a success, but must not
+    // re-send the moderation email or re-post to the public channel.
+    if (outcome.kind === "already-applied") {
+      res.json({ ok: true });
+      return;
+    }
+    const quote = outcome.quote;
     if (quote.telegramMessageId !== null && config.telegramAdminChatId) {
       await editModerationMessage(
         config.telegramAdminChatId,
@@ -339,18 +367,24 @@ adminRouter.post("/quotes/:id/approve", checkPermission("canManageQuotes"), asyn
         null
       );
     }
-    if (wasPending) void notifyQuoteModeration({ quoteId: quote.id, decision: "approved" });
-    // First approval auto-publishes the quote to the Telegram channel.
-    if (!quote.telegramPostedAt) {
+    void notifyQuoteModeration({ quoteId: quote.id, decision: "approved" });
+    // First approval auto-publishes the quote to the Telegram channel. The
+    // publish is claimed atomically so a concurrent second approval cannot post
+    // a duplicate copy to the channel.
+    const publishClaim = await claimTelegramPublish(quote.id);
+    if (publishClaim) {
       void (async () => {
         try {
           const posted = await publishQuoteToChannel({ id: quote.id, text: quote.text, displayAuthor: quote.displayAuthor });
           if (posted) {
             await prisma.quote.update({ where: { id: quote.id }, data: { telegramPostedAt: new Date() } });
             addLog("info", `Iqtibos Telegram kanalga joylandi: ${quote.text.slice(0, 40)}...`);
+          } else {
+            await releaseTelegramPublish(quote.id, publishClaim);
           }
         } catch {
           /* channel failures must never break the approval */
+          await releaseTelegramPublish(quote.id, publishClaim);
         }
       })();
     }
@@ -374,16 +408,22 @@ adminRouter.post("/quotes/:id/approve", checkPermission("canManageQuotes"), asyn
 adminRouter.post("/quotes/:id/reject", checkPermission("canManageQuotes"), validateBody(adminQuoteRejectSchema), async (req, res) => {
   try {
     const body = res.locals.body as AdminQuoteReject;
-    const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
-    if (!quote) {
+    const outcome = await applyModerationDecision(req.params.id, "REJECTED", {
+      rejectionReason: body.reason,
+    });
+    if (outcome.kind === "not-found") {
       res.status(404).json({ error: "Quote not found" });
       return;
     }
-    const wasPending = quote.status === "PENDING";
-    await prisma.quote.update({
-      where: { id: quote.id },
-      data: { status: "REJECTED", rejectionReason: body.reason, awaitingRejection: false },
-    });
+    if (outcome.kind === "conflict") {
+      res.status(409).json({ error: "Iqtibos holati shu vaqtga o'zgardi. Qayta urinib ko'ring." });
+      return;
+    }
+    if (outcome.kind === "already-applied") {
+      res.json({ ok: true });
+      return;
+    }
+    const quote = outcome.quote;
     if (quote.telegramMessageId !== null && config.telegramAdminChatId) {
       await editModerationMessage(
         config.telegramAdminChatId,
@@ -392,7 +432,7 @@ adminRouter.post("/quotes/:id/reject", checkPermission("canManageQuotes"), valid
         null
       );
     }
-    if (wasPending) void notifyQuoteModeration({ quoteId: quote.id, decision: "rejected", reason: body.reason });
+    void notifyQuoteModeration({ quoteId: quote.id, decision: "rejected", reason: body.reason });
     invalidateQuoteCaches();
     await recordAudit({
       adminId: adminId(req),
@@ -787,6 +827,57 @@ adminRouter.patch("/users/:id/role", checkPermission("canManageUsers"), validate
     }
     if ((target.role === "SUPER_ADMIN" || role === "SUPER_ADMIN") && req.admin?.role !== "SUPER_ADMIN" && req.admin?.role !== "ADMIN_PASSWORD") {
       res.status(403).json({ error: "Super admin rolini faqat super admin o'zgartira oladi" });
+      return;
+    }
+    // Lockout guard: the platform is administered by SUPER_ADMINs, so removing
+    // the last one would leave nobody able to grant the role back (re-adding a
+    // SUPER_ADMIN requires being one). The count and the write happen inside one
+    // SERIALIZABLE transaction, so two admins demoting each other at the same
+    // moment cannot both observe "2 remaining" and strip the role to zero.
+    // Note the shared ADMIN_PASSWORD bearer has `id: null` and so slips past the
+    // self-change check above; this guard is what stops it from demoting every
+    // SUPER_ADMIN in a loop.
+    if (target.role === "SUPER_ADMIN" && role !== "SUPER_ADMIN") {
+      let user;
+      try {
+        user = await prisma.$transaction(
+          async (tx) => {
+            const others = await tx.user.count({
+              where: { role: "SUPER_ADMIN", id: { not: target.id } },
+            });
+            // No other super admin left: refuse inside the transaction so the
+            // decision and the write can never be interleaved with another
+            // demotion.
+            if (others === 0) return null;
+            return tx.user.update({
+              where: { id: target.id },
+              data: { role, roleOverride: role },
+            });
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        );
+      } catch {
+        // A serialization failure means a concurrent role change touched the same
+        // rows. That is retryable, not a server fault.
+        res.status(409).json({ error: "Rol o'zgartirilmadi: boshqa admin roli shu vaqtda o'zgardi. Qayta urinib ko'ring." });
+        return;
+      }
+      if (user === null) {
+        res.status(409).json({
+          error: "Oxirgi super admin rolini olib tashlanmaydi. Avval boshqa super admin tayinlang.",
+        });
+        return;
+      }
+      await recordAudit({
+        adminId: actorId,
+        adminEmail: adminEmail(req),
+        action: "user.role",
+        targetType: "user",
+        targetId: user.id,
+        detail: `${target.role} -> ${role}`,
+        ip: clientIp(req.headers),
+      });
+      res.json({ ok: true, user: { id: user.id, role: user.role } });
       return;
     }
     const user = await prisma.user.update({

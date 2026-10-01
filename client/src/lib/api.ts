@@ -56,6 +56,32 @@ const REQUEST_TIMEOUT_MS = 15000;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS_MS = [1000, 2000, 4000];
 
+/**
+ * Methods whose HTTP semantics make a repeat safe to send.
+ *
+ * POST is deliberately absent: a request that times out may still have been
+ * committed server-side, so replaying it blindly can double-approve a quote or
+ * publish an announcement twice. Mutating calls are still retried, but only
+ * because they now carry an `X-Idempotency-Key` that the server replays from its
+ * own cache instead of executing twice.
+ */
+const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "PUT", "DELETE"]);
+
+/**
+ * Fresh key per logical call, reused by every retry of that call. `crypto` is
+ * used when present; the Math.random fallback only needs to be collision-free
+ * enough to separate concurrent calls on one device.
+ */
+function newIdempotencyKey(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  if (c && typeof c.getRandomValues === "function") {
+    const bytes = c.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -101,6 +127,11 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   // token; an explicit `options.token` never triggers the refresh flow.
   let refreshed = false;
 
+  const method = options.method ?? "GET";
+  // Generated once per `api()` call so that a retry carries the *same* key: the
+  // server then replays the first outcome instead of running the handler twice.
+  const idempotencyKey = IDEMPOTENT_METHODS.has(method) ? null : newIdempotencyKey();
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
       await sleep(RETRY_DELAYS_MS[attempt - 1]);
@@ -110,6 +141,7 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
     const token = options.token ?? tokenStore.get();
     if (token) headers["Authorization"] = `Bearer ${token}`;
+    if (idempotencyKey) headers["X-Idempotency-Key"] = idempotencyKey;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -117,7 +149,7 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
       let res: Response;
       try {
         res = await fetch(`${config.url}${path}`, {
-          method: options.method ?? "GET",
+          method,
           headers,
           body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
           signal: controller.signal,

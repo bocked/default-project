@@ -640,7 +640,14 @@ authRouter.post("/telegram/quick/status", validateBody(telegramQuickSessionSchem
         return;
       }
       // One token per completion: consume the session so it cannot be re-polled.
-      await prisma.telegramQuickSession.delete({ where: { id: session.id } });
+      // The delete is conditional and its row count is checked, so two polls that
+      // race (double-tapped login button, an automatic client retry) cannot both
+      // pass the COMPLETE check above and both receive a token + refresh cookie.
+      const claimed = await prisma.telegramQuickSession.deleteMany({ where: { id: session.id } });
+      if (claimed.count === 0) {
+        res.json({ status: "EXPIRED" });
+        return;
+    }
       void recordActivity({ userId: user.id, action: "LOGIN" });
       await issueRefreshCookie(res, user.id);
       res.json({ status: "COMPLETE", token: signAuthToken(user.id), user: await toUser(user) });

@@ -6,6 +6,11 @@ import { sendUserApprovedEmail } from "./email.js";
 import { invalidateCaches, CACHE_PREFIXES } from "./redisCache.js";
 import { editModerationMessage, sendTelegramMessage, telegramEnabled, publishQuoteToChannel } from "./telegram.js";
 import { notifyQuoteModeration } from "./notify.js";
+import {
+  applyModerationDecision,
+  claimTelegramPublish,
+  releaseTelegramPublish,
+} from "./quoteModeration.js";
 import { bus } from "./bus.js";
 import { logger } from "./logger.js";
 
@@ -324,15 +329,13 @@ async function quoteInfoText(quoteId: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 async function approveQuote(quoteId: string): Promise<string> {
-  const quote = await prisma.quote.findUnique({ where: { id: quoteId } });
-  if (!quote) return `✗ Iqtibos topilmadi: ${quoteId}`;
-  if (quote.status !== "PENDING") return `✗ Bajarilmadi: iqtibos hozir ${quote.status} holatda`;
-
-  const wasPending = quote.status === "PENDING";
-  await prisma.quote.update({
-    where: { id: quote.id },
-    data: { status: "APPROVED", awaitingRejection: false, rejectionReason: null },
-  });
+  // Compare-and-swap: this command, the panel route and the Telegram inline
+  // button are three separate entry points that can hit the same quote at once.
+  const outcome = await applyModerationDecision(quoteId, "APPROVED");
+  if (outcome.kind === "not-found") return `✗ Iqtibos topilmadi: ${quoteId}`;
+  if (outcome.kind === "conflict") return `✗ Bajarilmadi: holat shu vaqtga o'zgardi, qayta urinib ko'ring`;
+  if (outcome.kind === "already-applied") return `✗ Bajarilmadi: iqtibos allaqach ${outcome.quote.status} holatda`;
+  const quote = outcome.quote;
   if (quote.telegramMessageId !== null && config.telegramAdminChatId) {
     await editModerationMessage(
       config.telegramAdminChatId,
@@ -341,17 +344,21 @@ async function approveQuote(quoteId: string): Promise<string> {
       null
     );
   }
-  if (wasPending) void notifyQuoteModeration({ quoteId: quote.id, decision: "approved" });
-  if (!quote.telegramPostedAt) {
+  void notifyQuoteModeration({ quoteId: quote.id, decision: "approved" });
+  const publishClaim = await claimTelegramPublish(quote.id);
+  if (publishClaim) {
     void (async () => {
       try {
         const posted = await publishQuoteToChannel({ id: quote.id, text: quote.text, displayAuthor: quote.displayAuthor });
         if (posted) {
           await prisma.quote.update({ where: { id: quote.id }, data: { telegramPostedAt: new Date() } });
           addLog("info", `Iqtibos Telegram kanalga joylandi: ${quote.text.slice(0, 40)}...`);
+        } else {
+          await releaseTelegramPublish(quote.id, publishClaim);
         }
       } catch {
         /* channel failures must never break the approval */
+        await releaseTelegramPublish(quote.id, publishClaim);
       }
     })();
   }
@@ -370,14 +377,12 @@ async function approveQuote(quoteId: string): Promise<string> {
 }
 
 async function rejectQuote(quoteId: string, reason: string): Promise<string> {
-  const quote = await prisma.quote.findUnique({ where: { id: quoteId } });
-  if (!quote) return `✗ Iqtibos topilmadi: ${quoteId}`;
-  if (quote.status !== "PENDING") return `✗ Bajarilmadi: iqtibos hozir ${quote.status} holatda`;
+  const outcome = await applyModerationDecision(quoteId, "REJECTED", { rejectionReason: reason });
+  if (outcome.kind === "not-found") return `✗ Iqtibos topilmadi: ${quoteId}`;
+  if (outcome.kind === "conflict") return `✗ Bajarilmadi: holat shu vaqtga o'zgardi, qayta urinib ko'ring`;
+  if (outcome.kind === "already-applied") return `✗ Bajarilmadi: iqtibos allaqach ${outcome.quote.status} holatda`;
+  const quote = outcome.quote;
 
-  await prisma.quote.update({
-    where: { id: quote.id },
-    data: { status: "REJECTED", rejectionReason: reason, awaitingRejection: false },
-  });
   if (quote.telegramMessageId !== null && config.telegramAdminChatId) {
     await editModerationMessage(
       config.telegramAdminChatId,

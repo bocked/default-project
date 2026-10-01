@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
@@ -20,6 +20,8 @@ export default function LoginPage() {
   const [quickBusy, setQuickBusy] = useState(false);
   const [quickStatus, setQuickStatus] = useState<string | null>(null);
   const [manualLink, setManualLink] = useState<string | null>(null);
+  /** Synchronous single-flight latch for the Telegram quick-login button. */
+  const quickInFlight = useRef(false);
 
   async function submit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
@@ -46,6 +48,13 @@ export default function LoginPage() {
       setError("Davom etish uchun Foydalanish shartlari, Maxfiylik va Cookie siyosatiga rozilik bering");
       return;
     }
+    // A ref, not the `quickBusy` state: the disabled attribute only lands after a
+    // re-render, so two clicks dispatched in the same tick (fast double-tap,
+    // Enter plus click, a synthesised assistive-tech click) both used to enter
+    // this function and open two Telegram sessions plus two polling loops. This
+    // guard is synchronous, so the second caller returns before any request.
+    if (quickInFlight.current) return;
+    quickInFlight.current = true;
     setQuickBusy(true);
     setError(null);
     setManualLink(null);
@@ -66,6 +75,7 @@ export default function LoginPage() {
       setError(err instanceof Error ? err.message : "Tezkor kirishda xatolik yuz berdi");
       setQuickStatus(null);
     } finally {
+      quickInFlight.current = false;
       setQuickBusy(false);
     }
   }

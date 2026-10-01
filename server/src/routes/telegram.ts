@@ -26,6 +26,11 @@ import {
   hashQuickLoginSessionId,
 } from "../lib/tokens.js";
 import { notifyQuoteModeration } from "../lib/notify.js";
+import {
+  applyModerationDecision,
+  claimTelegramPublish,
+  releaseTelegramPublish,
+} from "../lib/quoteModeration.js";
 import { recordAudit } from "../lib/audit.js";
 import { sendUserApprovedEmail } from "../lib/email.js";
 import { POLICY_LABELS, approvePolicy } from "../lib/policies.js";
@@ -172,25 +177,32 @@ async function handleCallback(cq: Record<string, any>): Promise<void> {
   if (data.startsWith(APPROVE_PREFIX)) {
     const quoteId = data.slice(APPROVE_PREFIX.length);
     await answerCallbackQuery(cq.id, "Tasdiqlandi ✓");
-    const quote = await prisma.quote.findUnique({ where: { id: quoteId } });
-    if (!quote || quote.status !== "PENDING") return;
-    await prisma.quote.update({
-      where: { id: quoteId },
-      data: { status: "APPROVED", awaitingRejection: false, rejectionReason: null },
-    });
+    // Compare-and-swap instead of read-then-write: a double-tapped Telegram
+    // button, or an admin approving in the panel at the same moment, previously
+    // let both requests through the `status !== "PENDING"` check and both send
+    // the notification and publish to the channel.
+    const outcome = await applyModerationDecision(quoteId, "APPROVED");
+    if (outcome.kind !== "transitioned") return;
+    const quote = outcome.quote;
     if (messageId) await editModerationMessage(chatId, messageId, approvedText(quote), null);
     void notifyQuoteModeration({ quoteId, decision: "approved" });
-    void (async () => {
-      try {
-        const posted = await publishQuoteToChannel({ id: quote.id, text: quote.text, displayAuthor: quote.displayAuthor });
-        if (posted) {
-          await prisma.quote.update({ where: { id: quote.id }, data: { telegramPostedAt: new Date() } });
-          addLog("info", `Iqtibos Telegram kanalga joylandi: ${quote.text.slice(0, 40)}...`);
+    const publishClaim = await claimTelegramPublish(quoteId);
+    if (publishClaim) {
+      void (async () => {
+        try {
+          const posted = await publishQuoteToChannel({ id: quote.id, text: quote.text, displayAuthor: quote.displayAuthor });
+          if (posted) {
+            await prisma.quote.update({ where: { id: quote.id }, data: { telegramPostedAt: new Date() } });
+            addLog("info", `Iqtibos Telegram kanalga joylandi: ${quote.text.slice(0, 40)}...`);
+          } else {
+            await releaseTelegramPublish(quote.id, publishClaim);
+          }
+        } catch {
+          /* channel failures must never break the approval */
+          await releaseTelegramPublish(quote.id, publishClaim);
         }
-      } catch {
-        /* channel failures must never break the approval */
-      }
-    })();
+      })();
+    }
     void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
     addLog("info", `Iqtibos tasdiqlandi (Telegram): ${quote.text.slice(0, 40)}...`);
   } else if (data.startsWith(REJECT_PREFIX)) {
@@ -283,10 +295,10 @@ async function handleReply(msg: Record<string, any>): Promise<void> {
 
   const quote = await prisma.quote.findFirst({ where: { telegramMessageId: repliedId } });
   if (quote && quote.awaitingRejection && quote.status === "PENDING") {
-    await prisma.quote.update({
-      where: { id: quote.id },
-      data: { status: "REJECTED", rejectionReason: reason, awaitingRejection: false },
-    });
+    // Same compare-and-swap as the panel route: two replies (or a reply plus a
+    // panel action) must not both reject and both notify the author.
+    const outcome = await applyModerationDecision(quote.id, "REJECTED", { rejectionReason: reason });
+    if (outcome.kind !== "transitioned") return;
     await editModerationMessage(msg.chat.id, repliedId, rejectedText(quote, reason), null);
     void notifyQuoteModeration({ quoteId: quote.id, decision: "rejected", reason });
     void invalidateCaches([CACHE_PREFIXES.quoteOfDay, CACHE_PREFIXES.catalog]);
@@ -433,6 +445,19 @@ async function handleQuickStart(msg: Record<string, any>, chatId: number, sessio
   const lastName = String(from.last_name ?? "").slice(0, 100) || null;
   const username = String(from.username ?? "").slice(0, 64) || null;
 
+  // Claim the session with a conditional update instead of an unconditional one.
+  // The `status: "PENDING"` predicate is the single-use guarantee: a redelivered
+  // webhook update, or the user tapping the deep link twice, previously passed the
+  // read above in both deliveries and completed the same session twice.
+  const claim = await prisma.telegramQuickSession.updateMany({
+    where: { id: session.id, status: "PENDING" },
+    data: { status: "COMPLETE" },
+  });
+  if (claim.count === 0) {
+    await sendTelegramMessage(chatId, "Bu havola allaqachon ishlatilgan. Saytda qayta urinib ko'ring.");
+    return;
+  }
+
   // Reuse an existing profile linked to this Telegram account so repeated
   // logins keep the same identity; otherwise create a like-only quick account.
   let user = await prisma.user.findUnique({ where: { telegramId } });
@@ -451,9 +476,11 @@ async function handleQuickStart(msg: Record<string, any>, chatId: number, sessio
     });
   }
 
+  // The status was already flipped to COMPLETE by the claim above; this only
+  // attaches the resolved user to the already-won session.
   await prisma.telegramQuickSession.update({
     where: { id: session.id },
-    data: { status: "COMPLETE", userId: user.id, chatId: String(chatId), completedAt: new Date() },
+    data: { userId: user.id, chatId: String(chatId), completedAt: new Date() },
   });
 
   const suffix = user.quickLogin

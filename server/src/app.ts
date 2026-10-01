@@ -30,6 +30,7 @@ import { flushAnalyticsToDb } from "./lib/analytics.js";
 import { verifySmtpAtStartup, verifyResendAtStartup, emailMode } from "./lib/email.js";
 import { logger } from "./lib/logger.js";
 import { apiLimiter, authLimiter } from "./lib/rateLimit.js";
+import { idempotencyGuard } from "./middleware/idempotency.js";
 import { mkdirSync } from "node:fs";
 import { tryEnsureDefaultCategories } from "./lib/categories.js";
 import { tryEnsureDefaultContent } from "./lib/content.js";
@@ -235,6 +236,11 @@ export function createApp(options: CreateAppOptions = {}): {
   app.use("/api/webhooks", resendWebhookRouter);
   app.use(express.json({ limit: "1mb" }));
   app.use(pinoHttp({ logger, autoLogging: options.autoLogging ?? config.logToConsole }));
+
+  // Replay protection for mutating requests the client retries (see
+  // middleware/idempotency.ts). Registered after the body parser so handlers can
+  // still read the body, and before every router so it wraps them all.
+  app.use(idempotencyGuard);
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true });

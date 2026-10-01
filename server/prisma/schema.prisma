@@ -343,6 +343,9 @@ model SitePolicy {
   @@unique([type, version])
   @@index([type, isApproved])
   @@index([isApproved])
+  // Every reply in the admin Telegram chat runs a lookup of this draft by the
+  // replied message id, so the column is read far more often than it is written.
+  @@index([telegramMessageId])
 }
 
 // Test/quiz created by any user; like quotes, a new quiz is moderated
